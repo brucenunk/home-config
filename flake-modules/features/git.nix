@@ -2,9 +2,9 @@
 
 {
   flake.modules.homeManager.git =
-    { lib, pkgs, ... }:
+    { pkgs, ... }:
     {
-      home.packages = lib.optionals pkgs.stdenv.isLinux [ pkgs.git-credential-manager ];
+      home.packages = [ pkgs.gh ];
 
       programs.git = {
         enable = true;
@@ -25,13 +25,21 @@
             untrackedcache = true;
           };
 
+          credential = {
+            "https://gist.github.com".helper = [
+              ""
+              "!${pkgs.gh}/bin/gh auth git-credential"
+            ];
+            "https://github.com".helper = [
+              ""
+              "!${pkgs.gh}/bin/gh auth git-credential"
+            ];
+          };
+
           format.pretty = "%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset";
           init.defaultBranch = "main";
           push.autoSetupRemote = true;
           user.name = "James Lee";
-        }
-        // lib.optionalAttrs pkgs.stdenv.isLinux {
-          credential.helper = "${pkgs.git-credential-manager}/bin/git-credential-manager";
         };
       };
     };

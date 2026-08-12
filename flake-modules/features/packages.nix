@@ -17,7 +17,6 @@
           curl
           diffutils
           dig
-          gh
           gnumake
           gnused
           go-jsonnet
