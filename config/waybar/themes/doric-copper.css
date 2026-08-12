@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-copper. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #44312e;
+@define-color surface #584040;
+@define-color surface_alt #654f52;
+@define-color text #e7d0bf;
+@define-color muted #d0cfc8;
+@define-color border #85787f;
+@define-color accent #d29cb7;
+@define-color shadow #1f1615;
+@define-color success #b9d0aa;
+@define-color warning #c0b060;
+@define-color error #eca28f;

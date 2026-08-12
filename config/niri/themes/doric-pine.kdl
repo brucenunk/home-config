@@ -1,0 +1,36 @@
+// Generated from the installed Emacs doric-themes palette: doric-pine.
+// Do not edit directly; regenerate with build-doric-themes.py.
+layout {
+    background-color "#40503d"
+
+    focus-ring {
+        active-color "#b0d593"
+        inactive-color "#8c997f"
+        urgent-color "#e8a28f"
+    }
+
+    border {
+        active-color "#b0d593"
+        inactive-color "#8c997f"
+        urgent-color "#e8a28f"
+    }
+
+    shadow {
+        color "#161c1470"
+        inactive-color "#161c1445"
+    }
+
+    tab-indicator {
+        active-color "#b0d593"
+        inactive-color "#8c997f"
+        urgent-color "#e8a28f"
+    }
+
+    insert-hint {
+        color "#b0d59380"
+    }
+}
+
+overview {
+    backdrop-color "#40503d"
+}

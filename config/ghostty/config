@@ -1,0 +1,28 @@
+font-family = JetBrains Mono
+font-size = 14
+mouse-hide-while-typing = true
+shell-integration = detect
+macos-option-as-alt = true
+theme = light:doric-marble,dark:doric-obsidian
+window-theme = auto
+window-inherit-working-directory = true
+tab-inherit-working-directory = true
+split-inherit-working-directory = true
+confirm-close-surface = false
+
+# Split navigation and resizing
+keybind = super+alt+h=goto_split:left
+keybind = super+alt+j=goto_split:down
+keybind = super+alt+k=goto_split:up
+keybind = super+alt+l=goto_split:right
+keybind = super+ctrl+h=resize_split:left,10
+keybind = super+ctrl+j=resize_split:down,10
+keybind = super+ctrl+k=resize_split:up,10
+keybind = super+ctrl+l=resize_split:right,10
+
+# Balanced split management
+keybind = super+d=new_split:right
+keybind = chain=equalize_splits
+keybind = super+shift+d=new_split:down
+keybind = chain=equalize_splits
+keybind = super+w=close_surface

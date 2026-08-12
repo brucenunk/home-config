@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+set +x
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: nix-with-gh-token [--log-file FILE] -- COMMAND [ARG ...]
+
+Run COMMAND with a temporary PATH shim that adds the active GitHub CLI token
+to every nested `nix` invocation. With --log-file, nested Nix commands also use
+the internal-json log format and timestamped stderr is recorded while remaining
+visible in the foreground.
+EOF
+}
+
+script_dir=$(cd "$(dirname -- "$0")" && pwd)
+log_file=
+while (( $# > 0 )); do
+  case "$1" in
+    --log-file)
+      (( $# >= 2 )) || { usage; exit 64; }
+      log_file=$2
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      exit 64
+      ;;
+  esac
+done
+
+(( $# > 0 )) || { usage; exit 64; }
+
+resolve_external() {
+  local command_name=$1
+  local candidate
+  candidate=$(type -P -- "$command_name") || {
+    printf 'nix-with-gh-token: required external command not found: %s\n' "$command_name" >&2
+    return 127
+  }
+  case $candidate in
+    /*) ;;
+    *) candidate="$(cd "$(dirname -- "$candidate")" && pwd -P)/$(basename -- "$candidate")" ;;
+  esac
+  [[ -x $candidate ]] || {
+    printf 'nix-with-gh-token: command is not executable: %s\n' "$candidate" >&2
+    return 126
+  }
+  printf '%s\n' "$candidate"
+}
+
+unset -f nix gh 2>/dev/null || true
+real_nix=$(resolve_external nix)
+real_gh=$(resolve_external gh)
+
+"$real_gh" auth status --hostname github.com >/dev/null 2>&1 || {
+  printf 'nix-with-gh-token: GitHub CLI is not authenticated\n' >&2
+  exit 1
+}
+
+github_token_check=$("$real_gh" auth token --hostname github.com 2>/dev/null) || {
+  printf 'nix-with-gh-token: could not read the active GitHub CLI token\n' >&2
+  exit 1
+}
+[[ -n $github_token_check ]] || {
+  printf 'nix-with-gh-token: GitHub CLI returned an empty token\n' >&2
+  exit 1
+}
+unset github_token_check
+
+original_umask=$(umask)
+umask 077
+shim_dir=$(mktemp -d "${TMPDIR:-/tmp}/bump-nix.XXXXXX")
+cleanup() {
+  rm -rf -- "$shim_dir"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+cat >"$shim_dir/nix" <<'EOF'
+#!/usr/bin/env bash
+set +x
+set -euo pipefail
+: "${BUMP_NIX_REAL_NIX:?}"
+: "${BUMP_NIX_REAL_GH:?}"
+: "${BUMP_NIX_FOREGROUND_RUNNER:?}"
+
+previous_argument=
+for argument in "$@"; do
+  [[ $argument != -- ]] || break
+  if [[ $previous_argument == --option \
+    && ( $argument == access-tokens || $argument == extra-access-tokens ) ]]; then
+    printf '%s\n' 'nix-with-gh-token: nested access-token options are unsupported' >&2
+    exit 64
+  fi
+  case $argument in
+    --option=access-tokens|--option=extra-access-tokens|--access-tokens|--extra-access-tokens)
+      printf '%s\n' 'nix-with-gh-token: nested access-token options are unsupported' >&2
+      exit 64
+      ;;
+  esac
+  previous_argument=$argument
+done
+
+github_token=$("$BUMP_NIX_REAL_GH" auth token --hostname github.com 2>/dev/null) || {
+  printf '%s\n' 'nix-with-gh-token: could not refresh the GitHub CLI token' >&2
+  exit 1
+}
+[[ -n $github_token ]] || {
+  printf '%s\n' 'nix-with-gh-token: GitHub CLI returned an empty token' >&2
+  exit 1
+}
+
+extra_options=(--option extra-access-tokens "github.com=$github_token")
+if [[ ${BUMP_NIX_INTERNAL_JSON_LOGS:-0} != 1 ]]; then
+  exec "$BUMP_NIX_REAL_NIX" "${extra_options[@]}" "$@"
+fi
+
+: "${BUMP_NIX_LOCK_DIR:?}"
+if ! mkdir "$BUMP_NIX_LOCK_DIR/active" 2>/dev/null; then
+  : >"$BUMP_NIX_LOCK_DIR/concurrency-violation"
+  printf '%s\n' 'nix-with-gh-token: concurrent nested Nix calls are unsupported while logging' >&2
+  exit 75
+fi
+cleanup_lock() {
+  rmdir "$BUMP_NIX_LOCK_DIR/active" 2>/dev/null || true
+}
+trap cleanup_lock EXIT
+
+nix_pid=
+signal_status=
+forward_nested_signal() {
+  case $1 in
+    HUP) signal_status=129 ;;
+    INT) signal_status=130 ;;
+    TERM) signal_status=143 ;;
+    QUIT) signal_status=131 ;;
+  esac
+  if [[ -n $nix_pid ]]; then
+    kill -s "$1" "$nix_pid" 2>/dev/null || true
+  fi
+}
+trap 'forward_nested_signal HUP' HUP
+trap 'forward_nested_signal INT' INT
+trap 'forward_nested_signal TERM' TERM
+trap 'forward_nested_signal QUIT' QUIT
+
+extra_options+=(--log-format internal-json)
+printf '%s\n' '@bump-nix {"event":"invocation-start"}' >&2
+status=0
+python3 "$BUMP_NIX_FOREGROUND_RUNNER" \
+  "$BUMP_NIX_REAL_NIX" "${extra_options[@]}" "$@" <&0 &
+nix_pid=$!
+while :; do
+  wait_status=0
+  wait "$nix_pid" || wait_status=$?
+  if ! kill -0 "$nix_pid" 2>/dev/null; then
+    status=$wait_status
+    nix_pid=
+    break
+  fi
+done
+if [[ -n $signal_status ]]; then
+  status=$signal_status
+fi
+printf '@bump-nix {"event":"invocation-stop","status":%s}\n' "$status" >&2
+exit "$status"
+EOF
+chmod 700 "$shim_dir/nix"
+umask "$original_umask"
+
+export BUMP_NIX_REAL_NIX=$real_nix
+export BUMP_NIX_REAL_GH=$real_gh
+export BUMP_NIX_FOREGROUND_RUNNER=$script_dir/run-foreground-command
+export BUMP_NIX_LOCK_DIR=$shim_dir
+export PATH="$shim_dir:$PATH"
+
+command_pid=
+logger_pid=
+interrupted_status=
+forward_signal() {
+  if [[ -n $command_pid ]]; then
+    kill -s "$1" "$command_pid" 2>/dev/null || true
+  elif [[ -n $logger_pid ]]; then
+    case $1 in
+      HUP) interrupted_status=129 ;;
+      INT) interrupted_status=130 ;;
+      TERM) interrupted_status=143 ;;
+    esac
+    : >"$shim_dir/capture-interrupted"
+    kill -s "$1" "$logger_pid" 2>/dev/null || true
+  fi
+}
+trap 'forward_signal HUP' HUP
+trap 'forward_signal INT' INT
+trap 'forward_signal TERM' TERM
+
+wait_for_command() {
+  local wait_status
+  while :; do
+    wait_status=0
+    wait "$command_pid" || wait_status=$?
+    if ! kill -0 "$command_pid" 2>/dev/null; then
+      status=$wait_status
+      command_pid=
+      return
+    fi
+  done
+}
+
+status=0
+export BUMP_NIX_INTERNAL_JSON_LOGS=0
+if [[ -z $log_file ]]; then
+  python3 "$script_dir/run-foreground-command" "$@" <&0 &
+  command_pid=$!
+  wait_for_command
+else
+  [[ ! -e $log_file ]] || {
+    printf 'nix-with-gh-token: refusing to overwrite log: %s\n' "$log_file" >&2
+    exit 1
+  }
+  mkdir -p -- "$(dirname -- "$log_file")"
+  (umask 077 && : >"$log_file")
+
+  fifo="$shim_dir/stderr.fifo"
+  mkfifo "$fifo"
+  BUMP_NIX_LOG_REDACTION=$("$real_gh" auth token --hostname github.com 2>/dev/null) \
+    python3 "$script_dir/timestamp-nix-log" "$log_file" <"$fifo" >&2 &
+  logger_pid=$!
+
+  export BUMP_NIX_INTERNAL_JSON_LOGS=1
+  start_ns=$(python3 -c 'import time; print(time.monotonic_ns())')
+  printf '{"record":"command","event":"start","timestamp_ns":%s}\n' "$start_ns" >>"$log_file"
+  python3 "$script_dir/run-foreground-command" "$@" <&0 2>"$fifo" &
+  command_pid=$!
+  wait_for_command
+  command_status=$status
+  command_stop_ns=$(python3 -c 'import time; print(time.monotonic_ns())')
+  (
+    sleep 10
+    : >"$shim_dir/logger-drain-timeout"
+    printf '%s\n' 'nix-with-gh-token: wrapper left background descendants holding the capture' >&2
+    kill -TERM "$logger_pid" 2>/dev/null || true
+  ) &
+  logger_watchdog_pid=$!
+  logger_status=0
+  while :; do
+    logger_status=0
+    wait "$logger_pid" || logger_status=$?
+    if ! kill -0 "$logger_pid" 2>/dev/null; then
+      logger_pid=
+      break
+    fi
+  done
+  kill "$logger_watchdog_pid" 2>/dev/null || true
+  wait "$logger_watchdog_pid" 2>/dev/null || true
+  if [[ -e $shim_dir/capture-interrupted ]]; then
+    status=$interrupted_status
+  elif (( status == 0 && logger_status != 0 )); then
+    status=$logger_status
+  fi
+  if [[ -e $shim_dir/concurrency-violation ]]; then
+    status=75
+  fi
+  if [[ -e $shim_dir/logger-drain-timeout ]]; then
+    status=76
+  fi
+  capture_healthy=true
+  if (( logger_status != 0 )) \
+    || [[ -e $shim_dir/capture-interrupted || -e $shim_dir/logger-drain-timeout ]]; then
+    capture_healthy=false
+  fi
+
+  printf '{"record":"command","event":"stop","timestamp_ns":%s,"status":%s,"command_status":%s,"logger_status":%s,"capture_healthy":%s}\n' \
+    "$command_stop_ns" "$status" "$command_status" "$logger_status" \
+    "$capture_healthy" >>"$log_file"
+fi
+
+unset BUMP_NIX_REAL_GH BUMP_NIX_FOREGROUND_RUNNER BUMP_NIX_INTERNAL_JSON_LOGS
+exit "$status"

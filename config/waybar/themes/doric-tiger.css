@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-tiger. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #f0deab;
+@define-color surface #dfce9f;
+@define-color surface_alt #d2b78f;
+@define-color text #402f3e;
+@define-color muted #5a483a;
+@define-color border #a29986;
+@define-color accent #7e4e0a;
+@define-color shadow #6c644d;
+@define-color success #406900;
+@define-color warning #783400;
+@define-color error #a02600;

@@ -1,0 +1,38 @@
+#!/usr/bin/env sh
+set -eu
+
+usage() {
+  echo "usage: $0 FLAKE-REF HOME-CONFIGURATION" >&2
+  echo "example: $0 . 'user@host'" >&2
+  exit 2
+}
+
+[ "$#" -eq 2 ] || usage
+
+flake_ref=$1
+configuration=$2
+attribute="homeConfigurations.\"$configuration\""
+
+case "$configuration" in
+  '' | *[!A-Za-z0-9._@+-]*)
+    echo "home configuration contains unsupported characters" >&2
+    exit 2
+    ;;
+esac
+
+system=$(nix eval --no-update-lock-file --raw "$flake_ref#$attribute.activationPackage.system")
+username=$(nix eval --no-update-lock-file --raw "$flake_ref#$attribute.config.home.username")
+home_directory=$(nix eval --no-update-lock-file --raw "$flake_ref#$attribute.config.home.homeDirectory")
+state_version=$(nix eval --no-update-lock-file --raw "$flake_ref#$attribute.config.home.stateVersion")
+
+printf 'configuration=%s\n' "$configuration"
+printf 'system=%s\n' "$system"
+printf 'username=%s\n' "$username"
+printf 'homeDirectory=%s\n' "$home_directory"
+printf 'home.stateVersion=%s\n' "$state_version"
+
+# --no-link keeps this check from creating or replacing a persistent result
+# symlink. The output path is evidence for this invocation only; do not copy it
+# into migration ledgers or other committed files.
+nix build --no-update-lock-file --no-link --print-out-paths \
+  "$flake_ref#$attribute.activationPackage"

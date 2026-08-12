@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-marble. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #ededed;
+@define-color surface #dfdfdf;
+@define-color surface_alt #cdcdcd;
+@define-color text #202020;
+@define-color muted #4a4a4a;
+@define-color border #9a9a9a;
+@define-color accent #603d3a;
+@define-color shadow #6b6b6b;
+@define-color success #106710;
+@define-color warning #60400f;
+@define-color error #a01010;

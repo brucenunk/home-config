@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-beach. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #eae3d8;
+@define-color surface #ded4c0;
+@define-color surface_alt #d4c2ab;
+@define-color text #213937;
+@define-color muted #504533;
+@define-color border #b4afb0;
+@define-color accent #834328;
+@define-color shadow #696661;
+@define-color success #006000;
+@define-color warning #595000;
+@define-color error #902000;

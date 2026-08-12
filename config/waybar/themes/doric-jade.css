@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-jade. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #e2f0c9;
+@define-color surface #d5e1c0;
+@define-color surface_alt #c2ceb9;
+@define-color text #25311f;
+@define-color muted #605258;
+@define-color border #98a09a;
+@define-color accent #106870;
+@define-color shadow #666c5a;
+@define-color success #006710;
+@define-color warning #706000;
+@define-color error #990020;

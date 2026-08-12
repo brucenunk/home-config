@@ -1,0 +1,39 @@
+#!/usr/bin/env sh
+set -eu
+
+theme=${1:-}
+case "$theme" in
+  doric-*) ;;
+  *)
+    printf 'usage: doric-waybar-theme doric-THEME\n' >&2
+    exit 2
+    ;;
+esac
+
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+cache_home=${XDG_CACHE_HOME:-"$HOME/.cache"}
+theme_file="$config_home/waybar/themes/$theme.css"
+base_style="$config_home/waybar/style.css"
+runtime_dir="$cache_home/waybar"
+runtime_style="$runtime_dir/doric-style.css"
+
+if [ ! -r "$theme_file" ]; then
+  printf 'doric-waybar-theme: theme not found: %s\n' "$theme_file" >&2
+  exit 1
+fi
+
+mkdir -p "$runtime_dir"
+tmp=$(mktemp "$runtime_dir/doric-style.XXXXXX")
+lock_file="${XDG_RUNTIME_DIR:-$runtime_dir}/doric-waybar-theme.lock"
+trap 'rm -f "$tmp"' EXIT HUP INT TERM
+cat "$theme_file" "$base_style" >"$tmp"
+
+# Preserve the runtime file's inode so Waybar's stylesheet monitor remains
+# attached across theme changes. The kernel releases the lock if this process
+# exits unexpectedly, and Waybar reloads after the write is closed.
+(
+  flock 9
+  cat "$tmp" >"$runtime_style"
+) 9>"$lock_file"
+rm -f "$tmp"
+trap - EXIT HUP INT TERM

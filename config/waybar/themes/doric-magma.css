@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-magma. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #351b10;
+@define-color surface #48332b;
+@define-color surface_alt #5f4743;
+@define-color text #e0baa0;
+@define-color muted #cfbbb0;
+@define-color border #706061;
+@define-color accent #f65f47;
+@define-color shadow #180c07;
+@define-color success #b9c06a;
+@define-color warning #cfa030;
+@define-color error #fc826f;

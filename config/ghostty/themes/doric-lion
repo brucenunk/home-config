@@ -1,0 +1,32 @@
+# Generated from the installed Emacs doric-themes palette: doric-lion.
+# Do not edit directly; regenerate with build-doric-themes.py.
+background = #392716
+foreground = #f8d48c
+selection-background = #604410
+selection-foreground = #f8d48c
+cursor-color = #f3cf6f
+
+# black
+palette = 0=#403023
+palette = 8=#4b3c2a
+# red
+palette = 1=#ec825f
+palette = 9=#ec825f
+# green
+palette = 2=#89b75a
+palette = 10=#89b75a
+# yellow
+palette = 3=#d5ba50
+palette = 11=#d5ba50
+# blue
+palette = 4=#7fbad0
+palette = 12=#7fbad0
+# magenta
+palette = 5=#e98cbf
+palette = 13=#e98cbf
+# cyan
+palette = 6=#68c2ce
+palette = 14=#68c2ce
+# white
+palette = 7=#f8d48c
+palette = 15=#f8d48c

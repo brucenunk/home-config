@@ -1,0 +1,30 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo_root"
+
+# Deliberately use plain nixpkgs and omit extraSpecialArgs and consumer overlays.
+# The exported module must close over everything else it requires.
+nix eval --impure --raw --expr '
+  let
+    flake = builtins.getFlake (toString ./.);
+    pkgs = import flake.inputs.nixpkgs {
+      system = builtins.currentSystem;
+    };
+    home = flake.inputs.home-manager.lib.homeManagerConfiguration {
+      inherit pkgs;
+      modules = [
+        flake.modules.homeManager.pi
+        {
+          home.username = "pi-module-check";
+          home.homeDirectory = "/home/pi-module-check";
+          home.stateVersion = "25.05";
+        }
+      ];
+    };
+  in
+  home.activationPackage.drvPath
+' >/dev/null
+
+printf 'exported Pi module evaluates with plain nixpkgs\n'

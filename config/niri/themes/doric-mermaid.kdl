@@ -1,0 +1,36 @@
+// Generated from the installed Emacs doric-themes palette: doric-mermaid.
+// Do not edit directly; regenerate with build-doric-themes.py.
+layout {
+    background-color "#3c3e55"
+
+    focus-ring {
+        active-color "#e8add2"
+        inactive-color "#757a90"
+        urgent-color "#eca28f"
+    }
+
+    border {
+        active-color "#e8add2"
+        inactive-color "#757a90"
+        urgent-color "#eca28f"
+    }
+
+    shadow {
+        color "#13152070"
+        inactive-color "#13152045"
+    }
+
+    tab-indicator {
+        active-color "#e8add2"
+        inactive-color "#757a90"
+        urgent-color "#eca28f"
+    }
+
+    insert-hint {
+        color "#e8add280"
+    }
+}
+
+overview {
+    backdrop-color "#3c3e55"
+}

@@ -1,0 +1,32 @@
+# Generated from the installed Emacs doric-themes palette: doric-mermaid.
+# Do not edit directly; regenerate with build-doric-themes.py.
+background = #2a2f48
+foreground = #dde0f8
+selection-background = #424381
+selection-foreground = #dde0f8
+cursor-color = #e08ca0
+
+# black
+palette = 0=#3c3e55
+palette = 8=#4c4f67
+# red
+palette = 1=#eca28f
+palette = 9=#eca28f
+# green
+palette = 2=#a0d0ba
+palette = 10=#a0d0ba
+# yellow
+palette = 3=#c0b080
+palette = 11=#c0b080
+# blue
+palette = 4=#9fbfe7
+palette = 12=#9fbfe7
+# magenta
+palette = 5=#e9acbf
+palette = 13=#e9acbf
+# cyan
+palette = 6=#a0c0d0
+palette = 14=#a0c0d0
+# white
+palette = 7=#dde0f8
+palette = 15=#dde0f8

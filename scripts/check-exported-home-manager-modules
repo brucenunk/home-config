@@ -1,0 +1,126 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo_root"
+
+# Evaluate exported modules with plain nixpkgs and no consumer overlays or
+# extraSpecialArgs. The scratch consumer uses only exported module interfaces.
+nix eval --impure --raw --expr '
+  let
+    flake = builtins.getFlake (toString ./.);
+    linuxPkgs = import flake.inputs.nixpkgs {
+      system = "x86_64-linux";
+      config.allowUnfree = true;
+    };
+    darwinPkgs = import flake.inputs.nixpkgs {
+      system = "aarch64-darwin";
+      config.allowUnfree = true;
+    };
+    lib = linuxPkgs.lib;
+
+    identity = {
+      home.username = "exported-module-check";
+      home.homeDirectory = "/home/exported-module-check";
+      home.stateVersion = "25.05";
+    };
+
+    mkHome = pkgs: modules: flake.inputs.home-manager.lib.homeManagerConfiguration {
+      inherit pkgs;
+      modules = modules ++ [ identity ];
+    };
+
+    optionNames = home: map (option: option.name) (lib.optionAttrSetToDocList home.options);
+    addedOptionNames = pkgs: modules: lib.subtractLists
+      (optionNames (mkHome pkgs [ ]))
+      (optionNames (mkHome pkgs modules));
+    invalidOptionNames = builtins.filter (
+      name: !(lib.hasPrefix "brucenunk.homeManager." name)
+    ) (lib.unique (
+      addedOptionNames linuxPkgs (builtins.attrValues flake.modules.homeManager)
+      ++ addedOptionNames darwinPkgs darwinModules
+    ));
+
+    linuxModuleActivationDrvs = lib.mapAttrsToList (
+      _: module: (mkHome linuxPkgs [ module ]).activationPackage.drvPath
+    ) flake.modules.homeManager;
+
+    consumer = mkHome linuxPkgs [
+      flake.modules.homeManager.doric-waybar-themes
+      flake.modules.homeManager.ghostty
+      flake.modules.homeManager.pi
+      {
+        brucenunk.homeManager.ghostty = {
+          package = linuxPkgs.hello;
+
+          canonicalLinuxService.enable = false;
+          extraConfig = "font-size = 12";
+        };
+
+        brucenunk.homeManager.pi = {
+          enable = false;
+
+          extensionsDirectory = null;
+          themesDirectory = null;
+        };
+      }
+    ];
+
+    gitMaintenanceConsumer = mkHome darwinPkgs [
+      flake.modules.homeManager.git-maintenance
+      {
+        brucenunk.homeManager.gitMaintenance.repositories = [
+          "/Users/exported-module-check/work/example"
+        ];
+      }
+    ];
+
+    # darkman manages a Linux-only package, systemd user service, and Niri portal.
+    # niri configures the Linux Wayland compositor and its desktop services.
+    # waybar configures a Linux Wayland status bar; its portable themes are
+    # exported separately as doric-waybar-themes.
+    linuxOnlyModuleNames = [
+      "darkman"
+      "niri"
+      "waybar"
+    ];
+    missingLinuxOnlyModuleNames = builtins.filter (
+      name: !(builtins.hasAttr name flake.modules.homeManager)
+    ) linuxOnlyModuleNames;
+    darwinModules = builtins.attrValues (
+      builtins.removeAttrs flake.modules.homeManager linuxOnlyModuleNames
+    );
+    darwinActivationDrvs =
+      [ gitMaintenanceConsumer.activationPackage.drvPath ]
+      ++ map (module: (mkHome darwinPkgs [ module ]).activationPackage.drvPath) darwinModules;
+
+    ghosttyConfig = consumer.config.xdg.configFile."ghostty/config".text;
+    ghosttyThemeNames = builtins.filter (
+      name: lib.hasPrefix "ghostty/themes/" name
+    ) (builtins.attrNames consumer.config.xdg.configFile);
+  in
+  assert missingLinuxOnlyModuleNames == [ ];
+  assert invalidOptionNames == [ ];
+  assert lib.hasAttrByPath [ "brucenunk" "homeManager" "gitMaintenance" "repositories" ]
+    gitMaintenanceConsumer.options;
+  assert !(lib.hasAttrByPath [ "programs" "gitMaintenance" ] gitMaintenanceConsumer.options);
+  assert !(lib.hasAttrByPath [ "programs" "piAgent" ] consumer.options);
+  assert gitMaintenanceConsumer.config.programs.git.enable;
+  assert gitMaintenanceConsumer.config.programs.git.settings.maintenance.repo == [
+    "/Users/exported-module-check/work/example"
+  ];
+  assert gitMaintenanceConsumer.config.launchd.agents ? "git-maintenance-hourly";
+  assert builtins.elem linuxPkgs.hello consumer.config.home.packages;
+  assert lib.hasSuffix "\n\nfont-size = 12" ghosttyConfig;
+  assert builtins.length ghosttyThemeNames > 2;
+  assert !(consumer.config.xdg.configFile
+    ? "systemd/user/graphical-session.target.wants/app-com.mitchellh.ghostty.service");
+  assert consumer.config.xdg.configFile."waybar/themes".recursive;
+  assert consumer.config.brucenunk.homeManager.pi.extensionsDirectory == null;
+  assert consumer.config.brucenunk.homeManager.pi.themesDirectory == null;
+  builtins.deepSeq linuxModuleActivationDrvs (
+    builtins.deepSeq darwinActivationDrvs consumer.activationPackage.drvPath
+  )
+' >/dev/null
+
+printf 'exported Home Manager modules and custom option namespace evaluate with plain nixpkgs\n'

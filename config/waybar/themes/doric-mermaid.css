@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-mermaid. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #2a2f48;
+@define-color surface #3c3e55;
+@define-color surface_alt #4c4f67;
+@define-color text #dde0f8;
+@define-color muted #d8d0e6;
+@define-color border #757a90;
+@define-color accent #e8add2;
+@define-color shadow #131520;
+@define-color success #a0d0ba;
+@define-color warning #c0b080;
+@define-color error #eca28f;

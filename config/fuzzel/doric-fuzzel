@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+set -eu
+
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+mode=$(darkman get 2>/dev/null || printf 'dark\n')
+
+case "$mode" in
+  light) theme=doric-marble ;;
+  *) theme=doric-obsidian ;;
+esac
+
+theme_file="$config_home/fuzzel/themes/$theme.ini"
+if [ ! -r "$theme_file" ]; then
+  printf 'doric-fuzzel: theme not found: %s\n' "$theme_file" >&2
+  exit 1
+fi
+
+exec fuzzel --config="$theme_file" "$@"

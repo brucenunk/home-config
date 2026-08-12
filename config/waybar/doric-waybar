@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+set -eu
+
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+cache_home=${XDG_CACHE_HOME:-"$HOME/.cache"}
+mode=dark
+
+if command -v darkman >/dev/null 2>&1; then
+  mode=$(darkman get 2>/dev/null || printf 'dark\n')
+fi
+
+case "$mode" in
+  light) theme=doric-marble ;;
+  *) theme=doric-obsidian ;;
+esac
+
+"$config_home/waybar/doric-waybar-theme" "$theme"
+exec waybar --style "$cache_home/waybar/doric-style.css"

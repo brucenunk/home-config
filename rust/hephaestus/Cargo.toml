@@ -1,0 +1,12 @@
+[package]
+name = "hephaestus"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+fs2 = "0.4.3"
+libc = "0.2.177"
+time = { version = "0.3.44", features = ["formatting", "local-offset", "macros"] }
+
+[dev-dependencies]
+tempfile = "3.20.0"

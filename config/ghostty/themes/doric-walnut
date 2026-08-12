@@ -1,0 +1,32 @@
+# Generated from the installed Emacs doric-themes palette: doric-walnut.
+# Do not edit directly; regenerate with build-doric-themes.py.
+background = #153227
+foreground = #b9d3b0
+selection-background = #0c512c
+selection-foreground = #b9d3b0
+cursor-color = #d3b18e
+
+# black
+palette = 0=#303931
+palette = 8=#3d4543
+# red
+palette = 1=#e8a27f
+palette = 9=#e8a27f
+# green
+palette = 2=#82cc7f
+palette = 10=#82cc7f
+# yellow
+palette = 3=#c4b980
+palette = 11=#c4b980
+# blue
+palette = 4=#8fbae5
+palette = 12=#8fbae5
+# magenta
+palette = 5=#e9acbf
+palette = 13=#e9acbf
+# cyan
+palette = 6=#a0c0d0
+palette = 14=#a0c0d0
+# white
+palette = 7=#b9d3b0
+palette = 15=#b9d3b0

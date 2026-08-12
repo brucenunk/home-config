@@ -1,0 +1,4 @@
+{
+  "defaultProvider": "openai-proxy",
+  "defaultModel": "gpt-5.6-sol"
+}

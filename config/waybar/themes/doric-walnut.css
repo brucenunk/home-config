@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-walnut. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #153227;
+@define-color surface #303931;
+@define-color surface_alt #3d4543;
+@define-color text #b9d3b0;
+@define-color muted #afc2be;
+@define-color border #596c5e;
+@define-color accent #aea084;
+@define-color shadow #091612;
+@define-color success #82cc7f;
+@define-color warning #c4b980;
+@define-color error #e8a27f;

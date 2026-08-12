@@ -1,0 +1,32 @@
+# Generated from the installed Emacs doric-themes palette: doric-siren.
+# Do not edit directly; regenerate with build-doric-themes.py.
+background = #d9e0ed
+foreground = #001020
+selection-background = #90b0e0
+selection-foreground = #001020
+cursor-color = #2040a0
+
+# black
+palette = 0=#c2d1df
+palette = 8=#b0c0cd
+# red
+palette = 1=#a01010
+palette = 9=#a01010
+# green
+palette = 2=#106710
+palette = 10=#106710
+# yellow
+palette = 3=#60400f
+palette = 11=#60400f
+# blue
+palette = 4=#103077
+palette = 12=#103077
+# magenta
+palette = 5=#700d50
+palette = 13=#700d50
+# cyan
+palette = 6=#005355
+palette = 14=#005355
+# white
+palette = 7=#001020
+palette = 15=#001020

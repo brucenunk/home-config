@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: pi-review-diff --basis <ref> [--fetch] [--include-untracked <file>]...
+
+Capture git status plus committed/staged/unstaged diffs, validate the review
+inputs, then launch Pi in read-only review mode. Untracked files are never
+included unless passed explicitly with --include-untracked.
+
+Options:
+  --basis <ref>                 Explicit default-branch diff basis, e.g. origin/main.
+  --fetch                       Run git fetch --prune origin before capturing diffs.
+  --include-untracked <file>    Include one task-relevant untracked regular file.
+  -h, --help                    Show this help.
+USAGE
+}
+
+basis="${COMMITTED_BASIS:-}"
+fetch_first=0
+untracked_paths=()
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --basis)
+      [ "$#" -ge 2 ] || { echo "missing value for --basis" >&2; exit 64; }
+      basis="$2"
+      shift 2
+      ;;
+    --fetch)
+      fetch_first=1
+      shift
+      ;;
+    --include-untracked)
+      [ "$#" -ge 2 ] || { echo "missing value for --include-untracked" >&2; exit 64; }
+      untracked_paths+=("$2")
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 64
+      ;;
+  esac
+done
+
+if [ -z "$basis" ]; then
+  echo "set --basis or COMMITTED_BASIS to a fresh repo-appropriate default-branch ref, for example origin/main or origin/master after fetch" >&2
+  exit 64
+fi
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+if [ "$fetch_first" -eq 1 ]; then
+  git fetch --prune origin
+fi
+
+if ! git rev-parse --verify --quiet "$basis^{commit}" >/dev/null; then
+  echo "diff basis does not resolve to a commit: $basis" >&2
+  exit 64
+fi
+
+for path in "${untracked_paths[@]}"; do
+  case "$path" in
+    /*|../*|*/../*|..)
+      echo "untracked review paths must be worktree-relative and stay inside the repo: $path" >&2
+      exit 64
+      ;;
+  esac
+  if [ ! -e "$path" ]; then
+    echo "explicit untracked review path does not exist: $path" >&2
+    exit 64
+  fi
+  if [ -L "$path" ]; then
+    echo "explicit untracked review path must not be a symlink: $path" >&2
+    exit 64
+  fi
+  if [ ! -f "$path" ]; then
+    echo "explicit untracked review path must be a regular file: $path" >&2
+    exit 64
+  fi
+  resolved_path=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$path")
+  case "$resolved_path" in
+    "$repo_root"/*) ;;
+    *)
+      echo "explicit untracked review path resolves outside the repo: $path" >&2
+      exit 64
+      ;;
+  esac
+done
+
+review_dir=$(mktemp -d)
+cleanup() {
+  local status=$?
+  set +e
+  rm -rf "$review_dir"
+  exit "$status"
+}
+trap cleanup EXIT
+
+status_file="$review_dir/status.txt"
+committed_file="$review_dir/committed.diff"
+staged_file="$review_dir/staged.diff"
+unstaged_file="$review_dir/unstaged.diff"
+committed_stderr="$review_dir/committed.stderr"
+staged_stderr="$review_dir/staged.stderr"
+unstaged_stderr="$review_dir/unstaged.stderr"
+max_patch_bytes=$((8 * 1024 * 1024))
+
+pi_args=(
+  --thinking high
+  --no-approve
+  --no-context-files
+  --no-session
+  --no-extensions
+  --no-skills
+  --no-prompt-templates
+  --tools "read,grep,find,ls"
+)
+
+capture_diff() {
+  local label="$1"
+  local out_file="$2"
+  local err_file="$3"
+  shift 3
+
+  if ! "$@" > "$out_file" 2> "$err_file"; then
+    if [ -s "$err_file" ]; then
+      cat "$err_file" >&2
+    fi
+    echo "failed to capture ${label} review diff" >&2
+    exit 1
+  fi
+}
+
+git status --short > "$status_file"
+capture_diff committed "$committed_file" "$committed_stderr" git diff --no-ext-diff "$basis...HEAD"
+capture_diff staged "$staged_file" "$staged_stderr" git diff --cached --no-ext-diff
+capture_diff unstaged "$unstaged_file" "$unstaged_stderr" git diff --no-ext-diff
+
+for diff_stderr in "$committed_stderr" "$staged_stderr" "$unstaged_stderr"; do
+  if [ -s "$diff_stderr" ]; then
+    cat "$diff_stderr" >&2
+    if grep -Eq 'exhaustive rename detection|diff\.renameLimit' "$diff_stderr"; then
+      echo "A review diff emitted rename-limit warnings; the diff basis is probably stale or too broad. Choose a fresh default-branch basis and retry." >&2
+      exit 1
+    fi
+  fi
+done
+
+for patch_file in "$committed_file" "$staged_file" "$unstaged_file"; do
+  patch_bytes=$(wc -c < "$patch_file" | tr -d ' ')
+  if [ "$patch_bytes" -gt "$max_patch_bytes" ]; then
+    echo "Review input $patch_file is ${patch_bytes} bytes, above ${max_patch_bytes}; inspect the diff basis before sending it to Pi." >&2
+    exit 1
+  fi
+done
+
+untracked_note="No directly supplied untracked task files."
+if [ "${#untracked_paths[@]}" -gt 0 ]; then
+  untracked_note="Directly supplied untracked task files: ${untracked_paths[*]}"
+  for path in "${untracked_paths[@]}"; do
+    pi_args+=("@$path")
+  done
+fi
+
+pi_args+=(
+  @"$status_file"
+  @"$committed_file"
+  @"$staged_file"
+  @"$unstaged_file"
+  -p "Review the full task diff against ${basis} using the supplied status and patch files. Cover committed, staged, unstaged, and directly supplied untracked task files when present. ${untracked_note} Return only actionable findings for the implementing agent: correctness, regressions, security, performance, and risky design issues. If there are no actionable findings, say so plainly."
+)
+
+pi "${pi_args[@]}"

@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+"""Summarize timestamped internal-json logs from nix-with-gh-token."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+BUILD_ACTIVITY = 105
+TRANSFER_ACTIVITIES = {100, 101}
+SUBSTITUTION_ACTIVITY = 108
+DERIVATION_RE = re.compile(r"(?P<path>/nix/store/[^'\" ]+\.drv)")
+STORE_PATH_RE = re.compile(r"(?P<path>/nix/store/[^'\" ]+)")
+
+
+@dataclass
+class Activity:
+    category: str
+    label: str
+    started_ns: int
+    stopped_ns: int | None = None
+    invocation_succeeded: bool | None = None
+
+    @property
+    def duration_ns(self) -> int | None:
+        if self.stopped_ns is None:
+            return None
+        return self.stopped_ns - self.started_ns
+
+
+@dataclass
+class Summary:
+    path: Path
+    start_ns: int | None
+    stop_ns: int | None
+    status: int | None
+    capture_healthy: bool
+    invocation_starts: int
+    invocation_stops: int
+    invocation_marker_errors: int
+    structured_event_errors: int
+    activities: list[Activity]
+
+
+def classify(event: dict[object, object]) -> tuple[str, str] | None:
+    activity_type = event.get("type")
+    text = event.get("text", "")
+    if not isinstance(text, str):
+        text = ""
+    if activity_type == BUILD_ACTIVITY:
+        match = DERIVATION_RE.search(text)
+        return "derivation build", match.group("path") if match else text
+    if activity_type == SUBSTITUTION_ACTIVITY:
+        match = STORE_PATH_RE.search(text)
+        return "substitution/download", match.group("path") if match else text
+    if activity_type in TRANSFER_ACTIVITIES:
+        match = STORE_PATH_RE.search(text)
+        label = match.group("path") if match else text
+        lowered = text.lower()
+        if " from 'http" in lowered or "downloading" in lowered:
+            return "substitution/download", label
+        if " to '" in lowered or "uploading" in lowered:
+            return "upload/transfer", label
+        return "direction-unknown transfer", label
+    return None
+
+
+def load_summary(path: Path) -> Summary:
+    start_ns = None
+    stop_ns = None
+    status = None
+    capture_healthy = False
+    invocation_starts = 0
+    invocation_stops = 0
+    invocation_marker_errors = 0
+    structured_event_errors = 0
+    invocation_open = False
+    active: dict[object, list[Activity]] = {}
+    current_invocation: list[Activity] = []
+    activities: list[Activity] = []
+
+    with path.open(encoding="utf-8") as source:
+        for line_number, line in enumerate(source, 1):
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ValueError(
+                    f"{path}:{line_number}: invalid capture JSON: {error}"
+                ) from error
+
+            if record.get("record") == "command":
+                if record.get("event") == "start":
+                    start_ns = record["timestamp_ns"]
+                elif record.get("event") == "stop":
+                    stop_ns = record["timestamp_ns"]
+                    status = record["status"]
+                    capture_healthy = record.get("capture_healthy") is True
+                continue
+            if record.get("record") != "output":
+                continue
+
+            text = record.get("line", "")
+            if text.startswith("@bump-nix "):
+                try:
+                    invocation_event = json.loads(text[len("@bump-nix ") :])
+                except json.JSONDecodeError:
+                    invocation_event = {}
+                    invocation_marker_errors += 1
+                if not isinstance(invocation_event, dict):
+                    invocation_event = {}
+                    invocation_marker_errors += 1
+                if invocation_event.get("event") == "invocation-start":
+                    invocation_starts += 1
+                    if invocation_open:
+                        invocation_marker_errors += 1
+                    invocation_open = True
+                    current_invocation = []
+                elif invocation_event.get("event") == "invocation-stop":
+                    invocation_status = invocation_event.get("status")
+                    valid_status = (
+                        isinstance(invocation_status, int)
+                        and not isinstance(invocation_status, bool)
+                        and 0 <= invocation_status <= 255
+                    )
+                    if invocation_open and valid_status:
+                        invocation_stops += 1
+                    else:
+                        invocation_marker_errors += 1
+                    invocation_open = False
+                    succeeded = invocation_status == 0 if valid_status else None
+                    for activity in current_invocation:
+                        activity.invocation_succeeded = succeeded
+                    current_invocation = []
+                elif invocation_event:
+                    invocation_marker_errors += 1
+                active.clear()
+                continue
+            if not text.startswith("@nix "):
+                continue
+            try:
+                event = json.loads(text[5:])
+            except json.JSONDecodeError:
+                structured_event_errors += 1
+                continue
+            if not isinstance(event, dict):
+                structured_event_errors += 1
+                continue
+
+            action = event.get("action")
+            activity_id = event.get("id")
+            if action == "start":
+                identified = classify(event)
+                if identified:
+                    activity = Activity(*identified, record["timestamp_ns"])
+                    active.setdefault(activity_id, []).append(activity)
+                    current_invocation.append(activity)
+                    activities.append(activity)
+            elif action == "stop" and active.get(activity_id):
+                active[activity_id].pop().stopped_ns = record["timestamp_ns"]
+                if not active[activity_id]:
+                    active.pop(activity_id)
+
+    if invocation_open:
+        invocation_marker_errors += 1
+    return Summary(
+        path,
+        start_ns,
+        stop_ns,
+        status,
+        capture_healthy,
+        invocation_starts,
+        invocation_stops,
+        invocation_marker_errors,
+        structured_event_errors,
+        activities,
+    )
+
+
+def seconds(nanoseconds: int) -> str:
+    return f"{nanoseconds / 1_000_000_000:.2f}s"
+
+
+def labels(
+    summary: Summary,
+    category: str,
+    *,
+    stopped: bool | None = None,
+    invocation_succeeded: bool | None = None,
+) -> set[str]:
+    return {
+        activity.label
+        for activity in summary.activities
+        if activity.category == category
+        and (stopped is None or (activity.stopped_ns is not None) == stopped)
+        and (
+            invocation_succeeded is None
+            or activity.invocation_succeeded is invocation_succeeded
+        )
+    }
+
+
+def print_category(summary: Summary, category: str) -> None:
+    selected = [
+        activity for activity in summary.activities if activity.category == category
+    ]
+    stopped = [activity for activity in selected if activity.duration_ns is not None]
+    active = len(selected) - len(stopped)
+    cumulative_ns = sum(activity.duration_ns or 0 for activity in stopped)
+    print(
+        f"{category.title()}s: {len(stopped)} stopped, {active} still active at capture end; "
+        f"{seconds(cumulative_ns)} cumulative stopped-activity time"
+    )
+
+    if category == "derivation build" and stopped:
+        print("Slowest stopped derivation-build activities:")
+        for activity in sorted(
+            stopped, key=lambda item: item.duration_ns or 0, reverse=True
+        )[:10]:
+            print(f"  {seconds(activity.duration_ns or 0):>9}  {activity.label}")
+
+
+def print_retry(current: Summary, previous: Summary) -> None:
+    current_builds = labels(current, "derivation build")
+    previous_stopped = labels(previous, "derivation build", stopped=True)
+    previous_unfinished = labels(previous, "derivation build", stopped=False)
+    previous_completed = labels(
+        previous, "derivation build", stopped=True, invocation_succeeded=True
+    )
+    previous_unknown = previous_stopped - previous_completed
+
+    repeated = current_builds & previous_completed
+    reattempted_unknown = current_builds & previous_unknown
+    resumed = current_builds & previous_unfinished
+    new = current_builds - previous_stopped - previous_unfinished
+    prior_completed_absent = previous_completed - current_builds
+    unfinished_absent = previous_unfinished - current_builds
+    absent_unknown = previous_unknown - current_builds
+
+    print("Retry comparison (derivation builds):")
+    print(
+        "  genuinely repeated after a successful prior nested invocation: "
+        f"{len(repeated)}"
+    )
+    print(
+        "  reattempted after a prior stop with unknown outcome: "
+        f"{len(reattempted_unknown)}"
+    )
+    print(f"  prior unfinished work reattempted: {len(resumed)}")
+    print(f"  prior unfinished work not observed in retry: {len(unfinished_absent)}")
+    print(f"  newly attempted work not reached previously: {len(new)}")
+    print(
+        "  prior completed work not observed rebuilding (reason unknown): "
+        f"{len(prior_completed_absent)}"
+    )
+    print(f"  prior stopped work absent now, outcome unknown: {len(absent_unknown)}")
+
+
+def trustworthy(summary: Summary) -> bool:
+    return (
+        summary.capture_healthy
+        and summary.invocation_starts > 0
+        and summary.invocation_starts == summary.invocation_stops
+        and summary.invocation_marker_errors == 0
+        and summary.structured_event_errors == 0
+        and bool(summary.activities)
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("log", type=Path)
+    parser.add_argument("--previous", type=Path)
+    args = parser.parse_args()
+
+    try:
+        summary = load_summary(args.log)
+        previous = load_summary(args.previous) if args.previous else None
+    except (OSError, ValueError) as error:
+        print(f"summarize-nix-log: {error}", file=sys.stderr)
+        return 1
+
+    if summary.start_ns is not None and summary.stop_ns is not None:
+        print(f"Elapsed: {seconds(summary.stop_ns - summary.start_ns)}")
+    else:
+        print("Elapsed: unavailable (capture did not finish)")
+    print(
+        f"Exit status: {summary.status if summary.status is not None else 'unavailable'}"
+    )
+    if not summary.capture_healthy:
+        print(
+            "WARNING: the structured capture did not finish cleanly; performance evidence "
+            "is unavailable"
+        )
+    print(
+        "Nested Nix invocation markers: "
+        f"{summary.invocation_starts} starts, {summary.invocation_stops} matched stops"
+    )
+    if summary.invocation_starts == 0:
+        print(
+            "WARNING: no invocation markers reached the capture; nested stderr may have "
+            "been redirected or no nested Nix command ran"
+        )
+    elif summary.invocation_marker_errors:
+        print(
+            "WARNING: incomplete or malformed invocation boundaries make this capture "
+            "unavailable as complete performance evidence"
+        )
+    if summary.structured_event_errors:
+        print(
+            "WARNING: malformed structured Nix events make this capture unavailable as "
+            "complete performance evidence"
+        )
+    elif not summary.activities:
+        print(
+            "WARNING: no structured realization activities were observed; check for a "
+            "conflicting log format before claiming zero work"
+        )
+    print_category(summary, "substitution/download")
+    print_category(summary, "upload/transfer")
+    print_category(summary, "direction-unknown transfer")
+    print_category(summary, "derivation build")
+    if previous and trustworthy(summary) and trustworthy(previous):
+        print_retry(summary, previous)
+    elif previous:
+        print(
+            "Retry comparison unavailable: current or previous capture lacks trustworthy "
+            "structured evidence"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-water. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #2a283d;
+@define-color surface #3a3c4c;
+@define-color surface_alt #4a4a5f;
+@define-color text #edf0f8;
+@define-color muted #d4d9dc;
+@define-color border #8d8c9e;
+@define-color accent #adade0;
+@define-color shadow #13121b;
+@define-color success #a0d0ba;
+@define-color warning #c0b080;
+@define-color error #eca28f;

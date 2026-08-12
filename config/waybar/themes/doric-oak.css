@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-oak. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #e0d8c7;
+@define-color surface #d5c9b5;
+@define-color surface_alt #c2b19e;
+@define-color text #3a2018;
+@define-color muted #53402f;
+@define-color border #8f9373;
+@define-color accent #0f5420;
+@define-color shadow #65615a;
+@define-color success #226700;
+@define-color warning #595000;
+@define-color error #982500;

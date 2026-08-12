@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-siren. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #d9e0ed;
+@define-color surface #c2d1df;
+@define-color surface_alt #b0c0cd;
+@define-color text #001020;
+@define-color muted #3a434a;
+@define-color border #9a9aba;
+@define-color accent #68203b;
+@define-color shadow #62656b;
+@define-color success #106710;
+@define-color warning #60400f;
+@define-color error #a01010;
