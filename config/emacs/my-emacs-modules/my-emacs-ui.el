@@ -79,7 +79,11 @@ error.  Evaluate the theme's package source once and retry to register it."
       (when (display-graphic-p frame)
         (with-selected-frame frame
           (fontaine-mode 1)
-          (fontaine-set-preset (or (fontaine-restore-latest-preset) 'regular))))))
+          (let ((preset (fontaine-restore-latest-preset)))
+            (fontaine-set-preset
+             (if (assq preset fontaine-presets)
+                 preset
+               'bricolage-grotesque)))))))
   :hook
   ((after-init . my/fontaine-setup-frame)
    (after-make-frame-functions . my/fontaine-setup-frame))
@@ -91,13 +95,11 @@ error.  Evaluate the theme's package source once and retry to register it."
            :default-height 140
            :fixed-pitch-family "JetBrains Mono"
            :fixed-pitch-height 1.0
-           :variable-pitch-family "Open Sans"
+           :variable-pitch-family "Bricolage Grotesque"
            :variable-pitch-height 1.0)
-          (regular)
-          (smaller :default-height 130)
-          (larger :default-height 150)
-          (bricolage-grotesque
-           :variable-pitch-family "Bricolage Grotesque"))))
+          (bricolage-grotesque)
+          (open-sans
+           :variable-pitch-family "Open Sans"))))
 
 (use-package mixed-pitch
   :ensure nil
