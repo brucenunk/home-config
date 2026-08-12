@@ -356,7 +356,7 @@ def niri_theme_text(theme: dict[str, str]) -> str:
             f'    background-color "{theme["bg_shadow_subtle"]}"',
             "",
             "    focus-ring {",
-            f'        active-color "{theme["fg_accent"]}"',
+            f'        active-color "{theme["border"]}"',
             f'        inactive-color "{theme["border"]}"',
             f'        urgent-color "{theme["fg_red"]}"',
             "    }",

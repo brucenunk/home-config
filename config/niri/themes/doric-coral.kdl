@@ -4,7 +4,7 @@ layout {
     background-color "#efe4db"
 
     focus-ring {
-        active-color "#087078"
+        active-color "#c3a8bf"
         inactive-color "#c3a8bf"
         urgent-color "#a02610"
     }
