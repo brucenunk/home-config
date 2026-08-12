@@ -114,9 +114,9 @@
 
 (use-package nix-ts-mode
   :ensure nil
-  :mode "\\.nix\\'"
-  :after eglot
-  :config
+  :mode "\\.nix\\'")
+
+(with-eval-after-load 'eglot
   (add-to-list 'eglot-server-programs
                '(nix-ts-mode . ("nixd" :initializationOptions
                                 (:formatting (:command ["nixfmt"]))))))
