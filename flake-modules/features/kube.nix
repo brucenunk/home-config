@@ -8,6 +8,7 @@
       home.packages =
         with pkgs;
         [
+          clusterctl
           kind
           kubectl
           kubectx
@@ -19,6 +20,7 @@
 
           # Useful for controller development and cluster operations.
           kubebuilder
+          kubernetes-controller-tools
           stern
 
           cilium-cli

@@ -14,8 +14,6 @@
         golines
         (lib.hiPrio gopls)
         gotools
-        kubebuilder
-        kubernetes-controller-tools
         protobuf
         protoc-gen-go
         protoc-gen-go-grpc
