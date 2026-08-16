@@ -69,7 +69,6 @@ in
           spice-gtk
           usbutils
           vlc
-          zen-browser
         ];
 
         brucenunk.homeManager.pi = {

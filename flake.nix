@@ -11,8 +11,6 @@
     llm-agents.inputs.nixpkgs.follows = "llm-agents-nixpkgs";
     llm-agents-nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    zen-browser.url = "github:youwen5/zen-browser-flake";
-    zen-browser.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -26,12 +24,6 @@
           config.allowUnfree = true;
           overlays = [
             inputs.llm-agents.overlays.shared-nixpkgs
-            (
-              _final: prev:
-              prev.lib.optionalAttrs prev.stdenv.hostPlatform.isLinux {
-                zen-browser = inputs.zen-browser.packages.${prev.stdenv.hostPlatform.system}.default;
-              }
-            )
             (_final: prev: {
               pythonPackagesExtensions =
                 prev.pythonPackagesExtensions
