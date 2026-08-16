@@ -40,6 +40,7 @@ in
           config.flake.modules.homeManager.emacs
           config.flake.modules.homeManager.fd
           config.flake.modules.homeManager.fish
+          config.flake.modules.homeManager.firmware-update-notifier
           config.flake.modules.homeManager.fonts
           config.flake.modules.homeManager.fzf
           config.flake.modules.homeManager.ghostty
