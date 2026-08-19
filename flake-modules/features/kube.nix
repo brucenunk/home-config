@@ -10,6 +10,7 @@
         [
           clusterctl
           kind
+          kargo
           kubectl
           kubectx
           kubernetes-helm
