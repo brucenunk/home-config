@@ -179,6 +179,8 @@ configured external opener to Markdown's default link handler."
 (use-package markdown-mode
   :ensure nil
   :mode "\\.md\\'"
+  :custom
+  (markdown-fontify-code-blocks-natively t)
   :config
   (add-hook 'markdown-follow-link-functions
             #'my/markdown-follow-file-link-other-window))
