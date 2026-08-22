@@ -13,7 +13,6 @@ let
     path = "/openai/v1";
     port = 18765;
   };
-  piRelayBaseUrl = "http://${piRelayEndpoint.address}:${toString piRelayEndpoint.port}${piRelayEndpoint.path}";
 in
 {
   flake.homeConfigurations."james@wampa" = inputs.home-manager.lib.homeManagerConfiguration {
@@ -72,9 +71,17 @@ in
           vlc
         ];
 
+        home.sessionVariables = {
+          AWS_BEDROCK_FORCE_HTTP1 = "1";
+          AWS_BEDROCK_SKIP_AUTH = "1";
+        };
+
         brucenunk.homeManager.pi = {
           localEndpoint = piRelayEndpoint;
-          models = import ../config/pi/wampa-relay-models.nix { baseUrl = piRelayBaseUrl; };
+          models = import ../config/pi/wampa-relay-models.nix {
+            bedrockBaseUrl = "http://127.0.0.1:18766/bedrock";
+            openAIBaseUrl = "http://127.0.0.1:18765/openai/v1";
+          };
           modelsFileName = "pi-models-wampa.json";
           settingsDefaults = ../config/pi/settings-wampa.json;
         };
@@ -84,9 +91,14 @@ in
             (setq my/agent-pi-model-routes
                   '(("gpt-5.6-sol" . "openai-proxy/gpt-5.6-sol")
                     ("gpt-5.6-terra" . "openai-proxy/gpt-5.6-terra")
-                    ("gpt-5.6-luna" . "openai-proxy/gpt-5.6-luna"))
+                    ("gpt-5.6-luna" . "openai-proxy/gpt-5.6-luna")
+                    ("grok-4.6" . "bedrock-proxy/global.xai.grok-4.6")
+                    ("fable-5" . "bedrock-proxy/global.anthropic.claude-fable-5")
+                    ("opus-5" . "bedrock-proxy/global.anthropic.claude-opus-5")
+                    ("sonnet-5" . "bedrock-proxy/global.anthropic.claude-sonnet-5"))
                   my/agent-pi-valid-models
-                  '("gpt-5.6-sol" "gpt-5.6-terra" "gpt-5.6-luna")
+                  '("gpt-5.6-sol" "gpt-5.6-terra" "gpt-5.6-luna"
+                    "grok-4.6" "fable-5" "opus-5" "sonnet-5")
                   my/agent-pi-valid-thinking-levels
                   '("off" "minimal" "low" "medium" "high" "xhigh" "max")
                   my/agent-pi-minimal-thinking-unsupported-models
