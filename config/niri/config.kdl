@@ -281,7 +281,6 @@ layout {
 // theme once Darkman is available on the session bus.
 spawn-sh-at-startup "~/.config/waybar/doric-waybar"
 spawn-at-startup "doric-desktop-theme" "--startup"
-spawn-at-startup "niri-wallpaper"
 
 // Environment variables for processes spawned by niri.
 // NIXOS_OZONE_WL makes the nixpkgs Chrome/Chromium/Electron wrappers run

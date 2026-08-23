@@ -16,6 +16,12 @@
           mode="''${1:-}"
 
           if [ "$mode" = "--startup" ]; then
+            if [ -n "''${WAYLAND_DISPLAY:-}" ]; then
+              if ! systemctl --user import-environment WAYLAND_DISPLAY; then
+                printf 'failed to import WAYLAND_DISPLAY for desktop services\n' >&2
+              fi
+            fi
+
             mode=""
             attempts=0
             while [ "$attempts" -lt 20 ]; do
@@ -26,6 +32,10 @@
               sleep 0.25
             done
             mode="''${mode:-dark}"
+            case "$mode" in
+              light | dark) ;;
+              *) mode="dark" ;;
+            esac
           fi
 
           case "$mode" in
@@ -67,6 +77,13 @@
             else
               printf 'cannot load Niri %s theme: NIRI_SOCKET is unavailable\n' \
                 "$mode" >&2
+            fi
+          fi
+
+          wallpaper_service="niri-wallpaper-$mode.service"
+          if systemctl --user cat "$wallpaper_service" >/dev/null 2>&1; then
+            if ! systemctl --user start "$wallpaper_service"; then
+              printf 'failed to start Niri %s wallpaper\n' "$mode" >&2
             fi
           fi
 
