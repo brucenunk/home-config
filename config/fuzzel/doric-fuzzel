@@ -15,4 +15,7 @@ if [ ! -r "$theme_file" ]; then
   exit 1
 fi
 
-exec fuzzel --config="$theme_file" "$@"
+exec fuzzel \
+  --config="$theme_file" \
+  --font="Bricolage Grotesque:size=12" \
+  "$@"

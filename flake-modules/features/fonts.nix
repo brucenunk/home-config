@@ -22,6 +22,8 @@
       jetbrains-mono = pkgs.jetbrains-mono.override { inherit python313Packages; };
     in
     {
+      dconf.settings."org/gnome/desktop/interface".font-name = "Open Sans 11";
+
       fonts.fontconfig.enable = true;
 
       home = {

@@ -282,6 +282,13 @@ layout {
 spawn-sh-at-startup "~/.config/waybar/doric-waybar"
 spawn-at-startup "doric-desktop-theme" "--startup"
 
+// Environment variables for processes spawned by niri.
+// NIXOS_OZONE_WL makes the nixpkgs Chrome/Chromium/Electron wrappers run
+// natively on Wayland instead of blurry, upscaled XWayland at scale 1.5.
+environment {
+    NIXOS_OZONE_WL "1"
+}
+
 // To run a shell command (with variables, pipes, etc.), use spawn-sh-at-startup:
 // spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
 
