@@ -83,7 +83,7 @@ error.  Evaluate the theme's package source once and retry to register it."
             (fontaine-set-preset
              (if (assq preset fontaine-presets)
                  preset
-               'bricolage-grotesque)))))))
+               'aporetic-serif-mono)))))))
   :hook
   ((after-init . my/fontaine-setup-frame)
    (after-make-frame-functions . my/fontaine-setup-frame))
@@ -91,13 +91,19 @@ error.  Evaluate the theme's package source once and retry to register it."
   :config
   (setq fontaine-presets
         '((t
-           :default-family "JetBrains Mono"
+           :default-family "Aporetic Serif Mono"
            :default-height 140
-           :fixed-pitch-family "JetBrains Mono"
+           :fixed-pitch-family "Aporetic Serif Mono"
            :fixed-pitch-height 1.0
            :variable-pitch-family "Bricolage Grotesque"
            :variable-pitch-height 1.0)
-          (bricolage-grotesque)
+          (aporetic-serif-mono)
+          (jetbrains-mono
+           :default-family "JetBrains Mono"
+           :fixed-pitch-family "JetBrains Mono")
+          (maple-mono
+           :default-family "Maple Mono"
+           :fixed-pitch-family "Maple Mono")
           (open-sans
            :variable-pitch-family "Open Sans"))))
 
