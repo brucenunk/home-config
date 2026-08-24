@@ -22,16 +22,16 @@
         '';
       };
       darkWallpaper = pkgs.requireFile {
-        name = "AdobeStock_473845992.jpeg";
-        sha256 = "sha256-JtOiXdaoddEY5ZuQToxY90DvmvqgLvHHF6qNJGnVGCg=";
+        name = "AdobeStock_321296482.jpeg";
+        sha256 = "sha256-YD4XtHeITylJGM+zW0zXfay7a5IndSyBeAR5heTRO+s=";
         message = ''
           The dark Niri wallpaper must be provisioned from its licensed download.
 
-          Source (Adobe Stock asset 473845992):
-          https://stock.adobe.com/uk/images/dark-forest-in-mist-foggy-day-mysterious-atmosphere/473845992
+          Source (Adobe Stock asset 321296482):
+          https://stock.adobe.com/uk/images/321296482
 
           Add the downloaded file to the Nix store with:
-            nix-store --add-fixed sha256 /path/to/AdobeStock_473845992.jpeg
+            nix-store --add-fixed sha256 /path/to/AdobeStock_321296482.jpeg
         '';
       };
     in
