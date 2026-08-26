@@ -7,7 +7,7 @@ description: "Bump default Nix flake inputs in tasks that explicitly set skill: 
 
 Use this skill only when the task front matter sets `skill: bump-nix`.
 
-This workflow is intentionally direct and does not use the structured `task-workflow-v3` discovery, planning, review, routing, or handoff ceremony. Treat it as a straight-through execution path: update (abort on no-op), verify, commit, follow the applicable repository finish and deployment policy, then finish.
+This workflow is intentionally direct and does not use the structured `task-workflow-v3` discovery, planning, review, routing, or handoff ceremony. Treat it as a cheap, disposable execution path: update, verify, and either deliver a successful bump or promptly restore and discard a broken one. A routine bump is not an open-ended upstream repair task.
 
 ## Scope
 
@@ -15,18 +15,44 @@ This workflow is intentionally direct and does not use the structured `task-work
 - Keep changes focused on the bump and required lockfile updates.
 - Do not target only `nixpkgs` by default; routine bump tasks should let `nix flake update` advance every relevant input, including package-providing inputs such as `llm-agents`.
 - Use targeted input updates only when the task explicitly asks for a narrower bump or the user approves narrowing scope.
-- If the update, verification, or repository-prescribed deployment exposes a fixable repository issue, fix it as part of the bump; only stop and alert the user when you cannot safely resolve the blocker.
+- Keep a fix in scope only when it meets the fail-fast threshold below. Discard the bump rather than investigating a nontrivial failure.
 - Authenticate Nix's GitHub requests with the active GitHub CLI token. Shared or public egress IPs can exhaust GitHub's unauthenticated API limit and make a routine update fail with HTTP 403 even when GitHub is otherwise reachable.
+
+## Fail-fast threshold
+
+Apply this threshold to failures from the update itself, evaluation or verification, builds, delivery, deployment, activation, and runtime checks.
+
+A fix may remain in the routine bump only when **all** of these are true:
+
+- the failure and root cause are immediately apparent from existing evidence, without exploratory debugging;
+- the adjustment is repository-local, small, well understood, and low risk;
+- it follows an existing repository pattern and does not introduce a new dependency, source override, pin, cache policy, packaging strategy, or operational mechanism;
+- the affected behavior has a narrow targeted check that can be run before any required broader verification; and
+- one fix attempt and one targeted verification retry are sufficient.
+
+Examples that may qualify include a mechanical option rename called out by an upstream error or changelog, refreshing an expected hash, or removing a repository workaround whose explicit `TODO(bump-nix):` condition is now satisfied. The examples do not waive the full threshold.
+
+Anything else is nontrivial breakage. Stop after the first useful failure capture; do not investigate speculative certificate, network, sandbox, cache, toolchain, or upstream packaging theories. Do not add or reprioritize substituters, narrow or pin inputs, carry an old package forward, patch upstream source, or repeatedly rerun a heavyweight command. Those actions require the user's explicit direction before the bump starts or promotion of the blocker into a separate repair task. A user-approved narrowed or pinned update is an override to the default full-update scope, not an automatic recovery tactic.
+
+Do not pause a routine bump merely to solicit permission for deeper debugging after it fails. Preserve the evidence and discard it. The user can deliberately schedule or promote a separate repair task from that evidence.
 
 ## Authenticated GitHub access
 
-Before running a Nix command that may contact GitHub, confirm `gh auth status --hostname github.com` succeeds. Pass the token directly to Nix without printing or storing it:
+Before running a direct Nix command that may contact GitHub, confirm `gh auth status --hostname github.com` succeeds. Acquire the token in a separate guarded step so a failed command substitution cannot still launch Nix with an empty token. Keep it only in a shell variable, pass it directly to Nix, preserve Nix's status, and unset it immediately afterward:
 
 ```bash
-nix --option extra-access-tokens "github.com=$(gh auth token --hostname github.com)" <command>
+if ! github_token=$(gh auth token --hostname github.com) || [ -z "$github_token" ]; then
+  unset github_token
+  echo "GitHub authentication required" >&2
+  exit 1
+fi
+nix --option extra-access-tokens "github.com=$github_token" <command>
+nix_status=$?
+unset github_token
+exit "$nix_status"
 ```
 
-Use this form for direct update, evaluation, build, and check commands. If the hostname-qualified `gh auth status` or `gh auth token` fails, stop and ask the user to authenticate rather than falling back to unauthenticated GitHub API requests.
+Use this pattern for direct update, evaluation, build, and check commands. Do not run Nix if the hostname-qualified `gh auth status`, `gh auth token`, or nonempty-token check fails; stop and ask the user to authenticate rather than falling back to unauthenticated GitHub API requests.
 
 ### Repository wrappers and nested Nix
 
@@ -86,7 +112,7 @@ Before relying on the capture, inspect the repository wrapper for nested stderr 
 
 The summary separates substitutions/downloads, uploads, direction-unknown transfers, and derivation-build activities; reports command wall time and cumulative activity time; and lists the slowest derivations. Nix's generic internal events do not reliably identify whether a builder was local or remote, so do not label build activity as local unless separate evidence establishes locality. A stopped activity is not necessarily successful; only treat a prior stopped build as completed when its nested Nix invocation succeeded. Cumulative activity time can exceed wall time when work overlaps. Use event durations, not terminal line counts, to explain cost.
 
-For a retry, retain both transient captures until reporting and compare them:
+For the single targeted retry permitted by the fail-fast threshold, retain both transient captures until reporting and compare them:
 
 ```bash
 <bump-nix-skill-directory>/scripts/summarize-nix-log \
@@ -106,19 +132,43 @@ Do not describe all output on a retry as repeated work. Nix normally reuses comp
 
 Compare retries as unfinished-closure work only when the realization plan is materially unchanged. If a source or lockfile fix changes the plan, state that boundary and report newly attempted derivations without claiming they belonged to the first closure.
 
+This evidence procedure does not authorize a retry. Use it only after the proposed fix independently meets every fail-fast condition or when an applicable repository rollback procedure requires an observed command.
+
 ## Worktree and staging safety
 
 The bump starts from a completely clean task worktree and index. Before any update, require `git status --porcelain=v1 --untracked-files=all` to produce no output. Stop rather than stashing, deleting, staging, or incorporating pre-existing changes.
 
-Maintain an explicit list of every path produced by the update or by an approved bump-related fix. Review each path before staging it. Stage only that list with `git add -- <path>...`; broad staging commands such as `git add .`, `git add -A`, and `git add -u` are forbidden in this workflow.
+Before the update, record the pre-bump revision with `git rev-parse HEAD`. Maintain two explicit lists:
+
+- **deliverable paths** changed by the update or an approved bump-related fix, further distinguishing paths present at the pre-bump revision from newly created deliverable files; and
+- **cleanup-only paths** proven absent before the responsible command and then created by that command, such as a `result` symlink, that must never be committed.
+
+Inspect each command's output behavior before running it. Require `--no-link` or an output path under `mktemp` when supported so verification artifacts do not enter the worktree. If a required command can only write a known worktree artifact, first require that exact path not to exist, including as an ignored path, and then add it to the cleanup-only list if the command creates it. Stop rather than overwrite, remove, or adopt a pre-existing artifact. Review every deliverable path before staging it. Stage only the deliverable list with `git add -- <path>...`; broad staging commands such as `git add .`, `git add -A`, and `git add -u` are forbidden in this workflow.
 
 Before committing, verify all of the following:
 
-- `git diff --cached --name-only` contains exactly the reviewed path list.
+- `git diff --cached --name-only` contains exactly the reviewed deliverable-path list.
 - `git diff --cached --check` passes and the complete cached diff has been reviewed.
 - There are no unstaged tracked changes or untracked files.
 
 If any check fails, stop and resolve the discrepancy without broad staging. These rules also apply when a verification or delivery failure requires a follow-up fix.
+
+### Discarding a failed bump
+
+For nontrivial breakage before delivery, perform this cleanup immediately:
+
+1. Stop retries and retain only a concise diagnostic summary. Record the failed phase or compatibility check, the command when applicable, updated input revisions, affected package or derivation, the first stable error signature or incompatibility finding, and any relevant realization/cache fact. Never record a token or secret. Summarize a transient structured log when available; the summary in the task note is the durable evidence, not the temporary log file.
+2. Recheck both explicit path lists. Refuse cleanup and alert the user if status contains a path that is on neither list; it may predate or be unrelated to the bump.
+3. Restore deliverable paths that existed at the pre-bump revision in both index and worktree with `git restore --source="$pre_bump_revision" --staged --worktree -- <pre-existing-deliverable-path>...`.
+4. For newly created deliverable files and cleanup-only paths, first remove any staged entry with the exact-path command `git rm --cached --ignore-unmatch -- <created-path>...`, then remove only those worktree paths with `rm -- <created-path>...`. Stop on an index discrepancy; do not force removal or recursively remove directories.
+5. Require `git status --porcelain=v1 --untracked-files=all` to be empty. Never use broad `git reset`, `git restore`, `git clean`, or staging commands as cleanup.
+6. Add a short `## Outcome` to the task note headed **Failed bump — discard requested**, including the diagnostic summary and that the explicit changed paths were restored. Report that the failed bump was restored and is being discarded, without claiming teardown has succeeded. Then, as the terminal action, use the task system's discard operation (for the default Denote system, `emacsclient -e '(my/task-discard-run "<task-id>")'`). The resulting `discarded` task status distinguishes this failed bump from a successful no-op, but is not proof that every teardown action completed; do not require the agent process or task session to survive teardown for a follow-up edit or report, and do not report teardown success without separate evidence.
+
+The explicit restore and clean check must happen before task-system teardown; teardown is not a substitute for safe cleanup.
+
+If the bump has been committed only on its disposable task branch and no other worktree, ref, or remote has been changed, it is still undelivered. Restore pre-existing deliverable paths from the pre-bump revision and remove newly created committed deliverable paths with exact-path `git rm -- <path>...`. Remove cleanup-only paths separately as described above. Verify that the staged reversal contains exactly the deliverable paths and make a separate cleanup commit so the task worktree is clean; do not amend or reset the bump commit. Then continue directly with the clean check, outcome note, report, and terminal discard action above rather than trying to restore the same paths again.
+
+Once delivery has mutated another worktree, ref, remote branch, deployed generation, or activated runtime, rollback takes precedence over the otherwise permitted small-fix path. Do not attempt a fix or retry, and do not pretend that cleaning the task worktree rolls back the delivered bump. Preserve the same diagnostics and follow only an applicable repository-prescribed rollback procedure, restricted to the reviewed bump paths. The procedure must restore and directly verify every mutated source/delivery state and every deployed or activated runtime state; source rollback alone is insufficient after activation. Confirm every affected worktree is clean afterward. If no such safe and complete procedure exists, stop and ask the user how to handle the delivered state; do not discard or finish the task, rewrite history, force-push, or invent a rollback.
 
 ## Bump-time breadcrumbs
 
@@ -144,33 +194,37 @@ Treat every match as a required bump-time check. Follow its instructions when th
    - Read the task file.
    - Ensure front matter has `skill: bump-nix`.
    - Require a completely clean task worktree and index as described above.
+   - Record the pre-bump revision and initialize the explicit deliverable-path and cleanup-only-path lists.
 2. Check for no-op:
    - Confirm GitHub CLI authentication with `gh auth status --hostname github.com`.
-   - Run the authenticated default full update command: `nix --option extra-access-tokens "github.com=$(gh auth token --hostname github.com)" flake update`.
+   - Acquire and validate the token separately as described above, then run the default full update as `nix --option extra-access-tokens "github.com=$github_token" flake update`, preserve its status, and unset the token.
+   - If GitHub token acquisition fails before Nix starts, require the worktree to remain clean and ask the user to authenticate as described above; this prerequisite failure is neither a no-op nor a failed bump. For any other update-command failure, refresh both explicit path lists from status, classify the failure against the fail-fast threshold, and follow **Discarding a failed bump** unless one permitted repository-local fix clearly qualifies. A failed command is not a no-op even when it left `flake.lock` unchanged.
    - Check whether the full/default update changed `flake.lock`.
-   - If the full/default `nix flake update` produces no lockfile changes, abort immediately:
-     - Document that the update is unnecessary (no changes to bump)
-     - Do not proceed with commit, merge, or deploy
+   - If the successful full/default `nix flake update` produces no lockfile changes, abort immediately:
+     - Add a concise task-note outcome headed **No-op update** stating that the default full update produced no changes and was unnecessary.
+     - Confirm the task worktree remains clean and report the no-op to the user.
+     - Do not proceed with commit, merge, or deploy; finish the task with the task system's normal successful finish operation.
    - If lockfile changes are detected, proceed to step 3.
 3. Implement bump:
    - Keep the `flake.lock` changes from the full/default `nix flake update`.
    - Review `flake.lock` changes and keep only bump-related updates.
    - Do not revert non-`nixpkgs` input updates merely because they are not `nixpkgs`; inputs such as `llm-agents` are part of the intended package bump surface.
-   - Search for and evaluate every `TODO(bump-nix):` breadcrumb as described above.
+   - Search for and evaluate every `TODO(bump-nix):` breadcrumb as described above. Classify any required repository change against the fail-fast threshold before implementing it; a compatibility finding can require discard even when no command has failed.
    - If `llm-agents` updates Pi:
      - Determine the old and new Pi versions from the corresponding `llm-agents` revisions.
-     - Read the Pi changelog for every intervening release before continuing. Treat breaking changes, migrations, removals, and behavior changes as required checks against the repository's Pi settings, themes, launchers, activation code, extensions, and agent workflows. Follow linked Pi documentation for entries that may affect the setup, implement required migrations, and add targeted verification where appropriate.
+     - Read the Pi changelog for every intervening release before continuing. Treat breaking changes, migrations, removals, and behavior changes as required checks against the repository's Pi settings, themes, launchers, activation code, extensions, and agent workflows. Follow linked Pi documentation for entries that may affect the setup. Classify every required migration or fix against the fail-fast threshold before implementation; discard a nontrivial incompatibility based on the documented finding without waiting for a command to fail.
      - If the repository carries a custom `apply_patch` extension, check whether upstream Pi now provides that tool. Compare provider integration, schema, diff semantics, file-mutation serialization, failure behavior, rendering, and default activation. Document the compatibility decision and retain, adapt, or remove the custom extension based on the comparison; do not remove it solely because an upstream tool has the same name.
-   - Build and review the explicit changed-path list. Every path must be attributable to the bump or an approved bump-related fix.
+   - Build and review both explicit path lists. Every deliverable path must be attributable to the bump or an approved bump-related fix; every cleanup-only path must be an artifact created by a known workflow command.
 4. Verify:
-   - Run repo checks needed to validate the bump (for example `nix --option extra-access-tokens "github.com=$(gh auth token --hostname github.com)" flake check` or an authenticated targeted build/eval command).
-   - If verification reveals a fixable issue caused by the bump, fix it and rerun the relevant checks.
+   - Run repo checks needed to validate the bump (for example an authenticated `nix flake check` or targeted build/eval command), using the separately guarded token pattern above.
+   - Classify any failure against the fail-fast threshold. If every condition is met, make at most one fix attempt and run the narrow targeted check once before broader required verification. Otherwise follow **Discarding a failed bump** immediately.
    - Order work to find cheap failures before expensive realization: complete lockfile review, breadcrumb and changelog checks, evaluation/static checks, effective-configuration inspection, and the realization-plan preflight before a heavyweight build or apply.
    - Run one comprehensive check/build for each materially different source state. After a fix, rerun the failed or affected check first; repeat an already-successful heavyweight check only when the fix can affect it or repository policy requires a final rerun.
-   - A cache hit proves only that an accepted binary was available. If the bump exposes a genuine source-build failure, fix the source or packaging issue and rerun the narrow failing derivation from source where the host and repository policy support that test. Do not add or rely on a substituter to conceal the failure, and do not disable substitution for an entire deployment merely to prove one derivation.
+   - A cache hit proves only that an accepted binary was available. A source-build, source-fetch, toolchain, TLS, or upstream packaging failure is nontrivial unless the remedy independently meets every fail-fast condition. Do not add or rely on a substituter to conceal the failure, and do not disable substitution for an entire deployment merely to investigate one derivation.
    - Record proof in the task file when the task workflow in use expects verification notes.
 5. Commit in task worktree:
-   - Stage only the explicit reviewed path list with `git add -- <path>...`.
+   - Remove every cleanup-only path individually with `rm -- <path>...`, then verify each is absent with checks that detect dangling symlinks as well as existing files. Stop rather than recursively removing a directory or touching an unlisted path.
+   - Stage only the explicit reviewed deliverable-path list with `git add -- <path>...`.
    - Run every worktree and staging safety check above.
    - `git commit -m "Bump flake inputs"`
    - Confirm the task worktree is clean after the commit.
@@ -182,12 +236,12 @@ Treat every match as a required bump-time check. Follow its instructions when th
    - After any repository-prescribed merge or staging step and before its commit or push, inspect the complete staged diff and confirm it contains only the reviewed bump result. Never use broad staging to repair a discrepancy.
    - Inspect effective Nix settings and the expected realization plan before the expensive deployment. When the entry point invokes nested Nix, use the authenticated helper and structured capture described above.
    - Perform the repository-required final apply or deployment against the delivered result, then perform every prescribed fresh-login or runtime smoke test. Build success, delivery success, deployment success, and runtime pickup are distinct evidence; report only what was directly verified.
-   - If delivery, deployment, or a prescribed smoke test reveals a fixable issue caused by the bump, fix it, restage as required, and rerun the narrow failing check before repeating the affected required delivery/deployment step. Do not rerun unrelated heavyweight checks unless the fix can affect them or policy requires it.
+   - Before the first delivery-state mutation, classify failures such as precondition checks against the fail-fast threshold and permit at most the one small-fix path. After any other worktree, ref, remote, deployed generation, or runtime has been mutated, do not fix or retry: the rollback precedence in **Discarding a failed bump** applies even if a possible fix appears small.
    - Summarize the final deployment capture and compare retry captures when applicable. Distinguish substitutions/downloads, uploads or direction-unknown transfers, derivation builds, elapsed and cumulative times, slow derivations, genuinely repeated work, unknown outcomes, and unfinished closure work. Report build locality only when separate evidence establishes it.
-   - If you cannot safely fix the issue, stop and alert the user with the blocker.
+   - If the repository-prescribed rollback succeeds and restores all delivered bump paths, refs, remotes, deployed generations, and activated runtime state, directly verify the required runtime pickup and confirm affected worktrees are clean. Then record **Failed bump — discard requested**, report that it is being discarded, and invoke task discard as the terminal action. If complete rollback or runtime verification is unavailable or unsafe, stop and alert the user with the blocker and delivered-state boundary.
 7. Finish task:
    - Confirm the task worktree is clean with `git status --short`. If it is not empty, stop and resolve the worktree state before finishing.
-   - Run `emacsclient -e '(my/task-finish "<task-id>")'` only after all required verification, including apply-time verification, is complete.
+   - Run `emacsclient -e '(my/task-finish "<task-id>")'` only after all required verification, including apply-time verification, is complete, or for the explicitly documented no-op outcome in step 2. Failed bumps use the discard path instead and must never be reported as no-ops.
 
 ## Completion report for Pi updates
 
