@@ -29,7 +29,7 @@
           exec-path-from-shell
           fontaine
           forge
-          ghostel
+          (import ../../pkgs/ghostel.nix { inherit pkgs epkgs; })
           jsonnet-mode
           lin
           magit
