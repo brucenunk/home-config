@@ -8,7 +8,7 @@
       # Keep Darwin on stock pkgs.emacs so it can use nixpkgs cache substitutes.
       # Adding overrideAttrs here creates a custom derivation and can force slow
       # local Emacs rebuilds during flake bumps.
-      package = if pkgs.stdenv.isLinux then pkgs.emacs-pgtk else pkgs.emacs;
+      package = if pkgs.stdenv.isLinux then pkgs.emacs31-pgtk else pkgs.emacs31;
 
       # Nix owns Emacs package and Tree-sitter parser installation; use-package
       # owns package configuration in config/emacs.
