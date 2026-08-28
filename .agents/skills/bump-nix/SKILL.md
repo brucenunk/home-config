@@ -183,7 +183,7 @@ After a successful lockfile update, find every breadcrumb with:
 ```bash
 rg -n 'TODO\(bump-nix\):' . \
   --glob '!**/.git/**' \
-  --glob '!config/agents/skills/bump-nix/SKILL.md'
+  --glob '!.agents/skills/bump-nix/SKILL.md'
 ```
 
 Treat every match as a required bump-time check. Follow its instructions when the condition is now satisfied; otherwise leave the marker in place. Do not remove a marker merely because it was inspected.
@@ -202,7 +202,7 @@ old_nixpkgs_path=$(nix --option extra-access-tokens "github.com=$github_token" e
 The repository's `pkgs/ghostel.nix` is deliberately a single supported version with one hash-pinned release asset per supported platform. Do not turn it into a fallback, retain the old nixpkgs package, or add another metadata lookup. Run the strict updater on every non-no-op bump, including when the two resolved versions are equal:
 
 ```bash
-config/agents/skills/bump-nix/scripts/update-ghostel-module \
+.agents/skills/bump-nix/scripts/update-ghostel-module \
   --package pkgs/ghostel.nix \
   --old-version "$old_ghostel_version" \
   --new-version "$new_ghostel_version" \
@@ -213,10 +213,10 @@ For an unchanged version, the updater validates that every supported platform st
 
 ```bash
 gh api --method GET "repos/dakra/ghostel/releases/tags/v${new_ghostel_version}"
-config/agents/skills/bump-nix/scripts/nix-with-gh-token -- \
+.agents/skills/bump-nix/scripts/nix-with-gh-token -- \
   nix store prefetch-file --json \
   "https://github.com/dakra/ghostel/releases/download/v${new_ghostel_version}/ghostel-module-aarch64-macos.dylib"
-config/agents/skills/bump-nix/scripts/nix-with-gh-token -- \
+.agents/skills/bump-nix/scripts/nix-with-gh-token -- \
   nix store prefetch-file --json \
   "https://github.com/dakra/ghostel/releases/download/v${new_ghostel_version}/ghostel-module-x86_64-linux.so"
 ```

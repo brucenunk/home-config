@@ -6,7 +6,6 @@
 
     let
       skillNames = [
-        "bump-nix"
         "pull-request"
         "review"
         "task-workflow-v3"
