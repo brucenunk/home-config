@@ -1,0 +1,321 @@
+#!/usr/bin/env python3
+"""Strictly refresh Ghostel's versioned prebuilt-module hashes."""
+
+from __future__ import annotations
+
+import argparse
+import difflib
+import json
+import pathlib
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+
+REPOSITORY = "dakra/ghostel"
+EXPECTED_ASSETS = {
+    "aarch64-darwin": "ghostel-module-aarch64-macos.dylib",
+    "x86_64-linux": "ghostel-module-x86_64-linux.so",
+}
+SRI_RE = re.compile(r"sha256-[A-Za-z0-9+/]{43}=")
+VERSION_RE = re.compile(r"[0-9]+(?:\.[0-9]+)+")
+
+
+class UpdateError(Exception):
+    pass
+
+
+def command_text(arguments: list[str]) -> str:
+    return " ".join(arguments)
+
+
+def diagnostic_excerpt(result: subprocess.CompletedProcess[str]) -> str:
+    diagnostic = (
+        result.stderr.strip() or result.stdout.strip() or "no diagnostic output"
+    )
+    diagnostic = re.sub(r"github\.com=[^\s]+", "github.com=<redacted>", diagnostic)
+    diagnostic = re.sub(
+        r"(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+",
+        "<redacted-github-token>",
+        diagnostic,
+    )
+    return diagnostic[-2000:]
+
+
+def run_json(arguments: list[str]) -> dict:
+    print(f"+ {command_text(arguments)}", file=sys.stderr)
+    result = subprocess.run(arguments, check=False, text=True, capture_output=True)
+    if result.returncode != 0:
+        raise UpdateError(
+            f"command failed with exit status {result.returncode}: "
+            f"{command_text(arguments)}\n{diagnostic_excerpt(result)}"
+        )
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise UpdateError(
+            f"command returned invalid JSON: {command_text(arguments)}"
+        ) from error
+    if not isinstance(value, dict):
+        raise UpdateError(
+            f"command returned non-object JSON: {command_text(arguments)}"
+        )
+    return value
+
+
+def parse_package(
+    text: str,
+) -> tuple[
+    str,
+    tuple[int, int],
+    dict[str, tuple[str, str]],
+    dict[str, tuple[int, int]],
+]:
+    version_matches = list(
+        re.finditer(r'^  supportedVersion = "([^"]+)";$', text, re.MULTILINE)
+    )
+    if len(version_matches) != 1:
+        raise UpdateError("expected exactly one supportedVersion assignment")
+
+    lines = text.splitlines(keepends=True)
+    module_starts = [
+        index for index, line in enumerate(lines) if line == "  modules = {\n"
+    ]
+    if len(module_starts) != 1:
+        raise UpdateError("expected exactly one canonical modules attrset")
+    module_start = module_starts[0]
+    try:
+        module_end = lines.index("  };\n", module_start + 1)
+    except ValueError as error:
+        raise UpdateError("canonical modules attrset is not terminated") from error
+
+    entry_start_re = re.compile(r'^    "([^"]+)" = \{\n$')
+    asset_re = re.compile(r'^      asset = "([^"]+)";\n$')
+    hash_re = re.compile(r'^      hash = "([^"]*)";\n$')
+    entries: dict[str, tuple[str, str]] = {}
+    hash_spans: dict[str, tuple[int, int]] = {}
+    line_offsets: list[int] = []
+    offset = 0
+    for line in lines:
+        line_offsets.append(offset)
+        offset += len(line)
+
+    index = module_start + 1
+    while index < module_end:
+        if index + 3 >= module_end:
+            raise UpdateError("unexpected content in canonical modules attrset")
+        entry_match = entry_start_re.fullmatch(lines[index])
+        asset_match = asset_re.fullmatch(lines[index + 1])
+        hash_match = hash_re.fullmatch(lines[index + 2])
+        if (
+            entry_match is None
+            or asset_match is None
+            or hash_match is None
+            or lines[index + 3] != "    };\n"
+        ):
+            raise UpdateError("unexpected content or formatting in modules attrset")
+        system = entry_match.group(1)
+        asset = asset_match.group(1)
+        hash_value = hash_match.group(1)
+        if system in entries:
+            raise UpdateError(f"duplicate module entry for {system}")
+        entries[system] = (asset, hash_value)
+        hash_start, hash_end = hash_match.span(1)
+        hash_spans[system] = (
+            line_offsets[index + 2] + hash_start,
+            line_offsets[index + 2] + hash_end,
+        )
+        index += 4
+
+    if set(entries) != set(EXPECTED_ASSETS):
+        raise UpdateError(
+            "unsupported platform or missing module entry; expected exactly "
+            + ", ".join(EXPECTED_ASSETS)
+        )
+    for system, expected_asset in EXPECTED_ASSETS.items():
+        asset, hash_value = entries[system]
+        if asset != expected_asset:
+            raise UpdateError(f"unexpected release asset for {system}: {asset}")
+        if not SRI_RE.fullmatch(hash_value):
+            raise UpdateError(f"missing or invalid hash entry for {system}")
+
+    return version_matches[0].group(1), version_matches[0].span(1), entries, hash_spans
+
+
+def version_tuple(version: str) -> tuple[int, ...]:
+    if not VERSION_RE.fullmatch(version):
+        raise UpdateError(f"non-mechanical Ghostel version: {version}")
+    return tuple(int(component) for component in version.split("."))
+
+
+def validate_release(release: dict, version: str) -> None:
+    tag = f"v{version}"
+    if release.get("tag_name") != tag:
+        raise UpdateError(f"release tag does not exactly match {tag}")
+    if release.get("draft") is not False or release.get("prerelease") is not False:
+        raise UpdateError(f"{tag} is a draft or prerelease")
+
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        raise UpdateError("release assets are missing")
+    by_name = {
+        asset.get("name"): asset
+        for asset in assets
+        if isinstance(asset, dict) and isinstance(asset.get("name"), str)
+    }
+    for asset_name in EXPECTED_ASSETS.values():
+        asset = by_name.get(asset_name)
+        if asset is None:
+            raise UpdateError(f"release {tag} is missing asset {asset_name}")
+        if asset.get("state") != "uploaded":
+            raise UpdateError(f"release asset is not fully uploaded: {asset_name}")
+        expected_url = (
+            f"https://github.com/{REPOSITORY}/releases/download/{tag}/{asset_name}"
+        )
+        if asset.get("browser_download_url") != expected_url:
+            raise UpdateError(f"release asset has unexpected URL: {asset_name}")
+
+
+def load_fixture(path: pathlib.Path) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise UpdateError(f"could not read fixture {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise UpdateError(f"fixture is not a JSON object: {path}")
+    return value
+
+
+def release_metadata(version: str, fixture_dir: pathlib.Path | None) -> dict:
+    command = [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        f"repos/{REPOSITORY}/releases/tags/v{version}",
+    ]
+    if fixture_dir is not None:
+        print(f"+ {command_text(command)}  # fixture: release.json", file=sys.stderr)
+        return load_fixture(fixture_dir / "release.json")
+    return run_json(command)
+
+
+def prefetch_hashes(version: str, fixture_dir: pathlib.Path | None) -> dict[str, str]:
+    script_dir = pathlib.Path(__file__).resolve().parent
+    hashes: dict[str, str] = {}
+    for system, asset_name in EXPECTED_ASSETS.items():
+        url = (
+            f"https://github.com/{REPOSITORY}/releases/download/v{version}/{asset_name}"
+        )
+        command = [
+            str(script_dir / "nix-with-gh-token"),
+            "--",
+            "nix",
+            "store",
+            "prefetch-file",
+            "--json",
+            url,
+        ]
+        if fixture_dir is not None:
+            print(
+                f"+ {command_text(command)}  # fixture: {system}.json",
+                file=sys.stderr,
+            )
+            result = load_fixture(fixture_dir / f"{system}.json")
+        else:
+            result = run_json(command)
+        hash_value = result.get("hash")
+        if not isinstance(hash_value, str) or not SRI_RE.fullmatch(hash_value):
+            raise UpdateError(f"prefetch returned an invalid hash for {system}")
+        hashes[system] = hash_value
+    return hashes
+
+
+def updated_text(
+    original: str,
+    new_version: str,
+    version_span: tuple[int, int],
+    hash_spans: dict[str, tuple[int, int]],
+    hashes: dict[str, str],
+) -> str:
+    replacements = [(version_span[0], version_span[1], new_version)]
+    replacements.extend(
+        (hash_spans[system][0], hash_spans[system][1], hash_value)
+        for system, hash_value in hashes.items()
+    )
+    result = original
+    for start, end, replacement in sorted(replacements, reverse=True):
+        result = result[:start] + replacement + result[end:]
+    return result
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--package", type=pathlib.Path, required=True)
+    parser.add_argument("--old-version", required=True)
+    parser.add_argument("--new-version", required=True)
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--fixture-dir", type=pathlib.Path)
+    args = parser.parse_args()
+
+    try:
+        original = args.package.read_text(encoding="utf-8")
+        supported_version, version_span, _entries, hash_spans = parse_package(original)
+        if supported_version != args.old_version:
+            raise UpdateError(
+                "non-mechanical version relationship: package supports "
+                f"{supported_version}, but pre-bump nixpkgs resolved {args.old_version}"
+            )
+        old_tuple = version_tuple(args.old_version)
+        new_tuple = version_tuple(args.new_version)
+        if old_tuple == new_tuple:
+            print(
+                f"Ghostel {args.new_version} is unchanged and has complete prebuilt-module hashes"
+            )
+            return 0
+        if new_tuple <= old_tuple:
+            raise UpdateError(
+                f"non-mechanical Ghostel version relationship: {args.old_version} -> {args.new_version}"
+            )
+
+        release = release_metadata(args.new_version, args.fixture_dir)
+        validate_release(release, args.new_version)
+        hashes = prefetch_hashes(args.new_version, args.fixture_dir)
+        result = updated_text(
+            original, args.new_version, version_span, hash_spans, hashes
+        )
+        if args.dry_run:
+            sys.stdout.writelines(
+                difflib.unified_diff(
+                    original.splitlines(keepends=True),
+                    result.splitlines(keepends=True),
+                    fromfile=str(args.package),
+                    tofile=str(args.package),
+                )
+            )
+        else:
+            temporary_path: pathlib.Path | None = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", dir=args.package.parent, delete=False
+                ) as temporary:
+                    temporary.write(result)
+                    temporary_path = pathlib.Path(temporary.name)
+                temporary_path.chmod(stat.S_IMODE(args.package.stat().st_mode))
+                temporary_path.replace(args.package)
+                temporary_path = None
+            finally:
+                if temporary_path is not None:
+                    temporary_path.unlink(missing_ok=True)
+            print(
+                f"Updated {args.package}: Ghostel {args.old_version} -> {args.new_version}"
+            )
+        return 0
+    except (OSError, UpdateError) as error:
+        print(f"update-ghostel-module: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

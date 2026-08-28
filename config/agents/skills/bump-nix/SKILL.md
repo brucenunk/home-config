@@ -188,6 +188,59 @@ rg -n 'TODO\(bump-nix\):' . \
 
 Treat every match as a required bump-time check. Follow its instructions when the condition is now satisfied; otherwise leave the marker in place. Do not remove a marker merely because it was inspected.
 
+## Ghostel prebuilt-module compatibility
+
+Every bump must compare the Ghostel version resolved directly from nixpkgs before and after `flake update`, even when `flake.lock` does not visibly identify Ghostel. Before the update, record both values below; after the update, evaluate the same expressions as `new_ghostel_version` and `new_nixpkgs_path`. Run these Nix evaluations with the guarded GitHub token pattern from **Authenticated GitHub access**.
+
+```bash
+ghostel_version_expr='let f = builtins.getFlake (toString ./.); pkgs = f.inputs.nixpkgs.legacyPackages.${builtins.currentSystem}; in pkgs.emacsPackages.ghostel.version'
+nixpkgs_path_expr='let f = builtins.getFlake (toString ./.); in f.inputs.nixpkgs.outPath'
+old_ghostel_version=$(nix --option extra-access-tokens "github.com=$github_token" eval --raw --impure --expr "$ghostel_version_expr")
+old_nixpkgs_path=$(nix --option extra-access-tokens "github.com=$github_token" eval --raw --impure --expr "$nixpkgs_path_expr")
+```
+
+The repository's `pkgs/ghostel.nix` is deliberately a single supported version with one hash-pinned release asset per supported platform. Do not turn it into a fallback, retain the old nixpkgs package, or add another metadata lookup. Run the strict updater on every non-no-op bump, including when the two resolved versions are equal:
+
+```bash
+config/agents/skills/bump-nix/scripts/update-ghostel-module \
+  --package pkgs/ghostel.nix \
+  --old-version "$old_ghostel_version" \
+  --new-version "$new_ghostel_version" \
+  --dry-run
+```
+
+For an unchanged version, the updater validates that every supported platform still has a syntactically valid fixed hash and exits without GitHub access. For a version increase, it performs and prints these exact operations before showing the proposed hash-table edit:
+
+```bash
+gh api --method GET "repos/dakra/ghostel/releases/tags/v${new_ghostel_version}"
+config/agents/skills/bump-nix/scripts/nix-with-gh-token -- \
+  nix store prefetch-file --json \
+  "https://github.com/dakra/ghostel/releases/download/v${new_ghostel_version}/ghostel-module-aarch64-macos.dylib"
+config/agents/skills/bump-nix/scripts/nix-with-gh-token -- \
+  nix store prefetch-file --json \
+  "https://github.com/dakra/ghostel/releases/download/v${new_ghostel_version}/ghostel-module-x86_64-linux.so"
+```
+
+The helper accepts only the existing `aarch64-darwin` and `x86_64-linux` entries, exact immutable version-tagged download URLs, stable non-draft release metadata, and Nix SRI hashes. Review its dry-run diff, then repeat the same command without `--dry-run` to make the edit. The test-only `--fixture-dir` mode demonstrates the same commands and edit without network access; never use fixture mode for a real bump.
+
+Before making that edit, compare
+`pkgs/applications/editors/emacs/elisp-packages/manual-packages/ghostel/package.nix`
+under `old_nixpkgs_path` and `new_nixpkgs_path`. Continue mechanically only when the package still exposes the same override interface (`zig`, `zigDeps`, `preBuild`, and `passthru.module`), expects the same module filename and version file, and its changes are limited to the expected Ghostel version/source/fixed hashes. A missing package file, changed build or install behavior, module/asset naming change, ABI or platform change, version downgrade, pre-bump resolved version that differs from `supportedVersion`, unsupported platform, missing release or asset, unexpected release URL/state, or prefetch failure is a non-mechanical compatibility finding. Apply **Discarding a failed bump** immediately; do not edit around it or attempt a source build.
+
+After the activation-package build, evaluate the overridden Ghostel derivation with the actual `pkgs` exported by the selected Home Manager configuration, including its overlays and nixpkgs configuration, and with the same Emacs package set selected by `flake-modules/features/emacs.nix`. Do not substitute `inputs.nixpkgs.legacyPackages`. Capture its recursive derivation closure in the existing temporary log directory:
+
+```bash
+# Set this from the repository-prescribed activation target selected earlier.
+home_configuration='james@wampa'
+ghostel_drv_expr="let f = builtins.getFlake (toString ./.); c = builtins.getAttr \"${home_configuration}\" f.homeConfigurations; pkgs = c.pkgs; emacsCfg = c.config.programs.emacs; epkgs = (pkgs.emacsPackagesFor emacsCfg.package).overrideScope emacsCfg.overrides; in (import (f.outPath + \"/pkgs/ghostel.nix\") { inherit pkgs epkgs; }).drvPath"
+ghostel_drv=$(nix --option extra-access-tokens "github.com=$github_token" eval --raw --impure --expr "$ghostel_drv_expr")
+nix-store -qR "$ghostel_drv" >"$log_dir/ghostel-closure"
+```
+
+Require that closure to contain `ghostel-module-${new_ghostel_version}.drv` and the host's release-asset fetch derivation, and require it not to contain a derivation whose name starts with `zig-` or a Ghostel Zig dependency-fetch derivation. Inspect the asset fetch with `nix derivation show`: its single `.derivations[].structuredAttrs.urls[]` value must equal the exact versioned GitHub URL validated above, and its `.derivations[].outputs.out.hash` must equal the new lookup hash. A derivation filename alone does not prove either property. Then require the built activation package's recursive derivation closure to contain that exact `ghostel_drv`. Search derivation names (the part after the Nix store hash), not arbitrary `zig` substrings in store hashes. Together, these checks prove the activation build selected the hash-pinned prebuilt-module package; unrelated Zig consumers elsewhere in the full activation closure do not invalidate it.
+
+Treat a failed Ghostel compatibility or closure check exactly like any other verification failure under the fail-fast threshold. Only a strict hash refresh made by this helper is the anticipated mechanical fix; packaging, ABI, platform, or dependency-closure changes are not.
+
 ## Steps
 
 1. Confirm task context:
@@ -195,6 +248,7 @@ Treat every match as a required bump-time check. Follow its instructions when th
    - Ensure front matter has `skill: bump-nix`.
    - Require a completely clean task worktree and index as described above.
    - Record the pre-bump revision and initialize the explicit deliverable-path and cleanup-only-path lists.
+   - Record `old_ghostel_version` and `old_nixpkgs_path` as described in **Ghostel prebuilt-module compatibility** before changing the lock file. Run the strict updater with both version arguments set to `old_ghostel_version`; stop if the current package lacks complete hash coverage or has an unexpected version relationship.
 2. Check for no-op:
    - Confirm GitHub CLI authentication with `gh auth status --hostname github.com`.
    - Acquire and validate the token separately as described above, then run the default full update as `nix --option extra-access-tokens "github.com=$github_token" flake update`, preserve its status, and unset the token.
@@ -207,6 +261,7 @@ Treat every match as a required bump-time check. Follow its instructions when th
    - If lockfile changes are detected, proceed to step 3.
 3. Implement bump:
    - Keep the `flake.lock` changes from the full/default `nix flake update`.
+   - Evaluate `new_ghostel_version` and `new_nixpkgs_path`, compare the old and new nixpkgs Ghostel package definitions, and run the strict Ghostel updater as described in **Ghostel prebuilt-module compatibility**. Run it even when the resolved version is unchanged. Classify any non-mechanical finding before continuing.
    - Review `flake.lock` changes and keep only bump-related updates.
    - Do not revert non-`nixpkgs` input updates merely because they are not `nixpkgs`; inputs such as `llm-agents` are part of the intended package bump surface.
    - Search for and evaluate every `TODO(bump-nix):` breadcrumb as described above. Classify any required repository change against the fail-fast threshold before implementing it; a compatibility finding can require discard even when no command has failed.
@@ -217,6 +272,7 @@ Treat every match as a required bump-time check. Follow its instructions when th
    - Build and review both explicit path lists. Every deliverable path must be attributable to the bump or an approved bump-related fix; every cleanup-only path must be an artifact created by a known workflow command.
 4. Verify:
    - Run repo checks needed to validate the bump (for example an authenticated `nix flake check` or targeted build/eval command), using the separately guarded token pattern above.
+   - After building the activation package, perform the Ghostel derivation-closure and activation-selection checks from **Ghostel prebuilt-module compatibility**. The Ghostel subtree must use the versioned prebuilt fetch and must not contain Ghostel's Zig dependency-fetch derivation.
    - Classify any failure against the fail-fast threshold. If every condition is met, make at most one fix attempt and run the narrow targeted check once before broader required verification. Otherwise follow **Discarding a failed bump** immediately.
    - Order work to find cheap failures before expensive realization: complete lockfile review, breadcrumb and changelog checks, evaluation/static checks, effective-configuration inspection, and the realization-plan preflight before a heavyweight build or apply.
    - Run one comprehensive check/build for each materially different source state. After a fix, rerun the failed or affected check first; repeat an already-successful heavyweight check only when the fix can affect it or repository policy requires a final rerun.

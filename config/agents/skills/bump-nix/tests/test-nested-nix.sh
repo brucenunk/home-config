@@ -591,4 +591,7 @@ wait "$runner_pid" || default_signal_status=$?
 [[ $default_signal_status == 143 ]] \
   || fail "expected default signal status 143, got $default_signal_status"
 
-printf '%s\n' 'PASS: nested Nix authentication and reporting safeguards'
+printf '%s\n' 'Checking Ghostel prebuilt-module update safeguards...'
+python3 "$skill_dir/tests/test-ghostel-update.py"
+
+printf '%s\n' 'PASS: bump-nix safeguards'
