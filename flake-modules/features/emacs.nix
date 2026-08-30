@@ -17,6 +17,7 @@
           auto-dark
           avy
           bazel
+          cape
           consult
           consult-denote
           corfu

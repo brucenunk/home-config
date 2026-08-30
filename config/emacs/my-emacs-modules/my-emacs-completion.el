@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; Savehist, which-key, vertico, orderless, marginalia, corfu, consult,
+;; Savehist, which-key, vertico, orderless, marginalia, corfu, cape, consult,
 ;; embark, and avy configuration.
 
 ;;; Code:
@@ -49,17 +49,20 @@
 
 ;; Completion.
 ;; https://github.com/minad/corfu
+(defun my/corfu-enable-auto ()
+  "Enable Corfu automatic completion in the current supported buffer."
+  (setq-local corfu-auto t))
+
 (use-package corfu
   :ensure nil
+  :demand t
+  :hook ((prog-mode eshell-mode) . my/corfu-enable-auto)
   :init
   ;; Must be set before calling `global-corfu-mode'.
-  (setq corfu-auto t
+  (setq corfu-auto nil
         corfu-auto-delay 0.1
         corfu-auto-prefix 2
-        corfu-separator ?\s
-        corfu-excluded-modes '(eshell-mode
-                               ghostel-mode
-                               help-mode))
+        corfu-separator ?\s)
   :custom
   (corfu-cycle t)
   (corfu-preselect 'prompt)
@@ -72,6 +75,51 @@
   ;; Enable indentation+completion using the TAB key.
   (setq tab-always-indent 'complete)
   (global-corfu-mode))
+
+;; https://github.com/minad/cape
+(use-package cape
+  :ensure nil
+  :demand t
+  :config
+  (defun my/cape-file-capf (directory)
+    "Return a `cape-file' CAPF which resolves relative to DIRECTORY."
+    (let ((cape-file-directory directory))
+      (pcase (cape-file)
+        (`(,beg ,end ,table . ,properties)
+         (let* ((properties (copy-sequence properties))
+                (location (plist-get properties :company-location)))
+           (when location
+             (setq properties
+                   (plist-put
+                    properties :company-location
+                    (lambda (&rest args)
+                      (let ((default-directory directory))
+                        (apply location args))))))
+           `(,beg ,end
+                  ,(lambda (string predicate action)
+                     (let ((default-directory directory))
+                       (complete-with-action action table string predicate)))
+                  ,@properties))))))
+
+  (defun my/cape-file (prefix)
+    "Complete a file, prompting for a temporary base directory with PREFIX."
+    (interactive "P")
+    (if prefix
+        (let ((directory
+               (read-directory-name "File completion base directory: "
+                                    default-directory nil t)))
+          (cape-interactive
+           '(cape-file-directory-must-exist)
+           (lambda () (my/cape-file-capf directory))))
+      (cape-file t)))
+
+  (defun my/cape-dabbrev-capf ()
+    "Complete via `cape-dabbrev' after a three-character prefix."
+    (funcall (cape-capf-prefix-length #'cape-dabbrev 3)))
+
+  (keymap-set cape-prefix-map "f" #'my/cape-file)
+  (keymap-global-set "C-c p" cape-prefix-map)
+  (add-hook 'completion-at-point-functions #'my/cape-dabbrev-capf 90))
 
 (use-package corfu-popupinfo
   :ensure nil
