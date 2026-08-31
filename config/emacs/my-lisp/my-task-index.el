@@ -107,7 +107,7 @@ Returns the number of pruned entries."
 ;;;###autoload
 (defun my/task-index-entry (task-id)
   "Return read-only task entry plist for TASK-ID, or nil."
-  (when-let ((entry (my/task-index-get task-id)))
+  (when-let* ((entry (my/task-index-get task-id)))
     (copy-tree entry)))
 
 ;;;###autoload
@@ -151,7 +151,7 @@ Returns the number of pruned entries."
   (let ((expanded (my/task-index--normalize-worktree path))
         (found nil))
     (maphash (lambda (task-id entry)
-               (when-let ((wt (plist-get entry :worktree)))
+               (when-let* ((wt (plist-get entry :worktree)))
                  (when (string= wt expanded)
                    (setq found task-id))))
              my/task-index)
@@ -162,7 +162,7 @@ Returns the number of pruned entries."
   "Return list of all transient non-nil :worktree values."
   (let (result)
     (maphash (lambda (_k v)
-               (when-let ((wt (plist-get v :worktree)))
+               (when-let* ((wt (plist-get v :worktree)))
                  (push wt result)))
              my/task-index)
     result))

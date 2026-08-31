@@ -70,7 +70,7 @@ Validates epic path exists; logs and clears if stale."
         (with-temp-buffer
           (insert-file-contents my/task-list-filter-file)
           (let ((state (read (current-buffer))))
-            (when-let ((epic (alist-get 'epic state)))
+            (when-let* ((epic (alist-get 'epic state)))
               (if (file-directory-p epic)
                   (setq my/task-list-epic epic)
                 (message "Warning: stale epic path cleared: %s" epic)
@@ -146,7 +146,7 @@ Uses temp file + rename for atomicity."
 (defun my/task-list--task-prefix-map ()
   "Return task prefix map for task-list buffers."
   (let ((map (make-sparse-keymap)))
-    (when-let ((global-task-map (lookup-key (current-global-map) (kbd "C-c t"))))
+    (when-let* ((global-task-map (lookup-key (current-global-map) (kbd "C-c t"))))
       (set-keymap-parent map global-task-map))
     (define-key map (kbd "p") #'my/task-list-pickup)
     (define-key map (kbd "f") (symbol-value 'my/task-list-filter-map))
@@ -279,7 +279,7 @@ Uses `my/task-list-regex', `my/task-list-epic', and
 
 (defun my/task-list--task-id-at-point ()
   "Return the denote task id at point, or nil when point is not on a task file."
-  (when-let ((file (ignore-errors (dired-get-filename nil t))))
+  (when-let* ((file (ignore-errors (dired-get-filename nil t))))
     (when (and (denote-file-is-in-denote-directory-p file)
                (denote-file-has-denoted-filename-p file))
       (denote-retrieve-filename-identifier file))))
@@ -335,7 +335,7 @@ Uses `my/task-list-regex', `my/task-list-epic', and
   (require 'my-task)
   (let ((table (make-hash-table :test 'equal)))
     (dolist (entry (my/task-state-entries))
-      (when-let ((task-id (plist-get entry :task-id)))
+      (when-let* ((task-id (plist-get entry :task-id)))
         (puthash task-id entry table)))
     table))
 

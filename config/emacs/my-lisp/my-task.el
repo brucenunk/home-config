@@ -248,7 +248,7 @@ Paths under ~/work/tasks/ are task-note paths, not repo worktrees."
 
 (defun my/task--entry-owner-repo (entry)
   "Return (OWNER . REPO) derived from indexed ENTRY, or nil."
-  (when-let ((worktree (plist-get entry :worktree)))
+  (when-let* ((worktree (plist-get entry :worktree)))
     (my/task--owner-repo-from-path worktree)))
 
 ;;;###autoload
@@ -257,7 +257,7 @@ Paths under ~/work/tasks/ are task-note paths, not repo worktrees."
   (or (my/task--entry-owner-repo entry)
       (when-let* ((task-id (my/task--resolve-id task)))
         (require 'my-task-index)
-        (when-let ((indexed-entry (my/task-index-get task-id)))
+        (when-let* ((indexed-entry (my/task-index-get task-id)))
           (my/task--entry-owner-repo indexed-entry)))
       (and (stringp task)
            (my/task--owner-repo-from-path task))
@@ -371,7 +371,7 @@ in UI read paths."
 ;;;###autoload
 (defun my/task-worktree (task)
   "Return worktree path for TASK, or nil."
-  (when-let ((task-id (my/task--resolve-id task)))
+  (when-let* ((task-id (my/task--resolve-id task)))
     (or (my/task-index-worktree task-id)
         (my/task--live-worktree task-id))))
 
@@ -380,7 +380,7 @@ in UI read paths."
   "Return validated worktree path for TASK, or nil.
 Unlike the cheap snapshot accessor, this ignores missing or stale cached paths
 and falls back to live branch discovery when possible."
-  (when-let ((task-id (my/task--resolve-id task)))
+  (when-let* ((task-id (my/task--resolve-id task)))
     (let* ((indexed (my/task-index-worktree task-id))
            (expected-branch (my/task-branch task-id)))
       (or (and indexed
@@ -540,10 +540,10 @@ When LIVE-WORKTREES is non-nil, it should be a hash table mapping task ids to
 live attached worktree paths for this read pass. Without that explicit table,
 this stays on cached transient state only."
   (when (equal (my/task-status task-id) "todo")
-    (or (when-let ((entry (my/task-index-entry task-id)))
+    (or (when-let* ((entry (my/task-index-entry task-id)))
           (when (plist-get entry :worktree)
             entry))
-        (when-let ((worktree (and live-worktrees
+        (when-let* ((worktree (and live-worktrees
                                   (gethash task-id live-worktrees))))
           (list :task-id task-id :worktree worktree)))))
 
@@ -563,7 +563,7 @@ this stays on cached transient state only."
   (let ((live-worktrees (my/task--live-worktree-table files))
         task-ids wip-task-ids plain-task-ids invalid-task-ids)
     (dolist (file files)
-      (when-let ((task-id (denote-retrieve-filename-identifier file)))
+      (when-let* ((task-id (denote-retrieve-filename-identifier file)))
         (pcase (my/task-status file)
           ("todo"
            (push task-id task-ids)
@@ -733,7 +733,7 @@ this stays on cached transient state only."
   "Resolve task from context (dired, buffer, prompt) to task-id."
   (cond
    ((derived-mode-p 'dired-mode)
-    (when-let ((f (dired-get-filename nil t)))
+    (when-let* ((f (dired-get-filename nil t)))
       (when (denote-file-is-in-denote-directory-p f)
         (denote-retrieve-filename-identifier f))))
    ((and (bound-and-true-p my/task-session-task-id)

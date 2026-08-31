@@ -108,7 +108,7 @@ Josip independently rejects values above 90 seconds."
 
 (defun my/dictation--process-stderr (process)
   "Return captured stderr text for PROCESS."
-  (when-let ((buffer (process-get process 'stderr-buffer)))
+  (when-let* ((buffer (process-get process 'stderr-buffer)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (string-trim (buffer-string))))))
@@ -153,7 +153,7 @@ Josip independently rejects values above 90 seconds."
 
 (defun my/dictation--cleanup-recorder (process)
   "Kill PROCESS stderr buffer if present."
-  (when-let ((buffer (and process (process-get process 'stderr-buffer))))
+  (when-let* ((buffer (and process (process-get process 'stderr-buffer))))
     (when (buffer-live-p buffer)
       (kill-buffer buffer))))
 

@@ -212,7 +212,7 @@ When ADVANCED-P is non-nil, include backend advanced startup controls."
   "Return non-nil when BUFFER is a live agent session.
 Buffers without an associated process are treated as non-live sessions."
   (and (buffer-live-p buffer)
-       (when-let ((proc (get-buffer-process buffer)))
+       (when-let* ((proc (get-buffer-process buffer)))
          (process-live-p proc))))
 
 (defun my/agent--ghostel-title-freeze ()
@@ -248,7 +248,7 @@ Buffers without an associated process are treated as non-live sessions."
                       (floor (window-screen-lines))))
             (adjust-fn (process-get proc 'adjust-window-size-function)))
         (if (functionp adjust-fn)
-            (when-let ((size (funcall adjust-fn proc (list target-window))))
+            (when-let* ((size (funcall adjust-fn proc (list target-window))))
               (set-process-window-size proc (cdr size) (car size)))
           (set-process-window-size proc (max 1 height) (max 1 width)))))))
 
@@ -259,7 +259,7 @@ Buffers without an associated process are treated as non-live sessions."
   (let* ((default-directory (file-name-as-directory dir))
          (effective-display-fn (or display-fn #'pop-to-buffer-same-window))
          (existing-buffer (get-buffer buffer-name)))
-    (when-let ((proc (and existing-buffer (get-buffer-process existing-buffer))))
+    (when-let* ((proc (and existing-buffer (get-buffer-process existing-buffer))))
       (when (process-live-p proc)
         (user-error "Buffer %s already has a running process" buffer-name)))
     (if (fboundp 'ghostel-exec)
@@ -303,7 +303,7 @@ Buffers without an associated process are treated as non-live sessions."
                       ghostel-kill-buffer-on-exit nil)
           (my/agent--ghostel-disable-kitty-graphics)
           (my/agent--ghostel-title-freeze)
-          (when-let ((proc (get-buffer-process (current-buffer))))
+          (when-let* ((proc (get-buffer-process (current-buffer))))
             (process-send-string proc command)
             (process-send-string proc "\n"))
           buffer)))))

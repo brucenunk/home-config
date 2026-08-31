@@ -176,7 +176,7 @@
               (should-not ghostel-kill-buffer-on-exit)
               (should (zerop ghostel-kitty-graphics-storage-limit))
               (should-not ghostel-set-title-function))))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer))
       (delete-directory dir t))))
 
@@ -225,7 +225,7 @@
                 (should-not ghostel-set-title-function)))))
       (when had-ghostel-exec
         (fset 'ghostel-exec ghostel-exec-orig))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer))
       (delete-directory dir t))))
 
@@ -246,7 +246,7 @@
                     ((symbol-function 'ghostel-exec)
                      (lambda (buffer _program &optional _args)
                        (setq captured-window-buffer
-                             (when-let ((window (get-buffer-window buffer t)))
+                             (when-let* ((window (get-buffer-window buffer t)))
                                (window-buffer window)))
                        (let ((proc (start-process "my-agent-ghostel-hidden-test"
                                                   buffer
@@ -260,7 +260,7 @@
                            :display-fn #'ignore)))
               (should (buffer-live-p buffer))
               (should (eq captured-window-buffer buffer)))))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer))
       (delete-directory dir t))))
 
@@ -298,7 +298,7 @@
               (should (equal (buffer-name buffer) buffer-name)))))
       (when had-ghostel-exec
         (fset 'ghostel-exec ghostel-exec-orig))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer))
       (delete-directory dir t))))
 

@@ -51,7 +51,7 @@
 
 (defun my/task-finish--refresh-task-buffer (file)
   "Refresh the visiting buffer for FILE when it is safe to do so."
-  (when-let ((buf (get-file-buffer file)))
+  (when-let* ((buf (get-file-buffer file)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
         (if (buffer-modified-p)

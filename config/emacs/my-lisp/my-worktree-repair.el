@@ -81,13 +81,13 @@ queries are unavailable, so this stays path-based rather than requiring
 
 (defun my/worktree-repair--task-matches-worktree-p (task-id owner repo)
   "Return non-nil when TASK-ID is a todo task for OWNER/REPO."
-  (when-let ((task-file (my/task-note-file task-id)))
+  (when-let* ((task-file (my/task-note-file task-id)))
     (and (equal (my/task-note-status task-file) "todo")
          (equal (my/task-note-owner-repo task-file) (cons owner repo)))))
 
 (defun my/worktree-repair--branch-exists-for-repo-p (task-id owner repo)
   "Return non-nil when TASK-ID branch exists for OWNER/REPO."
-  (when-let ((default-wt (my/worktree-default-for-repo owner repo)))
+  (when-let* ((default-wt (my/worktree-default-for-repo owner repo)))
     (my/git-success-in-dir-p default-wt "rev-parse" "--verify" (my/task-branch task-id))))
 
 (defun my/worktree-repair--branch-exists-for-worktree-p (task-id worktree-path)
@@ -127,7 +127,7 @@ queries are unavailable, so this stays path-based rather than requiring
 
 (defun my/worktree-repair--validated-index-task-id (path owner repo)
   "Return validated transient task-id for detached worktree PATH, or nil."
-  (when-let ((task-id (my/task-index-find-by-worktree path)))
+  (when-let* ((task-id (my/task-index-find-by-worktree path)))
     (when (my/worktree-repair--task-matches-worktree-p task-id owner repo)
       task-id)))
 
@@ -195,7 +195,7 @@ queries are unavailable, so this stays path-based rather than requiring
 ;;;###autoload
 (defun my/worktree-repair-detached-worktree-for-task (task-id)
   "Return detached feature worktree path attributed to TASK-ID, or nil."
-  (when-let ((report (seq-find (lambda (candidate)
+  (when-let* ((report (seq-find (lambda (candidate)
                                  (equal (plist-get candidate :task-id) task-id))
                                (my/worktree-repair--detached-reports-for-task-repo task-id))))
     (plist-get report :path)))
@@ -208,7 +208,7 @@ attributed to TASK-ID, and `:blocked-reason' plus `:ambiguous-worktrees' when
 closeout should fail closed rather than risk orphaning additional task-owned
 worktree state. Detached dirty orphans without trustworthy attribution stay in
 explicit repair/reclaim territory rather than blocking unrelated task closeout."
-  (let* ((attached-worktree (when-let ((path (my/task-worktree-repairing task-id)))
+  (let* ((attached-worktree (when-let* ((path (my/task-worktree-repairing task-id)))
                               (file-name-as-directory (expand-file-name path))))
          (reports (my/worktree-repair--detached-reports-for-task-repo task-id))
          (owned-paths (delete-dups
@@ -320,9 +320,9 @@ explicit repair/reclaim territory rather than blocking unrelated task closeout."
 ;;;###autoload
 (defun my/worktree-repair-entry (task-id)
   "Return transient/live state snapshot for TASK-ID, or nil."
-  (when-let ((entry (my/task-index-get task-id)))
+  (when-let* ((entry (my/task-index-get task-id)))
     (let ((copy (copy-tree entry)))
-      (when-let ((worktree (or (plist-get copy :worktree)
+      (when-let* ((worktree (or (plist-get copy :worktree)
                                (my/task-worktree task-id))))
         (setq copy (plist-put copy :worktree worktree)))
       copy)))
@@ -330,7 +330,7 @@ explicit repair/reclaim territory rather than blocking unrelated task closeout."
 (defun my/worktree-repair-entry-for-pickup (task-id)
   "Return transient/live state snapshot for pickup TASK-ID."
   (or (my/worktree-repair-entry task-id)
-      (when-let ((worktree (my/task-worktree task-id)))
+      (when-let* ((worktree (my/task-worktree task-id)))
         (list :task-id task-id :worktree worktree))))
 
 (defun my/worktree-repair-claimed-worktrees-for-pickup ()

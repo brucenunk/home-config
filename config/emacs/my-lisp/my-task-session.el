@@ -323,7 +323,7 @@ nil when the worktree is already clean."
 
 (defun my/task-session-ensure-live (task-id)
   "Return live task session buffer for TASK-ID, or nil."
-  (when-let ((session-buffer (my/task-session-live-buffer task-id)))
+  (when-let* ((session-buffer (my/task-session-live-buffer task-id)))
     (unless (my/task-session-state-active-p task-id)
       (my/task-session-state-add task-id))
     session-buffer))
@@ -350,7 +350,7 @@ nil when the worktree is already clean."
 
 (defun my/task-session-clear-worktree-state (task-id)
   "Clear transient worktree ownership for TASK-ID."
-  (when-let ((entry (my/task-index-entry task-id)))
+  (when-let* ((entry (my/task-index-entry task-id)))
     (when (plist-get entry :worktree)
       (my/task-index-worktree-clear task-id)
       (my/task-session--notify task-id :changes '(:worktree)
@@ -393,7 +393,7 @@ nil when the worktree is already clean."
   "Return parsed stored resume state plist for TASK-ID, or nil.
 Unsupported legacy backend metadata is ignored so old task notes do not block
 pickup after backend removals."
-  (when-let ((stored (my/task-note-session-get task-id)))
+  (when-let* ((stored (my/task-note-session-get task-id)))
     (condition-case err
         (let ((resume-state (my/task-note-session-parse stored)))
           (unless (plist-get resume-state :id)
@@ -567,7 +567,7 @@ explicit LAUNCH-CONFIG."
 ;;;###autoload
 (defun my/task-session-clear-buffer (task-id)
   "Kill the live session buffer for TASK-ID when present."
-  (when-let ((session-buffer (get-buffer (my/task-session-buffer-name task-id))))
+  (when-let* ((session-buffer (get-buffer (my/task-session-buffer-name task-id))))
     (let ((kill-buffer-query-functions nil))
       (kill-buffer session-buffer))))
 
@@ -587,7 +587,7 @@ forcing a full durable task-index repair."
   "Sync transient active-session flags against live `agent-task-*' buffers."
   (let ((live-task-ids nil))
     (dolist (buf (buffer-list))
-      (when-let ((task-id (and (string-prefix-p "agent-task-" (buffer-name buf))
+      (when-let* ((task-id (and (string-prefix-p "agent-task-" (buffer-name buf))
                                (buffer-live-p buf)
                                (buffer-local-value 'my/task-session-task-id buf))))
         (when (and (stringp task-id)
@@ -624,7 +624,7 @@ forcing a full durable task-index repair."
 ;;;###autoload
 (defun my/task-session-prune-stale (task-id reason)
   "Clear stale active session state for TASK-ID with REASON symbol."
-  (when-let ((session-buffer (get-buffer (my/task-session-buffer-name task-id))))
+  (when-let* ((session-buffer (get-buffer (my/task-session-buffer-name task-id))))
     (let ((kill-buffer-query-functions nil))
       (kill-buffer session-buffer)))
   (my/task-session-state-remove task-id)
@@ -663,13 +663,13 @@ forcing a full durable task-index repair."
 
 (defun my/task-session-state-add (task)
   "Add TASK to active sessions."
-  (when-let ((id (my/task-resolve-id task)))
+  (when-let* ((id (my/task-resolve-id task)))
     (my/task-session-active-set id t)))
 
 (defun my/task-session-state-remove (task)
   "Remove TASK from active sessions."
-  (when-let ((id (my/task-resolve-id task)))
-    (when-let ((entry (my/task-index-get id)))
+  (when-let* ((id (my/task-resolve-id task)))
+    (when-let* ((entry (my/task-index-get id)))
       (when (plist-get entry :active)
         (setq entry (plist-put (copy-tree entry) :active nil))
         (puthash id entry my/task-index)
@@ -677,8 +677,8 @@ forcing a full durable task-index repair."
 
 (defun my/task-session-state-active-p (task)
   "Return non-nil if TASK has an active session."
-  (when-let ((id (my/task-resolve-id task)))
-    (when-let ((entry (my/task-index-get id)))
+  (when-let* ((id (my/task-resolve-id task)))
+    (when-let* ((entry (my/task-index-get id)))
       (plist-get entry :active))))
 
 (cl-defun my/task-session-create (task launch-config &key display-fn resume-state)
@@ -896,7 +896,7 @@ ownership when available and trigger asynchronous backfill when it is missing."
             (task-file (my/task-note-file task-id)))
       (or (my/task-note-title task-file)
           (buffer-name))
-    (when-let ((worktree-path (my/task-session-worktree-root-from-path path)))
+    (when-let* ((worktree-path (my/task-session-worktree-root-from-path path)))
       (my/task-session--queue-title-backfill worktree-path))
     (buffer-name)))
 
@@ -1028,7 +1028,7 @@ require that exact worktree for strict Pi resume."
      :interactive-p interactive-p
      :on-success
      (lambda (result)
-       (when-let ((msg (my/task-session--pickup-unusable-message
+       (when-let* ((msg (my/task-session--pickup-unusable-message
                         (plist-get result :unusable-worktrees))))
          (message "%s" msg)))
      :on-error

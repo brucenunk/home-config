@@ -44,7 +44,7 @@ directory, while linked feature worktrees have a `.git' file."
 
 (defun my/repo--owner-dirs ()
   "Return candidate owner directories under `my/repo-root'."
-  (when-let ((root (my/repo--normalize-root)))
+  (when-let* ((root (my/repo--normalize-root)))
     (when (file-directory-p root)
       (seq-filter
        (lambda (path)

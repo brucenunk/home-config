@@ -101,7 +101,7 @@ agent workflows, and `none' creates an unscripted task.")
 
 (defun my/task--notify-note-status-change (file status)
   "Broadcast note STATUS change for Denote task FILE."
-  (when-let ((task-id (denote-retrieve-filename-identifier file)))
+  (when-let* ((task-id (denote-retrieve-filename-identifier file)))
     (puthash task-id file my/task--file-cache)
     (my/task--todo-summary-invalidate)
     (my/task-state-notify task-id 'task-note
@@ -250,7 +250,7 @@ workflow. With EXTENDED-P, prompt for the full workflow list."
 This bounded fallback only runs when scope-local Denote lookup misses."
   (catch 'match
     (dolist (tasks-dir (my/task--task-directories))
-      (when-let ((match (car (directory-files-recursively
+      (when-let* ((match (car (directory-files-recursively
                               tasks-dir
                               (format "\\`%s==.*" (regexp-quote task-id))
                               nil nil))))
@@ -258,7 +258,7 @@ This bounded fallback only runs when scope-local Denote lookup misses."
 
 (defun my/task--cache-file-get (task-id)
   "Return cached task note path for TASK-ID when it still exists."
-  (when-let ((cached (gethash task-id my/task--file-cache)))
+  (when-let* ((cached (gethash task-id my/task--file-cache)))
     (if (file-exists-p cached)
         cached
       (remhash task-id my/task--file-cache)
@@ -300,7 +300,7 @@ This bounded fallback only runs when scope-local Denote lookup misses."
 
 (defun my/task-note--owner-repo-from-file (file)
   "Return (OWNER . REPO) parsed from FILE's front matter, or nil."
-  (when-let ((repo-slug (my/task--front-matter-get-from-file file "repo")))
+  (when-let* ((repo-slug (my/task--front-matter-get-from-file file "repo")))
     (my/task--split-repo-slug repo-slug)))
 
 (defun my/task--rename-in-task-repo (file &rest denote-rename-args)
@@ -352,7 +352,7 @@ See `my/task-todo-add' for the stable facade."
     (make-directory target-dir t)
     (let ((denote-directory target-dir))
       (denote title nil 'markdown-yaml nil nil template "todo")
-      (when-let ((repo-slug (my/task--repo-slug owner repo)))
+      (when-let* ((repo-slug (my/task--repo-slug owner repo)))
         (my/task--front-matter-set "repo" repo-slug))
       (when skill
         (my/task--front-matter-set "skill" skill))
@@ -387,18 +387,18 @@ See `my/task-todo-add' for the stable facade."
     (my/task--get-file task-id))
    (t
     (or (my/task--cache-file-get task-id)
-        (when-let ((path (denote-get-path-by-id task-id)))
+        (when-let* ((path (denote-get-path-by-id task-id)))
           (my/task--cache-file-put task-id path))
-        (when-let ((path (my/task--find-file-in-task-directories task-id)))
+        (when-let* ((path (my/task--find-file-in-task-directories task-id)))
           (my/task--cache-file-put task-id path))))))
 
 ;;;###autoload
 (defun my/task-note-content (task)
   "Return task note body for TASK without YAML front matter."
-  (when-let ((file (my/task-note--resolve-to-file task)))
+  (when-let* ((file (my/task-note--resolve-to-file task)))
     (with-temp-buffer
       (insert-file-contents file)
-      (when-let ((bounds (my/task--front-matter-bounds)))
+      (when-let* ((bounds (my/task--front-matter-bounds)))
         (goto-char (cdr bounds))
         (forward-line 1)
         (delete-region (point-min) (point)))
@@ -408,7 +408,7 @@ See `my/task-todo-add' for the stable facade."
 ;;;###autoload
 (defun my/task-note-owner-repo (task)
   "Return (OWNER . REPO) for TASK from task note metadata."
-  (when-let ((file (my/task-note--resolve-to-file task)))
+  (when-let* ((file (my/task-note--resolve-to-file task)))
     (my/task-note--owner-repo-from-file file)))
 
 ;;;###autoload
@@ -426,7 +426,7 @@ See `my/task-todo-add' for the stable facade."
   "Return the task note status for TASK."
   (if (my/task-note--compat-override-p 'my/task-status 'my/task-note-status)
       (my/task-status task)
-    (when-let ((file (my/task-note--resolve-to-file task)))
+    (when-let* ((file (my/task-note--resolve-to-file task)))
       (let ((sig (denote-retrieve-filename-signature file)))
         (when (member sig my/task-statuses)
           sig)))))
@@ -436,7 +436,7 @@ See `my/task-todo-add' for the stable facade."
   "Return skill for TASK from front matter, or nil if absent."
   (if (my/task-note--compat-override-p 'my/task-skill 'my/task-note-skill)
       (my/task-skill task)
-    (when-let ((file (my/task-note--resolve-to-file task)))
+    (when-let* ((file (my/task-note--resolve-to-file task)))
       (my/task--front-matter-get-from-file file "skill"))))
 
 ;;;###autoload
@@ -444,7 +444,7 @@ See `my/task-todo-add' for the stable facade."
   "Return persisted backend-tagged session metadata for TASK, or nil."
   (if (my/task-note--compat-override-p 'my/task-session-get 'my/task-note-session-get)
       (my/task-session-get task)
-    (when-let ((file (my/task-note--resolve-to-file task)))
+    (when-let* ((file (my/task-note--resolve-to-file task)))
       (my/task--front-matter-get-from-file file "session"))))
 
 ;;;###autoload
@@ -488,7 +488,7 @@ See `my/task-todo-add' for the stable facade."
   "Persist backend-tagged session metadata VALUE for TASK."
   (if (my/task-note--compat-override-p 'my/task-session-set 'my/task-note-session-set)
       (my/task-session-set task value)
-    (when-let ((file (my/task-note--resolve-to-file task)))
+    (when-let* ((file (my/task-note--resolve-to-file task)))
       (my/task--front-matter-update-file
        file
        (lambda ()
@@ -497,13 +497,13 @@ See `my/task-todo-add' for the stable facade."
 ;;;###autoload
 (defun my/task-note-worktree-get (task)
   "Return persisted worktree suffix for TASK, or nil."
-  (when-let ((file (my/task-note--resolve-to-file task)))
+  (when-let* ((file (my/task-note--resolve-to-file task)))
     (my/task--front-matter-get-from-file file "worktree")))
 
 ;;;###autoload
 (defun my/task-note-worktree-set (task value)
   "Persist worktree suffix VALUE for TASK."
-  (when-let ((file (my/task-note--resolve-to-file task)))
+  (when-let* ((file (my/task-note--resolve-to-file task)))
     (my/task--front-matter-update-file
      file
      (lambda ()
@@ -550,7 +550,7 @@ Also remove any persisted Pi `worktree' slot metadata so fresh launches do not
 inherit stale strict-resume state."
   (if (my/task-note--compat-override-p 'my/task-session-clear 'my/task-note-session-clear)
       (my/task-session-clear task)
-    (when-let ((file (my/task-note--resolve-to-file task)))
+    (when-let* ((file (my/task-note--resolve-to-file task)))
       (my/task--front-matter-update-file
        file
        (lambda ()
@@ -562,7 +562,7 @@ inherit stale strict-resume state."
   "Return the denote title for TASK, or nil if unavailable."
   (if (my/task-note--compat-override-p 'my/task-title 'my/task-note-title)
       (my/task-title task)
-    (when-let ((file (my/task-note--resolve-to-file task)))
+    (when-let* ((file (my/task-note--resolve-to-file task)))
       (or (and (fboundp 'denote-retrieve-title-value)
                (fboundp 'denote-filetype-heuristics)
                (denote-retrieve-title-value file

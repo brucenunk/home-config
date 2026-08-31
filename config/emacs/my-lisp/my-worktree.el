@@ -99,18 +99,18 @@ blank lines were dropped earlier in the pipeline."
       (cond
        ((string-prefix-p "worktree " line)
         (when current
-          (when-let ((entry (my/worktree--parse-entry (nreverse current))))
+          (when-let* ((entry (my/worktree--parse-entry (nreverse current))))
             (push entry entries)))
         (setq current (list line)))
        ((string-empty-p line)
         (when current
-          (when-let ((entry (my/worktree--parse-entry (nreverse current))))
+          (when-let* ((entry (my/worktree--parse-entry (nreverse current))))
             (push entry entries))
           (setq current nil)))
        (current
         (push line current))))
     (when current
-      (when-let ((entry (my/worktree--parse-entry (nreverse current))))
+      (when-let* ((entry (my/worktree--parse-entry (nreverse current))))
         (push entry entries)))
     (nreverse entries)))
 
@@ -119,7 +119,7 @@ blank lines were dropped earlier in the pipeline."
   "Return live git worktree entries for OWNER/REPO.
 Each entry is a plist containing at least `:path', `:branch', and
 `:detached'."
-  (when-let ((dir (my/worktree--command-dir owner repo)))
+  (when-let* ((dir (my/worktree--command-dir owner repo)))
     (let* ((repo-dir (my/worktree--repo-dir owner repo))
            (entries (my/worktree--parse-porcelain
                      (my/git-lines-in-dir dir "worktree" "list" "--porcelain"))))
@@ -132,7 +132,7 @@ Each entry is a plist containing at least `:path', `:branch', and
 ;;;###autoload
 (defun my/worktree-attached-for-branch (owner repo branch)
   "Return attached worktree path for OWNER/REPO BRANCH, or nil."
-  (when-let ((entry (seq-find (lambda (candidate)
+  (when-let* ((entry (seq-find (lambda (candidate)
                                 (and (equal (plist-get candidate :branch) branch)
                                      (not (plist-get candidate :detached))))
                               (my/worktree-list-for-repo owner repo))))
@@ -202,7 +202,7 @@ worktree."
   "Return path to the shared default worktree for OWNER/REPO, or nil."
   (let ((repo-dir (my/worktree--repo-dir owner repo)))
     (when (file-directory-p repo-dir)
-      (when-let ((path (seq-find #'my/worktree--default-worktree-p
+      (when-let* ((path (seq-find #'my/worktree--default-worktree-p
                                  (directory-files repo-dir t "^[^.].*" t))))
         (my/worktree--normalize-path path)))))
 

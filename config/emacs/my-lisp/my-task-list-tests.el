@@ -85,7 +85,7 @@
                     (overlays-at (line-beginning-position))))))))
         (when (buffer-live-p task-list-buffer)
           (kill-buffer task-list-buffer))
-        (when-let ((buf (get-file-buffer task-file)))
+        (when-let* ((buf (get-file-buffer task-file)))
           (kill-buffer buf))
         (delete-directory temp-dir t)))))
 
@@ -125,7 +125,7 @@
                 (should (re-search-forward task-id nil t))))))
       (when (buffer-live-p task-list-buffer)
         (kill-buffer task-list-buffer))
-      (when-let ((buf (get-file-buffer task-file)))
+      (when-let* ((buf (get-file-buffer task-file)))
         (kill-buffer buf))
       (delete-directory temp-dir t))))
 
@@ -160,7 +160,7 @@
                 (should-not (re-search-forward done-id nil t))))))
       (when (buffer-live-p task-list-buffer)
         (kill-buffer task-list-buffer))
-      (when-let ((buf (get-file-buffer done-file)))
+      (when-let* ((buf (get-file-buffer done-file)))
         (kill-buffer buf))
       (delete-directory temp-dir t))))
 
@@ -200,7 +200,7 @@
       (when (buffer-live-p task-list-buffer)
         (kill-buffer task-list-buffer))
       (dolist (file (list todo-file done-file))
-        (when-let ((buf (get-file-buffer file)))
+        (when-let* ((buf (get-file-buffer file)))
           (kill-buffer buf)))
       (delete-directory temp-dir t))))
 
@@ -240,7 +240,7 @@
                     (overlays-at (line-beginning-position))))))))
         (when (buffer-live-p task-list-buffer)
           (kill-buffer task-list-buffer))
-        (when-let ((buf (get-file-buffer task-file)))
+        (when-let* ((buf (get-file-buffer task-file)))
           (kill-buffer buf))
         (delete-directory temp-dir t)))))
 
@@ -270,7 +270,7 @@
               (should (eq (window-buffer (selected-window)) task-list-buffer)))))
       (when (buffer-live-p task-list-buffer)
         (kill-buffer task-list-buffer))
-      (when-let ((buf (get-file-buffer task-file)))
+      (when-let* ((buf (get-file-buffer task-file)))
         (kill-buffer buf))
       (delete-directory temp-dir t))))
 
@@ -313,7 +313,7 @@
         (kill-buffer first-buffer))
       (when (buffer-live-p second-buffer)
         (kill-buffer second-buffer))
-      (when-let ((buf (get-file-buffer task-file)))
+      (when-let* ((buf (get-file-buffer task-file)))
         (kill-buffer buf))
       (delete-directory temp-dir t))))
 
@@ -364,7 +364,7 @@
         (kill-buffer first-buffer))
       (when (buffer-live-p second-buffer)
         (kill-buffer second-buffer))
-      (when-let ((buf (get-file-buffer task-file)))
+      (when-let* ((buf (get-file-buffer task-file)))
         (kill-buffer buf))
       (delete-directory temp-dir t))))
 
@@ -407,7 +407,7 @@
                 (should (memq task-list-buffer (my/task-list--buffers)))))))
       (when (buffer-live-p task-list-buffer)
         (kill-buffer task-list-buffer))
-      (when-let ((buf (get-file-buffer task-file)))
+      (when-let* ((buf (get-file-buffer task-file)))
         (kill-buffer buf))
       (keymap-global-set "C-c t" original-task-prefix)
       (delete-directory temp-root t))))

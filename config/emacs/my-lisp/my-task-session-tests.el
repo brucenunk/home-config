@@ -1260,7 +1260,7 @@
                            "Task"))
             (should (equal captured-set
                            '("20260405T181044" "pi" "20260422T031929929Z" "c"))))
-        (when-let ((buffer (get-buffer "*task-session*")))
+        (when-let* ((buffer (get-buffer "*task-session*")))
           (kill-buffer buffer))))))
 
 (ert-deftest my/task-session-stored-resume-state-rejects-bare-pi-marker ()
@@ -1468,7 +1468,7 @@
                            "bootstrap"))
             (should (equal (plist-get (nthcdr 4 resume-call) :session-name)
                            "Task")))
-        (when-let ((buffer (get-buffer "*task-session*")))
+        (when-let* ((buffer (get-buffer "*task-session*")))
           (kill-buffer buffer))))))
 
 (ert-deftest my/task-session-pickup-resume-launch-config-keeps-advanced-options ()

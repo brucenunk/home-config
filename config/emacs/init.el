@@ -85,7 +85,7 @@
       (add-hook 'before-save-hook #'eglot-format-buffer t t)))
   (defun my/eglot-ensure-if-server-available ()
     "Start Eglot when the current mode has an available language server."
-    (when-let ((server-executable (alist-get major-mode my/eglot-mode-server-executables)))
+    (when-let* ((server-executable (alist-get major-mode my/eglot-mode-server-executables)))
       (when (executable-find server-executable t)
         (eglot-ensure))))
   :hook
