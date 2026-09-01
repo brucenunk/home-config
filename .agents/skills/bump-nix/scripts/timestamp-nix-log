@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Timestamp and redact a foreground Nix stderr stream."""
+"""Record and render line-oriented Nix internal-json stderr."""
 
 from __future__ import annotations
 
@@ -10,24 +10,17 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import TextIO
 
-MACHINE_PREFIXES = (b"@nix ", b"@bump-nix ")
-CREDENTIAL_TAIL = re.compile(rb"github\.com=[^\s\"']*$")
+TOKEN_PATTERN = re.compile(rb"github\.com=[^\s\"']+")
 
 
 def redact(data: bytes, token: bytes) -> bytes:
     if token:
         data = data.replace(token, b"<redacted-github-token>")
-    return re.sub(
-        rb"github\.com=[^\s\"']+",
-        b"github.com=<redacted-github-token>",
-        data,
-    )
+    return TOKEN_PATTERN.sub(b"github.com=<redacted-github-token>", data)
 
 
-def display_line(line: str) -> None:
-    """Render useful foreground output without flooding it with progress ticks."""
+def display(line: str) -> None:
     if line.startswith("@bump-nix "):
         return
     if not line.startswith("@nix "):
@@ -38,82 +31,19 @@ def display_line(line: str) -> None:
     except json.JSONDecodeError:
         print(line, flush=True)
         return
-
-    if event.get("action") == "start" and event.get("text"):
+    if not isinstance(event, dict):
+        print(line, flush=True)
+        return
+    if event.get("action") == "start" and isinstance(event.get("text"), str):
         print(event["text"], flush=True)
-    elif event.get("action") == "msg" and event.get("msg"):
+    elif event.get("action") == "msg" and isinstance(event.get("msg"), str):
         print(event["msg"], flush=True)
     elif event.get("action") == "result" and event.get("type") in {101, 107}:
-        for field in event.get("fields", []):
-            if isinstance(field, str):
-                print(field, flush=True)
-
-
-class CaptureLog:
-    def __init__(self, path: Path):
-        self.failed = False
-        try:
-            self.target: TextIO | None = path.open("a", encoding="utf-8")
-        except OSError as error:
-            self.target = None
-            self._warn(error)
-
-    def _warn(self, error: OSError) -> None:
-        if not self.failed:
-            print(f"timestamp-nix-log: capture disabled: {error}", flush=True)
-        self.failed = True
-
-    def write(self, record: str, **fields: object) -> None:
-        if self.target is None:
-            return
-        try:
-            json.dump(
-                {
-                    "record": record,
-                    "timestamp_ns": time.monotonic_ns(),
-                    **fields,
-                },
-                self.target,
-                separators=(",", ":"),
-            )
-            self.target.write("\n")
-            self.target.flush()
-        except OSError as error:
-            self._warn(error)
-            self.target.close()
-            self.target = None
-
-    def close(self) -> None:
-        if self.target is not None:
-            self.target.close()
-
-
-def could_be_machine_line(data: bytes) -> bool:
-    return any(
-        data.startswith(prefix) or prefix.startswith(data)
-        for prefix in MACHINE_PREFIXES
-    )
-
-
-def split_safe_fragment(data: bytes, token: bytes) -> tuple[bytes, bytes]:
-    """Return bytes safe to display now and a credential-shaped suffix to retain."""
-    held = b""
-    credential_tail = CREDENTIAL_TAIL.search(data)
-    if credential_tail:
-        held = data[credential_tail.start() :]
-        data = data[: credential_tail.start()]
-
-    safe = redact(data, token)
-    possible_secrets = tuple(secret for secret in (token, b"github.com=") if secret)
-    held_length = 0
-    for secret in possible_secrets:
-        for length in range(1, min(len(safe), len(secret) - 1) + 1):
-            if safe.endswith(secret[:length]):
-                held_length = max(held_length, length)
-    if held_length:
-        held = safe[-held_length:] + held
-        safe = safe[:-held_length]
-    return safe, held
+        fields = event.get("fields")
+        if isinstance(fields, list):
+            for field in fields:
+                if isinstance(field, str):
+                    print(field, flush=True)
 
 
 def main() -> int:
@@ -122,45 +52,51 @@ def main() -> int:
         return 64
 
     signal.signal(signal.SIGTTOU, signal.SIG_IGN)
-    token = os.environ.get("BUMP_NIX_LOG_REDACTION", "").encode()
-    capture = CaptureLog(Path(sys.argv[1]))
-    buffer = b""
+    token = sys.stdin.buffer.readline().rstrip(b"\n")
+    path = Path(sys.argv[1])
+    try:
+        descriptor = os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND, 0o600
+        )
+        target = os.fdopen(descriptor, "a", encoding="utf-8")
+    except OSError as error:
+        print(f"timestamp-nix-log: cannot create capture: {error}", file=sys.stderr)
+        return 74
 
-    while chunk := sys.stdin.buffer.read1(4096):
-        buffer += chunk
-        while b"\n" in buffer:
-            raw_line, buffer = buffer.split(b"\n", 1)
-            safe_line = redact(raw_line, token)
+    capture_failed = False
+    display_failed = False
+    try:
+        for raw_line in sys.stdin.buffer:
+            safe_line = redact(raw_line.rstrip(b"\n"), token)
             line = safe_line.decode("utf-8", errors="replace")
-            display_line(line)
-            capture.write("output", line=line)
-
-        if buffer and not could_be_machine_line(buffer):
-            safe_fragment, buffer = split_safe_fragment(buffer, token)
-            sys.stdout.buffer.write(safe_fragment)
-            sys.stdout.buffer.flush()
-            if safe_fragment:
-                capture.write(
-                    "output-fragment",
-                    fragment=safe_fragment.decode("utf-8", errors="replace"),
-                )
-
-    if buffer:
-        safe_fragment = redact(buffer, token)
-        if could_be_machine_line(safe_fragment):
-            line = safe_fragment.decode("utf-8", errors="replace")
-            display_line(line)
-            capture.write("output", line=line)
-        else:
-            sys.stdout.buffer.write(safe_fragment)
-            sys.stdout.buffer.flush()
-            capture.write(
-                "output-fragment",
-                fragment=safe_fragment.decode("utf-8", errors="replace"),
-            )
-
-    capture.close()
-    return 74 if capture.failed else 0
+            if target is not None:
+                try:
+                    target.write(json.dumps({
+                        "record": "output",
+                        "timestamp_ns": time.monotonic_ns(),
+                        "line": line,
+                    }, separators=(",", ":")) + "\n")
+                    target.flush()
+                except OSError as error:
+                    capture_failed = True
+                    try:
+                        print(
+                            f"timestamp-nix-log: capture failed; draining stderr: {error}",
+                            file=sys.stderr,
+                        )
+                    except OSError:
+                        display_failed = True
+                    target.close()
+                    target = None
+            if not display_failed:
+                try:
+                    display(line)
+                except OSError:
+                    display_failed = True
+    finally:
+        if target is not None:
+            target.close()
+    return 74 if capture_failed or display_failed else 0
 
 
 if __name__ == "__main__":

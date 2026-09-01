@@ -54,30 +54,45 @@ exit "$nix_status"
 
 Use this pattern for direct update, evaluation, build, and check commands. Do not run Nix if the hostname-qualified `gh auth status`, `gh auth token`, or nonempty-token check fails; stop and ask the user to authenticate rather than falling back to unauthenticated GitHub API requests.
 
-### Repository wrappers and nested Nix
+### Trusted repository wrappers and nested Nix
 
-When a required repository script invokes `nix` internally and cannot accept Nix global options, run it through this skill's `scripts/nix-with-gh-token` helper:
+For a trusted repository command that resolves nested `nix` through `PATH`, use:
 
 ```bash
-<bump-nix-skill-directory>/scripts/nix-with-gh-token -- ./repository-wrapper <args...>
+skill_dir=$(git rev-parse --show-toplevel)/.agents/skills/bump-nix
+"$skill_dir/scripts/nix-with-gh-token" -- ./repository-wrapper <args...>
 ```
 
-The helper obtains the active token without displaying it and puts a credential-free, private temporary `nix` shim first on `PATH`. Each nested `nix` call receives the same command-line `extra-access-tokens` option as a direct command, preserving credentials already configured for other sources. The host's configuration files and existing environment remain in force; the helper does not synthesize or replace Nix configuration. It removes the shim on exit and propagates the wrapper's exact exit status.
+The helper requires credentials stored by `gh auth login` and rejects `GH_TOKEN`, `GITHUB_TOKEN`, and their enterprise variants so exported secrets cannot reach the wrapper. It creates a private temporary `nix` shim, obtains the stored token inside each shim invocation, and adds it with Nix's command-line `extra-access-tokens` option. The token is never exported to the repository command or written to a file. The host's Nix configuration and other access tokens remain in force; the helper never sets `NIX_CONFIG` or synthesizes a partial configuration.
 
-This mechanism requires the repository wrapper to resolve `nix` through `PATH` and preserve its environment. Inspect the wrapper before use. Stop rather than claiming authenticated coverage if it invokes an absolute Nix path, resets `PATH`, clears the environment, or delegates to a boundary that does not inherit the shim.
+This is deliberately not a sandbox or general process supervisor. It runs the non-interactive wrapper in a child process group and forwards basic termination signals so cancellation does not leave a known wrapper running. It does not manage PTY ownership, stopped jobs, daemons, or background descendants. Before every use, inspect the wrapper and require all of these assumptions:
+
+- it inherits `PATH` and the environment, and resolves `nix` by name rather than an absolute path;
+- it invokes Nix sequentially, not concurrently or through a daemon;
+- nested Nix stderr remains attached to the wrapper's stderr, with no redirection or capture;
+- it supplies no access-token or `--log-format` options; and
+- it does not leave background descendants holding stderr.
+
+The supported public wrappers are:
+
+- `scripts/check-home-configuration`, whose four evaluations and final build are sequential and leave stderr attached;
+- `scripts/check-exported-home-manager-modules` and `scripts/check-exported-pi-module`, each of which performs one foreground evaluation with stderr attached; and
+- the activation matrix's direct `nix run`, which resolves the shim as the command itself.
+
+All inherit `PATH`, invoke Nix by name, and neither redirect Nix stderr nor supply conflicting options. Reinspect them before use because the boundary depends on their current implementation. Stop rather than claiming authenticated or structured coverage if an assumption no longer holds.
 
 Never solve nested authentication with a partial assignment such as:
 
 ```bash
-# Forbidden: setting NIX_CONFIG can suppress system- or user-managed settings.
+# Forbidden: this can suppress host-managed Nix settings.
 NIX_CONFIG="access-tokens = github.com=$(gh auth token --hostname github.com)" ./repository-wrapper
 ```
 
-Adding a hand-written subset of `experimental-features`, substituters, or other observed values is also forbidden. It remains incomplete and can silently remove trusted keys, builders, plugins, sandbox settings, or future host-managed configuration. Do not put the token in a generated `nix.conf`, temporary file, shell trace, task note, or captured command line. Do not enable shell tracing around token acquisition or the helper.
+Do not put the token in a generated `nix.conf`, temporary file, shell trace, task note, or captured command line. Do not enable shell tracing around token acquisition or the helper.
 
-## Realization preflight and performance evidence
+## Realization preflight and structured logging
 
-Before an expensive check, build, apply, or deployment, inspect the settings that determine feature and cache behavior without printing secret-bearing settings:
+Before an expensive check, build, apply, or deployment, inspect the effective settings without printing secret-bearing settings:
 
 ```bash
 nix show-config --json | jq '{
@@ -89,50 +104,27 @@ nix show-config --json | jq '{
 }'
 ```
 
-Treat this as a diagnostic snapshot, not a cache prescription. Do not add, remove, or prioritize a cache merely to make the bump faster. In particular, do not infer that one organization-specific cache accounts for all elapsed time.
+Treat this as a diagnostic snapshot, not a cache prescription. Do not add, remove, or prioritize a cache merely to make the bump faster.
 
-When repository guidance routes deployment to a focused activation matrix or procedure, read it completely before selecting the realization command. Choose the row from the actual source machine and target, and follow its source identity, source-state, delivery, target-checkout, and runtime-pickup boundaries exactly. Do not bypass the procedure with a remembered wrapper or a command copied from another host. If it requires a direct activation-package command, invoke that exact installable with its lock-file safety flags. Run the authenticated helper and structured capture on the activation target, but keep their error handling in this skill rather than expanding the repository matrix into another deployment program.
+Read `docs/activation.md` completely before selecting a realization or deployment command. Follow the row for the actual source machine and target, including its source identity, source-state, delivery, target-checkout, lock-file, and runtime-pickup boundaries. Run the underlying installable's authenticated `--dry-run` equivalent when Nix supports one; this is a realization plan, not verification or deployment.
 
-Identify the installable or realization command underlying the repository's required deployment and run its authenticated `--dry-run` equivalent when Nix supports one. This is the expected realization plan: note what Nix says it will fetch and what it will build. Do not pass invented dry-run flags to an opaque deployment script, and do not treat a dry-run as verification, deployment, or runtime pickup.
-
-For a heavyweight wrapper, keep the real command in the foreground while recording timestamped structured Nix events:
+For a long trusted wrapper, keep the command in the foreground and capture its line-oriented Nix internal JSON:
 
 ```bash
 log_dir=$(mktemp -d)
-<bump-nix-skill-directory>/scripts/nix-with-gh-token \
+"$skill_dir/scripts/nix-with-gh-token" \
   --log-file "$log_dir/apply.jsonl" -- ./repository-wrapper <args...>
-<bump-nix-skill-directory>/scripts/summarize-nix-log "$log_dir/apply.jsonl"
+"$skill_dir/scripts/summarize-nix-log" "$log_dir/apply.jsonl"
+rm -rf -- "$log_dir"
 ```
 
-The helper keeps the command attached to the foreground terminal, renders meaningful Nix activity and messages as they occur, records the complete timestamped event stream without flooding the terminal with machine progress ticks, adds `--log-format internal-json` to nested Nix calls, structurally redacts GitHub access-token options on stderr, and preserves failure status. This satisfies foreground/direct-observation requirements; do not background, detach, or replace a repository-required direct run with log polling. Keep logs in a `mktemp` directory, do not commit them, and remove them after extracting the report.
+Logging mode adds `--log-format internal-json` to each nested Nix invocation, records timestamped stderr lines and invocation boundaries, renders useful messages, redacts the active token and credential-shaped `github.com=...` values, and preserves command failure. It assumes trusted, sequential, non-interactive, line-oriented commands and requires `python3` for capture and summary processing. Do not use it for arbitrary wrappers, concurrent nested Nix, interactive secret-producing commands, or daemon management.
 
-Structured activity IDs are process-local, so logging mode deliberately rejects overlapping nested Nix invocations with exit status 75 rather than producing a misleading merged report. If a repository wrapper runs Nix concurrently, use an approved sequential mode for the observed deployment or stop and report that structured summarization is unavailable; do not silently drop the helper or claim accurate timings.
+The helper does not supervise those unsupported behaviors. If stderr is redirected, invocation markers overlap or are incomplete, structured events are malformed or cross invocation boundaries, or the capture does not finish, the summary warns that complete performance evidence is unavailable. Stop rather than interpreting such a warning as zero work or complete timing evidence.
 
-Before relying on the capture, inspect the repository wrapper for nested stderr redirection or capture, explicit `--log-format` options that could override the shim, conflicting access-token options, and background descendants that retain stderr. The helper rejects nested access-token options with status 64, concurrent logged Nix calls with status 75, and logged wrappers that leave descendants holding the capture with status 76. The helper can record only events that reach the wrapper's stderr. Treat a summary warning about missing invocation markers or missing structured activities as unavailable evidence, not as proof that no work occurred.
+The summary reports elapsed time; substitutions/downloads, uploads, and direction-unknown transfers; derivation activities; and slow derivations. A stopped derivation is proven complete only when its enclosing nested invocation succeeded. Cumulative activity time can exceed wall time, and generic Nix events do not establish build locality.
 
-The summary separates substitutions/downloads, uploads, direction-unknown transfers, and derivation-build activities; reports command wall time and cumulative activity time; and lists the slowest derivations. Nix's generic internal events do not reliably identify whether a builder was local or remote, so do not label build activity as local unless separate evidence establishes locality. A stopped activity is not necessarily successful; only treat a prior stopped build as completed when its nested Nix invocation succeeded. Cumulative activity time can exceed wall time when work overlaps. Use event durations, not terminal line counts, to explain cost.
-
-For the single targeted retry permitted by the fail-fast threshold, retain both transient captures until reporting and compare them:
-
-```bash
-<bump-nix-skill-directory>/scripts/summarize-nix-log \
-  "$log_dir/retry.jsonl" --previous "$log_dir/first.jsonl"
-```
-
-Report separately:
-
-- derivations genuinely repeated after a successful prior nested Nix invocation;
-- builds reattempted after a prior stop whose success is unknown;
-- interrupted activities that remained active at the end of the first capture;
-- newly attempted unfinished-closure work that the first run never reached; and
-- prior proven-complete derivations not observed rebuilding in the retry, without inferring why they were absent;
-- prior finished or unfinished work not observed before a failed retry, whose reuse cannot be proven.
-
-Do not describe all output on a retry as repeated work. Nix normally reuses completed store paths while continuing the unrealized remainder of the closure.
-
-Compare retries as unfinished-closure work only when the realization plan is materially unchanged. If a source or lockfile fix changes the plan, state that boundary and report newly attempted derivations without claiming they belonged to the first closure.
-
-This evidence procedure does not authorize a retry. Use it only after the proposed fix independently meets every fail-fast condition or when an applicable repository rollback procedure requires an observed command.
+For the single targeted retry permitted by the fail-fast threshold, retain both temporary captures and compare them with `summarize-nix-log LOG --previous PREVIOUS`. Only compare unfinished-closure work when the realization plan is materially unchanged. This evidence procedure does not authorize a retry; remove all captures after reporting.
 
 ## Worktree and staging safety
 

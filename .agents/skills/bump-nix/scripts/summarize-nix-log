@@ -43,6 +43,7 @@ class Summary:
     invocation_stops: int
     invocation_marker_errors: int
     structured_event_errors: int
+    structured_boundary_errors: int
     activities: list[Activity]
 
 
@@ -78,6 +79,7 @@ def load_summary(path: Path) -> Summary:
     invocation_stops = 0
     invocation_marker_errors = 0
     structured_event_errors = 0
+    structured_boundary_errors = 0
     invocation_open = False
     active: dict[object, list[Activity]] = {}
     current_invocation: list[Activity] = []
@@ -92,18 +94,56 @@ def load_summary(path: Path) -> Summary:
                     f"{path}:{line_number}: invalid capture JSON: {error}"
                 ) from error
 
-            if record.get("record") == "command":
-                if record.get("event") == "start":
-                    start_ns = record["timestamp_ns"]
-                elif record.get("event") == "stop":
-                    stop_ns = record["timestamp_ns"]
-                    status = record["status"]
-                    capture_healthy = record.get("capture_healthy") is True
-                continue
-            if record.get("record") != "output":
-                continue
+            if not isinstance(record, dict):
+                raise ValueError(
+                    f"{path}:{line_number}: capture record must be an object"
+                )
+            record_type = record.get("record")
 
-            text = record.get("line", "")
+            if record_type == "command":
+                event_name = record.get("event")
+                timestamp_ns = record.get("timestamp_ns")
+                if not isinstance(timestamp_ns, int) or isinstance(timestamp_ns, bool):
+                    raise ValueError(
+                        f"{path}:{line_number}: command timestamp_ns must be an integer"
+                    )
+                if event_name == "start":
+                    start_ns = timestamp_ns
+                elif event_name == "stop":
+                    record_status = record.get("status")
+                    if (
+                        not isinstance(record_status, int)
+                        or isinstance(record_status, bool)
+                        or not 0 <= record_status <= 255
+                    ):
+                        raise ValueError(
+                            f"{path}:{line_number}: command status must be an exit status"
+                        )
+                    if not isinstance(record.get("capture_healthy"), bool):
+                        raise ValueError(
+                            f"{path}:{line_number}: command capture_healthy must be boolean"
+                        )
+                    stop_ns = timestamp_ns
+                    status = record_status
+                    capture_healthy = record["capture_healthy"]
+                else:
+                    raise ValueError(
+                        f"{path}:{line_number}: unknown command event {event_name!r}"
+                    )
+                continue
+            if record_type != "output":
+                raise ValueError(
+                    f"{path}:{line_number}: unknown capture record {record_type!r}"
+                )
+
+            timestamp_ns = record.get("timestamp_ns")
+            text = record.get("line")
+            if not isinstance(timestamp_ns, int) or isinstance(timestamp_ns, bool):
+                raise ValueError(
+                    f"{path}:{line_number}: output timestamp_ns must be an integer"
+                )
+            if not isinstance(text, str):
+                raise ValueError(f"{path}:{line_number}: output line must be text")
             if text.startswith("@bump-nix "):
                 try:
                     invocation_event = json.loads(text[len("@bump-nix ") :])
@@ -135,11 +175,18 @@ def load_summary(path: Path) -> Summary:
                     for activity in current_invocation:
                         activity.invocation_succeeded = succeeded
                     current_invocation = []
-                elif invocation_event:
+                else:
                     invocation_marker_errors += 1
+                if active:
+                    structured_event_errors += sum(
+                        len(items) for items in active.values()
+                    )
                 active.clear()
                 continue
             if not text.startswith("@nix "):
+                continue
+            if not invocation_open:
+                structured_boundary_errors += 1
                 continue
             try:
                 event = json.loads(text[5:])
@@ -152,20 +199,27 @@ def load_summary(path: Path) -> Summary:
 
             action = event.get("action")
             activity_id = event.get("id")
+            if action in {"start", "stop"} and (
+                not isinstance(activity_id, int) or isinstance(activity_id, bool)
+            ):
+                structured_event_errors += 1
+                continue
             if action == "start":
                 identified = classify(event)
                 if identified:
-                    activity = Activity(*identified, record["timestamp_ns"])
+                    activity = Activity(*identified, timestamp_ns)
                     active.setdefault(activity_id, []).append(activity)
                     current_invocation.append(activity)
                     activities.append(activity)
             elif action == "stop" and active.get(activity_id):
-                active[activity_id].pop().stopped_ns = record["timestamp_ns"]
+                active[activity_id].pop().stopped_ns = timestamp_ns
                 if not active[activity_id]:
                     active.pop(activity_id)
 
     if invocation_open:
         invocation_marker_errors += 1
+    if active:
+        structured_event_errors += sum(len(items) for items in active.values())
     return Summary(
         path,
         start_ns,
@@ -176,6 +230,7 @@ def load_summary(path: Path) -> Summary:
         invocation_stops,
         invocation_marker_errors,
         structured_event_errors,
+        structured_boundary_errors,
         activities,
     )
 
@@ -266,6 +321,7 @@ def trustworthy(summary: Summary) -> bool:
         and summary.invocation_starts == summary.invocation_stops
         and summary.invocation_marker_errors == 0
         and summary.structured_event_errors == 0
+        and summary.structured_boundary_errors == 0
         and bool(summary.activities)
     )
 
@@ -314,7 +370,12 @@ def main() -> int:
             "WARNING: malformed structured Nix events make this capture unavailable as "
             "complete performance evidence"
         )
-    elif not summary.activities:
+    if summary.structured_boundary_errors:
+        print(
+            "WARNING: structured Nix events outside marked nested invocations make "
+            "this capture unavailable as complete performance evidence"
+        )
+    if not summary.activities:
         print(
             "WARNING: no structured realization activities were observed; check for a "
             "conflicting log format before claiming zero work"
