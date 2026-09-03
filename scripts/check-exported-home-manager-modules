@@ -30,6 +30,20 @@ nix eval --impure --raw --expr '
       modules = modules ++ [ identity ];
     };
 
+    emacsDefaultConsumer = mkHome linuxPkgs [
+      flake.modules.homeManager.emacs
+    ];
+    emacsOverrideConsumer = mkHome linuxPkgs [
+      flake.modules.homeManager.emacs
+      { programs.emacs.package = linuxPkgs.emacs31; }
+    ];
+    emacsPriorityConsumer = mkHome linuxPkgs [
+      flake.modules.homeManager.emacs
+      { programs.emacs.package = linuxPkgs.emacs-nox; }
+    ];
+    wampaEmacsPackage =
+      flake.homeConfigurations."james@wampa".config.programs.emacs.package;
+
     optionNames = home: map (option: option.name) (lib.optionAttrSetToDocList home.options);
     addedOptionNames = pkgs: modules: lib.subtractLists
       (optionNames (mkHome pkgs [ ]))
@@ -105,6 +119,13 @@ nix eval --impure --raw --expr '
     gitMaintenanceConsumer.options;
   assert !(lib.hasAttrByPath [ "programs" "gitMaintenance" ] gitMaintenanceConsumer.options);
   assert !(lib.hasAttrByPath [ "programs" "piAgent" ] consumer.options);
+  assert emacsDefaultConsumer.config.programs.emacs.package.drvPath
+    == linuxPkgs.emacs.drvPath;
+  assert emacsOverrideConsumer.config.programs.emacs.package.drvPath
+    == linuxPkgs.emacs31.drvPath;
+  assert emacsPriorityConsumer.config.programs.emacs.package.drvPath
+    == linuxPkgs.emacs-nox.drvPath;
+  assert wampaEmacsPackage.drvPath == linuxPkgs.emacs-pgtk.drvPath;
   assert gitMaintenanceConsumer.config.programs.git.enable;
   assert gitMaintenanceConsumer.config.programs.git.settings.maintenance.repo == [
     "/Users/exported-module-check/work/example"
