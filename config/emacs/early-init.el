@@ -16,9 +16,8 @@
 (scroll-bar-mode -1)
 (tool-bar-mode -1)
 
-(when (memq window-system '(ns))
-  (add-to-list 'default-frame-alist '(fullscreen . maximized))
-  (add-to-list 'default-frame-alist '(ns-transparent-titlebar . t))
-  (setq frame-title-format "\n"))
+(when (featurep 'ns)
+  (setq ns-use-thin-smoothing t)
+  (add-to-list 'default-frame-alist '(ns-transparent-titlebar . t)))
 
 (setq frame-resize-pixelwise t)
