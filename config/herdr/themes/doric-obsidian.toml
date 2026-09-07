@@ -1,0 +1,24 @@
+# Generated from the installed Emacs doric-themes palette: doric-obsidian.
+# Do not edit directly; regenerate with build-doric-themes.py.
+# Background mode: dark.
+
+[theme.custom]
+accent = "#b59487"
+panel_bg = "#181818"
+sidebar_bg = "#181818"
+active_row_bg = "#2f2f2f"
+selection_bg = "#505050"
+surface0 = "#2f2f2f"
+surface1 = "#3a3a3a"
+surface_dim = "#505050"
+overlay0 = "#727272"
+overlay1 = "#969696"
+text = "#e7e7e7"
+subtext0 = "#bcbcbc"
+mauve = "#e9acbf"
+green = "#b9d0aa"
+yellow = "#c0b080"
+red = "#eca28f"
+blue = "#9fbfe7"
+teal = "#a0c0d0"
+peach = "#b59487"

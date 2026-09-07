@@ -1,0 +1,24 @@
+# Generated from the installed Emacs doric-themes palette: doric-walnut.
+# Do not edit directly; regenerate with build-doric-themes.py.
+# Background mode: dark.
+
+[theme.custom]
+accent = "#aea084"
+panel_bg = "#153227"
+sidebar_bg = "#153227"
+active_row_bg = "#303931"
+selection_bg = "#0c512c"
+surface0 = "#303931"
+surface1 = "#3d4543"
+surface_dim = "#0c512c"
+overlay0 = "#596c5e"
+overlay1 = "#9ba3a2"
+text = "#b9d3b0"
+subtext0 = "#afc2be"
+mauve = "#e9acbf"
+green = "#82cc7f"
+yellow = "#c4b980"
+red = "#e8a27f"
+blue = "#8fbae5"
+teal = "#a0c0d0"
+peach = "#aea084"

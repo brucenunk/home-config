@@ -1,0 +1,24 @@
+# Generated from the installed Emacs doric-themes palette: doric-marble.
+# Do not edit directly; regenerate with build-doric-themes.py.
+# Background mode: light.
+
+[theme.custom]
+accent = "#603d3a"
+panel_bg = "#ededed"
+sidebar_bg = "#ededed"
+active_row_bg = "#dfdfdf"
+selection_bg = "#b0b0b0"
+surface0 = "#dfdfdf"
+surface1 = "#cdcdcd"
+surface_dim = "#b0b0b0"
+overlay0 = "#9a9a9a"
+overlay1 = "#595959"
+text = "#202020"
+subtext0 = "#4a4a4a"
+mauve = "#700d50"
+green = "#106710"
+yellow = "#60400f"
+red = "#a01010"
+blue = "#103077"
+teal = "#005355"
+peach = "#603d3a"

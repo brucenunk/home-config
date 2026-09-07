@@ -1,0 +1,24 @@
+# Generated from the installed Emacs doric-themes palette: doric-water.
+# Do not edit directly; regenerate with build-doric-themes.py.
+# Background mode: dark.
+
+[theme.custom]
+accent = "#adade0"
+panel_bg = "#2a283d"
+sidebar_bg = "#2a283d"
+active_row_bg = "#3a3c4c"
+selection_bg = "#496278"
+surface0 = "#3a3c4c"
+surface1 = "#4a4a5f"
+surface_dim = "#496278"
+overlay0 = "#8d8c9e"
+overlay1 = "#aea6b8"
+text = "#edf0f8"
+subtext0 = "#d4d9dc"
+mauve = "#e9acbf"
+green = "#a0d0ba"
+yellow = "#c0b080"
+red = "#eca28f"
+blue = "#9fbfe7"
+teal = "#a0c0d0"
+peach = "#adade0"

@@ -96,6 +96,9 @@ namespace.
   select `brucenunk.homeManager.ghostty.package`, append `extraConfig`, and
   control `canonicalLinuxService.enable`. A consumer that disables the
   canonical service owns its replacement service and session environment.
+- `herdr` deploys the pinned upstream Herdr package, generated Doric light/dark
+  theme policy, and release-matched Pi integration. Consumers may select only
+  the typed `brucenunk.homeManager.herdr.ui.toast.delivery` host policy.
 - `pi` exposes its deployment interface under
   `brucenunk.homeManager.pi`. Its public theme and extension directories are
   defaults, so provider or transport adapters can replace them without

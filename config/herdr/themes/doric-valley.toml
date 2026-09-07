@@ -1,0 +1,24 @@
+# Generated from the installed Emacs doric-themes palette: doric-valley.
+# Do not edit directly; regenerate with build-doric-themes.py.
+# Background mode: dark.
+
+[theme.custom]
+accent = "#f6c097"
+panel_bg = "#383035"
+sidebar_bg = "#383035"
+active_row_bg = "#484040"
+selection_bg = "#3d5e57"
+surface0 = "#484040"
+surface1 = "#554f52"
+surface_dim = "#3d5e57"
+overlay0 = "#7a787f"
+overlay1 = "#afa497"
+text = "#e0d5b7"
+subtext0 = "#d9cfbe"
+mauve = "#e9acbf"
+green = "#b9d0aa"
+yellow = "#c0b060"
+red = "#eca28f"
+blue = "#9fbfe7"
+teal = "#a0c0d0"
+peach = "#f6c097"

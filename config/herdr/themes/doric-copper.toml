@@ -1,0 +1,24 @@
+# Generated from the installed Emacs doric-themes palette: doric-copper.
+# Do not edit directly; regenerate with build-doric-themes.py.
+# Background mode: dark.
+
+[theme.custom]
+accent = "#d29cb7"
+panel_bg = "#44312e"
+sidebar_bg = "#44312e"
+active_row_bg = "#584040"
+selection_bg = "#7e462c"
+surface0 = "#584040"
+surface1 = "#654f52"
+surface_dim = "#7e462c"
+overlay0 = "#85787f"
+overlay1 = "#9aa3af"
+text = "#e7d0bf"
+subtext0 = "#d0cfc8"
+mauve = "#e9acbf"
+green = "#b9d0aa"
+yellow = "#c0b060"
+red = "#eca28f"
+blue = "#9fbfe7"
+teal = "#a0c0d0"
+peach = "#d29cb7"

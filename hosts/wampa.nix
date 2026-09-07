@@ -47,6 +47,7 @@ in
           config.flake.modules.homeManager.git-maintenance
           config.flake.modules.homeManager.golang
           config.flake.modules.homeManager.hephaestus
+          config.flake.modules.homeManager.herdr
           config.flake.modules.homeManager.kube
           config.flake.modules.homeManager.language-servers
           config.flake.modules.homeManager.ripgrep
@@ -85,6 +86,8 @@ in
           modelsFileName = "pi-models-wampa.json";
           settingsDefaults = ../config/pi/settings-wampa.json;
         };
+
+        brucenunk.homeManager.herdr.ui.toast.delivery = "system";
 
         programs.emacs = {
           package = pkgs.emacs-pgtk;

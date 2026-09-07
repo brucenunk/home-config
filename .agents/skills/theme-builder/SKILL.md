@@ -1,6 +1,6 @@
 ---
 name: theme-builder
-description: "Generate and verify the public Doric theme assets for Fuzzel, Ghostty, Niri, Pi, and Waybar. Use when adding, refreshing, or checking application themes derived from Doric Emacs palettes."
+description: "Generate and verify the public Doric theme assets for Fuzzel, Ghostty, Herdr, Niri, Pi, and Waybar. Use when adding, refreshing, or checking application themes derived from Doric Emacs palettes."
 ---
 
 # Theme Builder
@@ -16,11 +16,12 @@ Its supported targets and output trees are:
 | --- | --- |
 | `fuzzel` | `config/fuzzel/themes/` |
 | `ghostty` | `config/ghostty/themes/` |
+| `herdr` | `config/herdr/themes/` |
 | `niri` | `config/niri/themes/` |
 | `pi` | `config/pi/themes/` |
 | `waybar` | `config/waybar/themes/` |
 
-`--target all` generates all five targets. The legacy `--target both` alias
+`--target all` generates all six targets. The legacy `--target both` alias
 generates Ghostty and Pi. `--theme doric-NAME` is repeatable; with no
 `--theme`, or with `--all`, the generator processes the complete installed
 Doric collection. Full-collection runs also remove stale files carrying the
@@ -34,7 +35,7 @@ generator's ownership marker; selective `--theme` runs never prune files.
 
    ```bash
    git status --short -- \
-     config/fuzzel/themes config/ghostty/themes config/niri/themes \
+     config/fuzzel/themes config/ghostty/themes config/herdr/themes config/niri/themes \
      config/pi/themes config/waybar/themes
    ```
 
@@ -65,7 +66,7 @@ Generate one theme or one application when the task is intentionally narrower:
 ```
 
 The generator emits each target's canonical text formatting. Do not run a
-separate formatter over generated INI, Ghostty, KDL, JSON, or CSS files.
+separate formatter over generated INI, Ghostty, TOML, KDL, JSON, or CSS files.
 
 ## Verify
 
@@ -87,21 +88,21 @@ To prove every supported output independently reproduces the complete tracked
 theme tree, begin with clean output trees, run:
 
 ```bash
-for target in fuzzel ghostty niri pi waybar; do
+for target in fuzzel ghostty herdr niri pi waybar; do
   .agents/skills/theme-builder/scripts/build-doric-themes.py \
     --all --target "$target"
 done
 ```
 
-Then inspect both tracked and untracked differences across all five trees:
+Then inspect both tracked and untracked differences across all six trees:
 
 ```bash
 git status --short -- \
-  config/fuzzel/themes config/ghostty/themes config/niri/themes \
+  config/fuzzel/themes config/ghostty/themes config/herdr/themes config/niri/themes \
   config/pi/themes config/waybar/themes
 git diff --check
 git diff -- \
-  config/fuzzel/themes config/ghostty/themes config/niri/themes \
+  config/fuzzel/themes config/ghostty/themes config/herdr/themes config/niri/themes \
   config/pi/themes config/waybar/themes
 ```
 

@@ -72,6 +72,27 @@
         "type": "github"
       }
     },
+    "herdr": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "rust-overlay": "rust-overlay"
+      },
+      "locked": {
+        "lastModified": 1788737224,
+        "narHash": "sha256-L54SVSXGCsQzuP/typ6cQt96l0QDUWV2qTP7APl+bsQ=",
+        "owner": "herdrdev",
+        "repo": "herdr",
+        "rev": "4b5e9bda239a0b6903889062d756424578e94691",
+        "type": "github"
+      },
+      "original": {
+        "owner": "herdrdev",
+        "repo": "herdr",
+        "type": "github"
+      }
+    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -181,11 +202,33 @@
     "root": {
       "inputs": {
         "flake-parts": "flake-parts",
+        "herdr": "herdr",
         "home-manager": "home-manager",
         "import-tree": "import-tree",
         "llm-agents": "llm-agents",
         "llm-agents-nixpkgs": "llm-agents-nixpkgs",
         "nixpkgs": "nixpkgs"
+      }
+    },
+    "rust-overlay": {
+      "inputs": {
+        "nixpkgs": [
+          "herdr",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1783577481,
+        "narHash": "sha256-EWMxOWrJ031f8f/lrcEmhTRs4npw1/5N3Hcjin846c8=",
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "rev": "4cdea398dc491b082dccdce0fad1ed0b75fa3394",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "type": "github"
       }
     },
     "systems": {

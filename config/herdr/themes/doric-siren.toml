@@ -1,0 +1,24 @@
+# Generated from the installed Emacs doric-themes palette: doric-siren.
+# Do not edit directly; regenerate with build-doric-themes.py.
+# Background mode: light.
+
+[theme.custom]
+accent = "#68203b"
+panel_bg = "#d9e0ed"
+sidebar_bg = "#d9e0ed"
+active_row_bg = "#c2d1df"
+selection_bg = "#90b0e0"
+surface0 = "#c2d1df"
+surface1 = "#b0c0cd"
+surface_dim = "#90b0e0"
+overlay0 = "#9a9aba"
+overlay1 = "#3f5569"
+text = "#001020"
+subtext0 = "#3a434a"
+mauve = "#700d50"
+green = "#106710"
+yellow = "#60400f"
+red = "#a01010"
+blue = "#103077"
+teal = "#005355"
+peach = "#68203b"

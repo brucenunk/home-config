@@ -1,0 +1,24 @@
+# Generated from the installed Emacs doric-themes palette: doric-magma.
+# Do not edit directly; regenerate with build-doric-themes.py.
+# Background mode: dark.
+
+[theme.custom]
+accent = "#f65f47"
+panel_bg = "#351b10"
+sidebar_bg = "#351b10"
+active_row_bg = "#48332b"
+selection_bg = "#7c301c"
+surface0 = "#48332b"
+surface1 = "#5f4743"
+surface_dim = "#7c301c"
+overlay0 = "#706061"
+overlay1 = "#a0a196"
+text = "#e0baa0"
+subtext0 = "#cfbbb0"
+mauve = "#df70af"
+green = "#b9c06a"
+yellow = "#cfa030"
+red = "#fc826f"
+blue = "#7fafc7"
+teal = "#70a0c0"
+peach = "#f65f47"

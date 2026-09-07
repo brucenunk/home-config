@@ -6,6 +6,11 @@
     import-tree.url = "git+https://github.com/vic/import-tree.git";
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
+    # Upstream currently has post-v0.8.2 config features absent from nixpkgs'
+    # tagged 0.8.2 package. TODO(bump-nix): Prefer nixpkgs Herdr once it supports
+    # per-mode custom themes and terminal.kitty_graphics; compare each bump.
+    herdr.url = "github:herdrdev/herdr";
+    herdr.inputs.nixpkgs.follows = "nixpkgs";
     llm-agents.url = "github:numtide/llm-agents.nix";
     # Keep llm-agents on a separate nixpkgs input so it can move independently.
     llm-agents.inputs.nixpkgs.follows = "llm-agents-nixpkgs";

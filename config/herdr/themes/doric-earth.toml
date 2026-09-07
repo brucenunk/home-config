@@ -1,0 +1,24 @@
+# Generated from the installed Emacs doric-themes palette: doric-earth.
+# Do not edit directly; regenerate with build-doric-themes.py.
+# Background mode: light.
+
+[theme.custom]
+accent = "#74321f"
+panel_bg = "#f0eddf"
+sidebar_bg = "#f0eddf"
+active_row_bg = "#dfdfce"
+selection_bg = "#c09fa0"
+surface0 = "#dfdfce"
+surface1 = "#d1ceb6"
+surface_dim = "#c09fa0"
+overlay0 = "#a29986"
+overlay1 = "#635650"
+text = "#30232e"
+subtext0 = "#504033"
+mauve = "#690f44"
+green = "#206700"
+yellow = "#705200"
+red = "#a03000"
+blue = "#103060"
+teal = "#105f66"
+peach = "#74321f"

@@ -62,6 +62,7 @@ nix eval --impure --raw --expr '
     consumer = mkHome linuxPkgs [
       flake.modules.homeManager.doric-waybar-themes
       flake.modules.homeManager.ghostty
+      flake.modules.homeManager.herdr
       flake.modules.homeManager.pi
       {
         brucenunk.homeManager.ghostty = {
@@ -77,6 +78,8 @@ nix eval --impure --raw --expr '
           extensionsDirectory = null;
           themesDirectory = null;
         };
+
+        brucenunk.homeManager.herdr.ui.toast.delivery = "terminal";
       }
     ];
 
@@ -112,6 +115,9 @@ nix eval --impure --raw --expr '
     ghosttyThemeNames = builtins.filter (
       name: lib.hasPrefix "ghostty/themes/" name
     ) (builtins.attrNames consumer.config.xdg.configFile);
+    herdrConfig = builtins.fromTOML (
+      builtins.readFile consumer.config.xdg.configFile."herdr/config.toml".source
+    );
   in
   assert missingLinuxOnlyModuleNames == [ ];
   assert invalidOptionNames == [ ];
@@ -134,6 +140,25 @@ nix eval --impure --raw --expr '
   assert builtins.elem linuxPkgs.hello consumer.config.home.packages;
   assert lib.hasSuffix "\n\nfont-size = 12" ghosttyConfig;
   assert builtins.length ghosttyThemeNames > 2;
+  assert herdrConfig.terminal.kitty_graphics;
+  assert herdrConfig.terminal.new_cwd == "follow";
+  assert herdrConfig.theme.custom.dark.text == "#e7e7e7";
+  assert herdrConfig.theme.custom.light.text == "#202020";
+  assert !herdrConfig.remote.manage_ssh_config;
+  assert herdrConfig.ui.sidebar_width == 32;
+  assert herdrConfig.ui.sidebar_min_width == 30;
+  assert herdrConfig.ui.sidebar_max_width == 48;
+  assert herdrConfig.ui.sidebar.agents.rows == [
+    [ "workspace" "tab" ]
+    [ "agent" "state_text" ]
+  ];
+  assert herdrConfig.ui.sidebar.spaces.rows == [
+    [ "workspace" "state_text" ]
+    [ "branch" "git_status" ]
+  ];
+  assert herdrConfig.ui.toast.delivery == "terminal";
+  assert !herdrConfig.update.version_check;
+  assert consumer.config.home.file ? ".pi/agent/extensions/herdr-agent-state.ts";
   assert !(consumer.config.xdg.configFile
     ? "systemd/user/graphical-session.target.wants/app-com.mitchellh.ghostty.service");
   assert consumer.config.xdg.configFile."waybar/themes".recursive;

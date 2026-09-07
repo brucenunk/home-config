@@ -14,6 +14,7 @@ from typing import Callable
 REPO_ROOT = Path(__file__).resolve().parents[4]
 FUZZEL_THEME_DIR = REPO_ROOT / "config/fuzzel/themes"
 GHOSTTY_THEME_DIR = REPO_ROOT / "config/ghostty/themes"
+HERDR_THEME_DIR = REPO_ROOT / "config/herdr/themes"
 NIRI_THEME_DIR = REPO_ROOT / "config/niri/themes"
 PI_THEME_DIR = REPO_ROOT / "config/pi/themes"
 WAYBAR_THEME_DIR = REPO_ROOT / "config/waybar/themes"
@@ -221,6 +222,41 @@ def ghostty_theme_text(theme: dict[str, str]) -> str:
     )
 
 
+def herdr_theme_text(theme: dict[str, str]) -> str:
+    colors = {
+        "accent": theme["fg_accent"],
+        "panel_bg": theme["bg_main"],
+        "sidebar_bg": theme["bg_main"],
+        "active_row_bg": theme["bg_shadow_subtle"],
+        "selection_bg": theme["bg_shadow_intense"],
+        "surface0": theme["bg_shadow_subtle"],
+        "surface1": theme["bg_neutral"],
+        "surface_dim": theme["bg_shadow_intense"],
+        "overlay0": theme["border"],
+        "overlay1": theme["fg_shadow_subtle"],
+        "text": theme["fg_main"],
+        "subtext0": theme["fg_neutral"],
+        "mauve": theme["fg_magenta"],
+        "green": theme["fg_green"],
+        "yellow": theme["fg_yellow"],
+        "red": theme["fg_red"],
+        "blue": theme["fg_blue"],
+        "teal": theme["fg_cyan"],
+        "peach": theme["fg_accent"],
+    }
+    return "\n".join(
+        [
+            f"# Generated from the installed Emacs doric-themes palette: {theme['name']}.",
+            "# Do not edit directly; regenerate with build-doric-themes.py.",
+            f"# Background mode: {theme['background_mode']}.",
+            "",
+            "[theme.custom]",
+            *(f'{name} = "{color}"' for name, color in colors.items()),
+            "",
+        ]
+    )
+
+
 def fuzzel_color(color: str) -> str:
     return f"{color.removeprefix('#')}ff"
 
@@ -418,9 +454,14 @@ def css_filename(theme_name: str) -> str:
     return f"{theme_name}.css"
 
 
+def toml_filename(theme_name: str) -> str:
+    return f"{theme_name}.toml"
+
+
 TARGETS = {
     "fuzzel": Target(FUZZEL_THEME_DIR, ini_filename, fuzzel_theme_text),
     "ghostty": Target(GHOSTTY_THEME_DIR, unchanged_filename, ghostty_theme_text),
+    "herdr": Target(HERDR_THEME_DIR, toml_filename, herdr_theme_text),
     "niri": Target(NIRI_THEME_DIR, kdl_filename, niri_theme_text),
     "pi": Target(PI_THEME_DIR, json_filename, pi_theme_json),
     "waybar": Target(WAYBAR_THEME_DIR, css_filename, waybar_theme_text),
