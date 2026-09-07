@@ -26,6 +26,7 @@ with avoiding redundant reverts during rapid agent edits."
   :hook ((dired-mode    . denote-dired-mode-in-directories)
          (markdown-mode . denote-fontify-links-mode-maybe))
   :bind (("C-c n n" . denote)
+         ("C-c n t" . denote-template)
          ("C-c n r" . denote-rename-file)
          ("C-c n l" . denote-link)
          ("C-c n b" . denote-backlinks))
