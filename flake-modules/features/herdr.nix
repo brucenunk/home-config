@@ -1,6 +1,30 @@
 { inputs, ... }:
 
 {
+  perSystem =
+    { pkgs, ... }:
+    {
+      checks.herdr-sync-workspaces-tests =
+        pkgs.runCommand "herdr-sync-workspaces-tests"
+          {
+            nativeBuildInputs = [ pkgs.shellcheck ];
+          }
+          ''
+            shellcheck \
+              ${../../config/herdr/herdr-sync-workspaces.sh} \
+              ${../../config/herdr/herdr-sync-workspaces.test.sh}
+            ${pkgs.bash}/bin/bash ${../../config/herdr/herdr-sync-workspaces.test.sh} \
+              ${../../config/herdr/herdr-sync-workspaces.sh} \
+              ${pkgs.jq}/bin/jq \
+              ${pkgs.bash}/bin/bash \
+              ${pkgs.git}/bin/git \
+              ${pkgs.coreutils}/bin \
+              ${pkgs.flock}/bin/flock \
+              ${pkgs.socat}/bin/socat
+            touch "$out"
+          '';
+    };
+
   flake.modules.homeManager.herdr =
     {
       config,
@@ -30,6 +54,19 @@
 
       theme =
         name: (builtins.fromTOML (builtins.readFile ../../config/herdr/themes/${name}.toml)).theme.custom;
+
+      herdrSyncWorkspaces = pkgs.writeShellApplication {
+        name = "herdr-sync-workspaces";
+        runtimeInputs = [
+          pkgs.coreutils
+          pkgs.flock
+          pkgs.git
+          pkgs.jq
+          pkgs.socat
+          inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default
+        ];
+        text = builtins.readFile ../../config/herdr/herdr-sync-workspaces.sh;
+      };
 
       settings = {
         onboarding = false;
@@ -71,10 +108,7 @@
             ];
 
             spaces.rows = [
-              [
-                "workspace"
-                "state_text"
-              ]
+              [ "workspace" ]
               [
                 "branch"
                 "git_status"
@@ -117,7 +151,10 @@
           }
         ];
 
-        home.packages = lib.optional (
+        home.packages = [
+          herdrSyncWorkspaces
+        ]
+        ++ lib.optional (
           pkgs.stdenv.hostPlatform.isLinux && cfg.ui.toast.delivery == "system"
         ) pkgs.libnotify;
 
