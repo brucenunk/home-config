@@ -35,12 +35,12 @@
           wget
           yq-go
         ]
-        ++ lib.optionals (!stdenv.isDarwin) [
+        ++ lib.optionals (!stdenv.hostPlatform.isDarwin) [
           glib
           wavemon
           iw
         ]
-        ++ lib.optionals stdenv.isDarwin [
+        ++ lib.optionals stdenv.hostPlatform.isDarwin [
           fswatch
           glibtool
         ];

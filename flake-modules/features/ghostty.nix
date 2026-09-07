@@ -31,8 +31,8 @@
 
         canonicalLinuxService.enable = lib.mkOption {
           type = lib.types.bool;
-          default = pkgs.stdenv.isLinux;
-          defaultText = lib.literalExpression "pkgs.stdenv.isLinux";
+          default = pkgs.stdenv.hostPlatform.isLinux;
+          defaultText = lib.literalExpression "pkgs.stdenv.hostPlatform.isLinux";
           description = ''
             Whether to link Ghostty's packaged user service into the graphical session target.
           '';
@@ -53,13 +53,13 @@
           // {
             "ghostty/config".text =
               builtins.readFile ../../config/ghostty/config
-              + lib.optionalString pkgs.stdenv.isLinux ''
+              + lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
 
                 quit-after-last-window-closed = false
               ''
               + lib.optionalString (cfg.extraConfig != "") "\n\n${cfg.extraConfig}";
           }
-          // lib.optionalAttrs (pkgs.stdenv.isLinux && cfg.canonicalLinuxService.enable) {
+          // lib.optionalAttrs (pkgs.stdenv.hostPlatform.isLinux && cfg.canonicalLinuxService.enable) {
             "systemd/user/graphical-session.target.wants/app-com.mitchellh.ghostty.service".source =
               "${cfg.package}/share/systemd/user/app-com.mitchellh.ghostty.service";
           };

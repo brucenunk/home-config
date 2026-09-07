@@ -53,7 +53,7 @@
         description = "Absolute Git worktree paths registered for scheduled maintenance.";
       };
 
-      config = lib.mkIf (pkgs.stdenv.isDarwin && cfg.repositories != [ ]) {
+      config = lib.mkIf (pkgs.stdenv.hostPlatform.isDarwin && cfg.repositories != [ ]) {
         programs.git = {
           enable = true;
 
