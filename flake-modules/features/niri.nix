@@ -22,16 +22,16 @@
         '';
       };
       darkWallpaper = pkgs.requireFile {
-        name = "AdobeStock_321296482.jpeg";
-        sha256 = "sha256-YD4XtHeITylJGM+zW0zXfay7a5IndSyBeAR5heTRO+s=";
+        name = "AdobeStock_376846912.jpeg";
+        sha256 = "sha256-338SmLY+w+ULDX6JV3fZ7FjH41Qy4zr74ESkPv1NJs8=";
         message = ''
           The dark Niri wallpaper must be provisioned from its licensed download.
 
-          Source (Adobe Stock asset 321296482):
-          https://stock.adobe.com/uk/images/321296482
+          Source (Adobe Stock asset 376846912, Milky Way galaxy in black and white):
+          https://stock.adobe.com/uk/images/milky-way-galaxy-with-stars-on-a-night-sky-background-in-black-and-white-colour/376846912
 
           Add the downloaded file to the Nix store with:
-            nix-store --add-fixed sha256 /path/to/AdobeStock_321296482.jpeg
+            nix-store --add-fixed sha256 /path/to/AdobeStock_376846912.jpeg
         '';
       };
     in
