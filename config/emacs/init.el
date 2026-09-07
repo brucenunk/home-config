@@ -272,16 +272,14 @@
   (ghostel-kill-buffer-on-exit nil)
   (ghostel-max-scrollback (* 20 1024 1024))
   (ghostel-enable-osc52 t)
+  (ghostel-shell-integration t)
   :config
   (with-eval-after-load 'project
     (add-to-list 'project-switch-commands '(ghostel-project "Ghostel") t)))
 
-(with-eval-after-load 'eshell
-  (when (locate-library "ghostel-eshell")
-    (with-demoted-errors "ghostel-eshell setup failed: %S"
-      (require 'ghostel-eshell)
-      (when (fboundp 'ghostel-eshell-visual-command-mode)
-        (ghostel-eshell-visual-command-mode 1)))))
+(use-package ghostel-eshell
+  :ensure nil
+  :hook (eshell-load . ghostel-eshell-visual-command-mode))
 
 (use-package wgrep
   :defer t
