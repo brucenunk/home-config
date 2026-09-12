@@ -45,7 +45,57 @@
 (use-package marginalia
   :ensure nil
   :init
-  (marginalia-mode))
+  (marginalia-mode)
+  :config
+  (defun my/project-git-branch (directory)
+    "Return DIRECTORY's current Git branch, or `detached'."
+    (let* ((dot-git (expand-file-name ".git" directory))
+           (git-directory
+            (cond
+             ((file-directory-p dot-git) dot-git)
+             ((file-regular-p dot-git)
+              (with-temp-buffer
+                (insert-file-contents dot-git)
+                (let ((gitdir (string-trim (buffer-string))))
+                  (when (string-prefix-p "gitdir: " gitdir)
+                    (expand-file-name
+                     (string-remove-prefix "gitdir: " gitdir)
+                     directory)))))))
+           (head-file (and git-directory
+                           (expand-file-name "HEAD" git-directory))))
+      (when (and head-file (file-readable-p head-file))
+        (with-temp-buffer
+          (insert-file-contents head-file)
+          (let ((head (string-trim (buffer-string))))
+            (cond
+             ((string-prefix-p "ref: refs/heads/" head)
+              (string-remove-prefix "ref: refs/heads/" head))
+             ((string-match-p "\\`[[:xdigit:]]+\\'" head) "detached")))))))
+
+  (defun my/marginalia-annotate-project-file (candidate)
+    "Annotate project CANDIDATE with its Git branch when appropriate.
+Detached Git worktrees are labelled `detached'.  Other project-file
+candidates retain Marginalia's standard file annotation."
+    (if (and (file-name-absolute-p candidate)
+             (not (file-remote-p candidate))
+             (file-directory-p candidate))
+        (let ((default-directory
+               (file-name-as-directory (expand-file-name candidate))))
+          (let ((branch (my/project-git-branch default-directory)))
+            (if branch
+                (let ((detached (equal branch "detached")))
+                  (marginalia--fields
+                   ((if detached "-" branch)
+                    :face (if detached
+                              'marginalia-null
+                            'marginalia-value))))
+              (marginalia-annotate-project-file candidate))))
+      (marginalia-annotate-project-file candidate)))
+
+  (setf (alist-get 'project-file marginalia-annotators)
+        (cons #'my/marginalia-annotate-project-file
+              (remove #'my/marginalia-annotate-project-file
+                      (alist-get 'project-file marginalia-annotators)))))
 
 ;; Completion.
 ;; https://github.com/minad/corfu

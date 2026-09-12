@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; Regression coverage for Corfu auto-completion policy and Cape helpers.
+;; Regression coverage for minibuffer annotations, Corfu policy, and Cape helpers.
 
 ;;; Code:
 
@@ -12,6 +12,72 @@
 (require 'marginalia)
 (require 'eshell)
 (require 'my-emacs-completion)
+
+(ert-deftest my/project-annotation-shows-the-current-git-branch ()
+  (let ((directory (make-temp-file "project-branch-test-" t)))
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" directory))
+          (write-region "ref: refs/heads/jamesl-20260912T163933\n" nil
+                        (expand-file-name ".git/HEAD" directory))
+          (let ((annotation
+                 (my/marginalia-annotate-project-file directory)))
+            (should (string-suffix-p "jamesl-20260912T163933"
+                                     (substring-no-properties annotation)))
+            (should (eq (get-text-property (1- (length annotation))
+                                           'face annotation)
+                        'marginalia-value))))
+      (delete-directory directory t))))
+
+(ert-deftest my/project-annotation-identifies-detached-git-worktrees ()
+  (let ((directory (make-temp-file "project-detached-test-" t))
+        (git-directory (make-temp-file "project-gitdir-test-" t)))
+    (unwind-protect
+        (progn
+          (write-region (format "gitdir: %s\n" git-directory) nil
+                        (expand-file-name ".git" directory))
+          (write-region "0123456789012345678901234567890123456789\n" nil
+                        (expand-file-name "HEAD" git-directory))
+          (let ((annotation
+                 (my/marginalia-annotate-project-file directory)))
+            (should (string-suffix-p "-"
+                                     (substring-no-properties annotation)))
+            (should (eq (get-text-property (1- (length annotation))
+                                           'face annotation)
+                        'marginalia-null))))
+      (delete-directory directory t)
+      (delete-directory git-directory t))))
+
+(ert-deftest my/project-annotation-retains-standard-non-git-annotation ()
+  (let (annotated-candidate)
+    (cl-letf (((symbol-function 'marginalia-annotate-project-file)
+               (lambda (candidate)
+                 (setq annotated-candidate candidate)
+                 " standard")))
+      (let ((directory (make-temp-file "project-non-git-test-" t)))
+        (unwind-protect
+            (progn
+              (should (equal (my/marginalia-annotate-project-file directory)
+                             " standard"))
+              (should (equal annotated-candidate directory)))
+          (delete-directory directory t))))))
+
+(ert-deftest my/project-annotation-retains-relative-project-file-annotation ()
+  (cl-letf (((symbol-function 'my/project-git-branch)
+             (lambda (_directory) (ert-fail "relative candidates should not query Git")))
+            ((symbol-function 'marginalia-annotate-project-file)
+             (lambda (candidate) (concat " standard:" candidate))))
+    (should (equal (my/marginalia-annotate-project-file "src/main.el")
+                   " standard:src/main.el"))))
+
+(ert-deftest my/project-annotation-is-the-default-project-file-annotator ()
+  (should (eq (car (alist-get 'project-file marginalia-annotators))
+              #'my/marginalia-annotate-project-file))
+  (should (= (seq-count
+              (lambda (annotator)
+                (eq annotator #'my/marginalia-annotate-project-file))
+              (alist-get 'project-file marginalia-annotators))
+             1)))
 
 (ert-deftest my/corfu-auto-is-local-to-programming-and-eshell-modes ()
   (should global-corfu-mode)
