@@ -92,10 +92,11 @@ namespace.
 
 ## Current composition boundaries
 
-- `ghostty` deploys the shared config and complete theme set. Consumers may
-  select `brucenunk.homeManager.ghostty.package`, append `extraConfig`, and
-  control `canonicalLinuxService.enable`. A consumer that disables the
-  canonical service owns its replacement service and session environment.
+- `ghostty` deploys the shared config and the selected `doric-marble` and
+  `doric-obsidian` theme pair. Consumers may select
+  `brucenunk.homeManager.ghostty.package`, append `extraConfig`, and control
+  `canonicalLinuxService.enable`. A consumer that disables the canonical
+  service owns its replacement service and session environment.
 - `herdr` deploys the pinned upstream Herdr package, generated Doric light/dark
   theme policy, and release-matched Pi integration. Consumers may select only
   the typed `brucenunk.homeManager.herdr.ui.toast.delivery` host policy.
@@ -105,10 +106,10 @@ namespace.
   `mkForce`.
 - `git-maintenance` accepts consumer repository paths through
   `brucenunk.homeManager.gitMaintenance.repositories`.
-- `doric-waybar-themes` deploys only the complete generated Waybar theme set.
-  Consumers with a different bar layout or launcher can import it without the
-  `waybar` module's Wampa policy. The full `waybar` module imports these assets
-  itself.
+- `doric-waybar-themes` deploys only the generated `doric-marble` and
+  `doric-obsidian` Waybar theme pair. Consumers with a different bar layout or
+  launcher can import it without the `waybar` module's Wampa policy. The full
+  `waybar` module imports these assets itself.
 - `agents` already separates shared file deployment from Darwin-only packages
   through platform compatibility checks; it needs no additional interface.
 - `darkman` intentionally retains the ordinary-login Niri integration. A

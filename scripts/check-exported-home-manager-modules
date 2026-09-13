@@ -139,7 +139,10 @@ nix eval --impure --raw --expr '
   assert gitMaintenanceConsumer.config.launchd.agents ? "git-maintenance-hourly";
   assert builtins.elem linuxPkgs.hello consumer.config.home.packages;
   assert lib.hasSuffix "\n\nfont-size = 12" ghosttyConfig;
-  assert builtins.length ghosttyThemeNames > 2;
+  assert ghosttyThemeNames == [
+    "ghostty/themes/doric-marble"
+    "ghostty/themes/doric-obsidian"
+  ];
   assert herdrConfig.terminal.kitty_graphics;
   assert herdrConfig.terminal.new_cwd == "follow";
   assert herdrConfig.theme.custom.dark.text == "#e7e7e7";

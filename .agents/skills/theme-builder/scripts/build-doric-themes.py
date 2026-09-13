@@ -22,9 +22,6 @@ PI_THEME_SCHEMA = (
     "https://raw.githubusercontent.com/badlogic/pi-mono/main/"
     "packages/coding-agent/src/modes/interactive/theme/theme-schema.json"
 )
-GENERATED_MARKER = "Do not edit directly; regenerate with build-doric-themes.py."
-
-
 EMACS_EXTRACT = r"""
 (progn
   (require 'json)
@@ -103,13 +100,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--theme",
         action="append",
-        default=[],
+        required=True,
         help="Theme name to generate, for example doric-marble. Repeatable.",
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Generate all Doric themes. This is the default when no --theme values are given.",
     )
     parser.add_argument(
         "--target",
@@ -472,34 +464,15 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def remove_stale_generated_themes(
-    target: Target, theme_data: list[dict[str, str]]
-) -> int:
-    expected_names = {target.filename(theme["name"]) for theme in theme_data}
-    removed = 0
-    for path in target.output_dir.iterdir():
-        if not path.is_file() or path.name in expected_names:
-            continue
-        if GENERATED_MARKER not in path.read_text(encoding="utf-8"):
-            continue
-        path.unlink()
-        removed += 1
-    return removed
-
-
 def main() -> int:
     args = parse_args()
-    if args.all and args.theme:
-        print("--all cannot be combined with --theme.", file=sys.stderr)
-        return 1
     theme_data = load_theme_data()
     requested = set(args.theme)
-    if requested:
-        theme_data = [theme for theme in theme_data if theme["name"] in requested]
-        missing = sorted(requested - {theme["name"] for theme in theme_data})
-        if missing:
-            print(f"Unknown Doric theme(s): {', '.join(missing)}", file=sys.stderr)
-            return 1
+    theme_data = [theme for theme in theme_data if theme["name"] in requested]
+    missing = sorted(requested - {theme["name"] for theme in theme_data})
+    if missing:
+        print(f"Unknown Doric theme(s): {', '.join(missing)}", file=sys.stderr)
+        return 1
 
     if args.target == "all":
         targets = set(TARGETS)
@@ -510,11 +483,6 @@ def main() -> int:
 
     for target_name in targets:
         ensure_dir(TARGETS[target_name].output_dir)
-
-    removed = 0
-    if not requested:
-        for target_name in targets:
-            removed += remove_stale_generated_themes(TARGETS[target_name], theme_data)
 
     for theme in theme_data:
         for target_name in targets:
@@ -533,8 +501,6 @@ def main() -> int:
         + ", ".join(str(path) for path in target_dirs)
         + "."
     )
-    if removed:
-        print(f"Removed {removed} stale generated theme(s).")
     return 0
 
 

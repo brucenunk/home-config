@@ -22,10 +22,37 @@ Its supported targets and output trees are:
 | `waybar` | `config/waybar/themes/` |
 
 `--target all` generates all six targets. The legacy `--target both` alias
-generates Ghostty and Pi. `--theme doric-NAME` is repeatable; with no
-`--theme`, or with `--all`, the generator processes the complete installed
-Doric collection. Full-collection runs also remove stale files carrying the
-generator's ownership marker; selective `--theme` runs never prune files.
+generates Ghostty and Pi. `--theme doric-NAME` is required and repeatable; the
+generator only writes the explicitly requested themes and never prunes files.
+
+The available Doric themes are:
+
+- `doric-almond`
+- `doric-beach`
+- `doric-borage`
+- `doric-cherry`
+- `doric-copper`
+- `doric-coral`
+- `doric-dark`
+- `doric-earth`
+- `doric-fire`
+- `doric-jade`
+- `doric-light`
+- `doric-lilac`
+- `doric-lion`
+- `doric-magma`
+- `doric-marble`
+- `doric-mermaid`
+- `doric-oak`
+- `doric-obsidian`
+- `doric-pine`
+- `doric-plum`
+- `doric-siren`
+- `doric-tiger`
+- `doric-valley`
+- `doric-walnut`
+- `doric-water`
+- `doric-wind`
 
 ## Before regeneration
 
@@ -52,13 +79,17 @@ palette or generator change.
 
 ## Generate
 
-Generate the full theme set for all applications:
+Generate the two themes used by this repository for all applications:
 
 ```bash
-.agents/skills/theme-builder/scripts/build-doric-themes.py --all --target all
+.agents/skills/theme-builder/scripts/build-doric-themes.py \
+  --theme doric-marble \
+  --theme doric-obsidian \
+  --target all
 ```
 
-Generate one theme or one application when the task is intentionally narrower:
+Generate one of the available themes for one application when the task is
+intentionally narrower:
 
 ```bash
 .agents/skills/theme-builder/scripts/build-doric-themes.py \
@@ -84,13 +115,29 @@ ruff format --check .agents/skills/theme-builder/scripts/build-doric-themes.py
 .agents/skills/theme-builder/scripts/build-doric-themes.py --help
 ```
 
-To prove every supported output independently reproduces the complete tracked
-theme tree, begin with clean output trees, run:
+To prove every supported output independently reproduces the tracked theme
+tree, begin with clean output trees, run:
 
 ```bash
 for target in fuzzel ghostty herdr niri pi waybar; do
   .agents/skills/theme-builder/scripts/build-doric-themes.py \
-    --all --target "$target"
+    --theme doric-marble \
+    --theme doric-obsidian \
+    --target "$target"
+done
+
+for target in fuzzel ghostty herdr niri pi waybar; do
+  case "$target" in
+    fuzzel) suffix=.ini ;;
+    ghostty) suffix= ;;
+    herdr) suffix=.toml ;;
+    niri) suffix=.kdl ;;
+    pi) suffix=.json ;;
+    waybar) suffix=.css ;;
+  esac
+  expected=$(printf '%s\n' "doric-marble$suffix" "doric-obsidian$suffix")
+  actual=$(fd --max-depth 1 --type f . "config/$target/themes" -x basename | sort)
+  test "$actual" = "$expected"
 done
 ```
 
@@ -106,9 +153,10 @@ git diff -- \
   config/pi/themes config/waybar/themes
 ```
 
-An empty scoped status proves byte-for-byte reproduction, including removal of
-stale generator-owned themes. Otherwise review and explain every changed,
-removed, or newly generated file before keeping it. After an
-approved generated change, run the repository-prescribed public boundary and
-Home Manager checks; do not apply or claim runtime pickup unless the task
-explicitly calls for deployment.
+Passing the exact file-list check proves that no stale themes remain. An empty
+scoped status additionally proves byte-for-byte reproduction of the retained
+themes. Otherwise review and explain every changed, removed, or newly generated
+file before keeping it. Remove obsolete generated files explicitly when the
+repository's theme selection changes. After an approved generated change, run
+the repository-prescribed public boundary and Home Manager checks; do not apply
+or claim runtime pickup unless the task explicitly calls for deployment.
