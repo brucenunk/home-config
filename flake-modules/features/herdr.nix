@@ -1,4 +1,4 @@
-{ inputs, ... }:
+{ ... }:
 
 {
   perSystem =
@@ -37,7 +37,7 @@
       cfg = config.brucenunk.homeManager.herdr;
 
       configReference = builtins.fromJSON (
-        builtins.readFile "${inputs.herdr}/docs/next/website/src/data/config-reference.json"
+        builtins.readFile "${pkgs.herdr.src}/docs/next/website/src/data/config-reference.json"
       );
       configKeys = lib.concatMap (section: map (entry: entry.key) section.keys) configReference.sections;
       requiredConfigKeys = [
@@ -63,7 +63,7 @@
           pkgs.git
           pkgs.jq
           pkgs.socat
-          inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default
+          pkgs.herdr
         ];
         text = builtins.readFile ../../config/herdr/herdr-sync-workspaces.sh;
       };
@@ -159,11 +159,11 @@
         ) pkgs.libnotify;
 
         home.file.".pi/agent/extensions/herdr-agent-state.ts".source =
-          "${inputs.herdr}/src/integration/assets/pi/herdr-agent-state.ts";
+          "${pkgs.herdr.src}/src/integration/assets/pi/herdr-agent-state.ts";
 
         programs.herdr = {
           enable = true;
-          package = inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          package = pkgs.herdr;
           inherit settings;
         };
       };
