@@ -17,5 +17,5 @@ fi
 
 exec fuzzel \
   --config="$theme_file" \
-  --font="Bricolage Grotesque:size=12" \
+  --font="Bricolage Grotesque:size=13" \
   "$@"

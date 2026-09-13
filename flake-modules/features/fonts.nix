@@ -5,7 +5,7 @@
     { pkgs, ... }:
 
     {
-      dconf.settings."org/gnome/desktop/interface".font-name = "Open Sans 11";
+      dconf.settings."org/gnome/desktop/interface".font-name = "Open Sans 12";
 
       fonts.fontconfig.enable = true;
 
