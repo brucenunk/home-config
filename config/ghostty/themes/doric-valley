@@ -19,14 +19,14 @@ palette = 10=#b9d0aa
 palette = 3=#c0b060
 palette = 11=#c0b060
 # blue
-palette = 4=#9fbfe7
-palette = 12=#9fbfe7
+palette = 4=#9fb8e7
+palette = 12=#9fb8e7
 # magenta
 palette = 5=#e9acbf
 palette = 13=#e9acbf
 # cyan
-palette = 6=#a0c0d0
-palette = 14=#a0c0d0
+palette = 6=#a0c0c0
+palette = 14=#a0c0c0
 # white
 palette = 7=#e0d5b7
 palette = 15=#e0d5b7

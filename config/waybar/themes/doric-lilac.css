@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-lilac. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #f2f0e7;
+@define-color surface #e7e2d7;
+@define-color surface_alt #d5cbc7;
+@define-color text #1a3530;
+@define-color muted #53402f;
+@define-color border #8f9373;
+@define-color accent #435a00;
+@define-color shadow #6d6c68;
+@define-color success #005700;
+@define-color warning #595000;
+@define-color error #982500;
