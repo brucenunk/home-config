@@ -76,7 +76,7 @@ This is deliberately not a sandbox or general process supervisor. It runs the no
 The supported public wrappers are:
 
 - `scripts/check-home-configuration`, whose four evaluations and final build are sequential and leave stderr attached;
-- `scripts/check-exported-home-manager-modules` and `scripts/check-exported-pi-module`, each of which performs one foreground evaluation with stderr attached; and
+- `scripts/check-exported-home-manager-modules`, which performs one foreground evaluation with stderr attached; and
 - the activation matrix's direct `nix run`, which resolves the shim as the command itself.
 
 All inherit `PATH`, invoke Nix by name, and neither redirect Nix stderr nor supply conflicting options. Reinspect them before use because the boundary depends on their current implementation. Stop rather than claiming authenticated or structured coverage if an assumption no longer holds.

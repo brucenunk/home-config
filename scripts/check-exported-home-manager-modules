@@ -1,186 +1,93 @@
 #!/usr/bin/env sh
 set -eu
 
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
 
-# Evaluate exported modules with plain nixpkgs and no consumer overlays or
-# extraSpecialArgs. The scratch consumer uses only exported module interfaces.
+# Evaluate every module supported by the invoking platform with plain nixpkgs
+# and no consumer overlays or extraSpecialArgs. Feature-specific behavior is
+# covered by the flake checks defined beside each owning module.
+# shellcheck disable=SC2016 # The single-quoted value is a Nix expression.
 nix eval --impure --raw --expr '
   let
     flake = builtins.getFlake (toString ./.);
-    linuxPkgs = import flake.inputs.nixpkgs {
-      system = "x86_64-linux";
-      config.allowUnfree = true;
-    };
-    darwinPkgs = import flake.inputs.nixpkgs {
-      system = "aarch64-darwin";
-      config.allowUnfree = true;
-    };
-    nativePkgs = import flake.inputs.nixpkgs {
+    pkgs = import flake.inputs.nixpkgs {
       system = builtins.currentSystem;
       config.allowUnfree = true;
     };
-    lib = linuxPkgs.lib;
+    lib = pkgs.lib;
 
     identity = {
       home.username = "exported-module-check";
-      home.homeDirectory = "/home/exported-module-check";
+      home.homeDirectory =
+        if pkgs.stdenv.hostPlatform.isDarwin then
+          "/Users/exported-module-check"
+        else
+          "/home/exported-module-check";
       home.stateVersion = "25.05";
     };
 
-    mkHome = pkgs: modules: flake.inputs.home-manager.lib.homeManagerConfiguration {
+    mkHome = module: flake.inputs.home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
-      modules = modules ++ [ identity ];
+      modules = [ module identity ];
     };
 
-    emacsDefaultConsumer = mkHome linuxPkgs [
-      flake.modules.homeManager.emacs
+    expectedModuleNames = [
+      "agents"
+      "bazel"
+      "darkman"
+      "direnv"
+      "doric-waybar-themes"
+      "emacs"
+      "fd"
+      "firmware-update-notifier"
+      "fish"
+      "fonts"
+      "fzf"
+      "ghostty"
+      "git"
+      "git-maintenance"
+      "golang"
+      "hephaestus"
+      "herdr"
+      "kube"
+      "language-servers"
+      "niri"
+      "ollama"
+      "packages"
+      "pi"
+      "python"
+      "ripgrep"
+      "rust"
+      "waybar"
     ];
-    emacsOverrideConsumer = mkHome linuxPkgs [
-      flake.modules.homeManager.emacs
-      { programs.emacs.package = linuxPkgs.emacs31; }
-    ];
-    emacsPriorityConsumer = mkHome linuxPkgs [
-      flake.modules.homeManager.emacs
-      { programs.emacs.package = linuxPkgs.emacs-nox; }
-    ];
-    wampaEmacsPackage =
-      flake.homeConfigurations."james@wampa".config.programs.emacs.package;
-
-    optionNames = home: map (option: option.name) (lib.optionAttrSetToDocList home.options);
-    addedOptionNames = pkgs: modules: lib.subtractLists
-      (optionNames (mkHome pkgs [ ]))
-      (optionNames (mkHome pkgs modules));
-    invalidOptionNames = builtins.filter (
-      name: !(lib.hasPrefix "brucenunk.homeManager." name)
-    ) (lib.unique (
-      addedOptionNames linuxPkgs (builtins.attrValues flake.modules.homeManager)
-      ++ addedOptionNames darwinPkgs darwinModules
-    ));
-
-    linuxModuleActivationDrvs = lib.mapAttrsToList (
-      _: module: (mkHome linuxPkgs [ module ]).activationPackage.drvPath
-    ) flake.modules.homeManager;
-
-    linuxConsumer = mkHome linuxPkgs [
-      flake.modules.homeManager.doric-waybar-themes
-      flake.modules.homeManager.ghostty
-      flake.modules.homeManager.pi
-      {
-        brucenunk.homeManager.ghostty = {
-          package = linuxPkgs.hello;
-
-          canonicalLinuxService.enable = false;
-          extraConfig = "font-size = 12";
-        };
-
-        brucenunk.homeManager.pi = {
-          enable = false;
-
-          extensionsDirectory = null;
-          themesDirectory = null;
-        };
-      }
-    ];
-
-    # Reading a generated file realizes its derivation, so use the invoking
-    # host platform for assertions over generated Herdr settings.
-    nativeHerdrConsumer = mkHome nativePkgs [
-      flake.modules.homeManager.herdr
-      { brucenunk.homeManager.herdr.ui.toast.delivery = "terminal"; }
-    ];
-
-    gitMaintenanceConsumer = mkHome darwinPkgs [
-      flake.modules.homeManager.git-maintenance
-      {
-        brucenunk.homeManager.gitMaintenance.repositories = [
-          "/Users/exported-module-check/work/example"
-        ];
-      }
-    ];
-
-    # darkman manages a Linux-only package, systemd user service, and Niri portal.
-    # niri configures the Linux Wayland compositor and its desktop services.
-    # waybar configures a Linux Wayland status bar; its portable themes are
-    # exported separately as doric-waybar-themes.
     linuxOnlyModuleNames = [
       "darkman"
       "niri"
       "waybar"
     ];
-    missingLinuxOnlyModuleNames = builtins.filter (
-      name: !(builtins.hasAttr name flake.modules.homeManager)
-    ) linuxOnlyModuleNames;
-    darwinModules = builtins.attrValues (
-      builtins.removeAttrs flake.modules.homeManager linuxOnlyModuleNames
-    );
-    darwinActivationDrvs =
-      [ gitMaintenanceConsumer.activationPackage.drvPath ]
-      ++ map (module: (mkHome darwinPkgs [ module ]).activationPackage.drvPath) darwinModules;
+    exportedModules = flake.modules.homeManager;
+    nativeModules =
+      if pkgs.stdenv.hostPlatform.isLinux then
+        exportedModules
+      else
+        builtins.removeAttrs exportedModules linuxOnlyModuleNames;
 
-    ghosttyConfig = linuxConsumer.config.xdg.configFile."ghostty/config".text;
-    ghosttyThemeNames = builtins.filter (
-      name: lib.hasPrefix "ghostty/themes/" name
-    ) (builtins.attrNames linuxConsumer.config.xdg.configFile);
-    herdrConfig = builtins.fromTOML (
-      builtins.readFile nativeHerdrConsumer.config.xdg.configFile."herdr/config.toml".source
-    );
+    optionNames = home: map (option: option.name) (lib.optionAttrSetToDocList home.options);
+    baselineOptionNames = optionNames (flake.inputs.home-manager.lib.homeManagerConfiguration {
+      inherit pkgs;
+      modules = [ identity ];
+    });
+    addedOptionNames = module: lib.subtractLists baselineOptionNames (optionNames (mkHome module));
+    invalidOptionNames = builtins.filter (
+      name: !(lib.hasPrefix "brucenunk.homeManager." name)
+    ) (lib.unique (lib.concatMap addedOptionNames (builtins.attrValues nativeModules)));
+    activationDrvs = map (
+      module: (mkHome module).activationPackage.drvPath
+    ) (builtins.attrValues nativeModules);
   in
-  assert missingLinuxOnlyModuleNames == [ ];
+  assert builtins.attrNames exportedModules == expectedModuleNames;
   assert invalidOptionNames == [ ];
-  assert lib.hasAttrByPath [ "brucenunk" "homeManager" "gitMaintenance" "repositories" ]
-    gitMaintenanceConsumer.options;
-  assert !(lib.hasAttrByPath [ "programs" "gitMaintenance" ] gitMaintenanceConsumer.options);
-  assert !(lib.hasAttrByPath [ "programs" "piAgent" ] linuxConsumer.options);
-  assert emacsDefaultConsumer.config.programs.emacs.package.drvPath
-    == linuxPkgs.emacs.drvPath;
-  assert emacsOverrideConsumer.config.programs.emacs.package.drvPath
-    == linuxPkgs.emacs31.drvPath;
-  assert emacsPriorityConsumer.config.programs.emacs.package.drvPath
-    == linuxPkgs.emacs-nox.drvPath;
-  assert wampaEmacsPackage.drvPath == linuxPkgs.emacs-pgtk.drvPath;
-  assert gitMaintenanceConsumer.config.programs.git.enable;
-  assert gitMaintenanceConsumer.config.programs.git.settings.maintenance.repo == [
-    "/Users/exported-module-check/work/example"
-  ];
-  assert gitMaintenanceConsumer.config.launchd.agents ? "git-maintenance-hourly";
-  assert builtins.elem linuxPkgs.hello linuxConsumer.config.home.packages;
-  assert lib.hasSuffix "\n\nfont-size = 12" ghosttyConfig;
-  assert ghosttyThemeNames == [
-    "ghostty/themes/doric-marble"
-    "ghostty/themes/doric-obsidian"
-  ];
-  assert herdrConfig.terminal.kitty_graphics;
-  assert herdrConfig.terminal.new_cwd == "follow";
-  assert herdrConfig.theme.custom.dark.text == "#e7e7e7";
-  assert herdrConfig.theme.custom.light.text == "#202020";
-  assert !herdrConfig.remote.manage_ssh_config;
-  assert herdrConfig.ui.sidebar_width == 32;
-  assert herdrConfig.ui.sidebar_min_width == 30;
-  assert herdrConfig.ui.sidebar_max_width == 48;
-  assert herdrConfig.ui.sidebar.agents.rows == [
-    [ "workspace" "tab" ]
-    [ "agent" "state_text" ]
-  ];
-  assert herdrConfig.ui.sidebar.spaces.rows == [
-    [ "workspace" ]
-    [ "branch" "git_status" ]
-  ];
-  assert herdrConfig.ui.toast.delivery == "terminal";
-  assert !herdrConfig.update.version_check;
-  assert nativeHerdrConsumer.config.home.file ? ".pi/agent/extensions/herdr-agent-state.ts";
-  assert !(linuxConsumer.config.xdg.configFile
-    ? "systemd/user/graphical-session.target.wants/app-com.mitchellh.ghostty.service");
-  assert linuxConsumer.config.xdg.configFile."waybar/themes".recursive;
-  assert linuxConsumer.config.brucenunk.homeManager.pi.extensionsDirectory == null;
-  assert linuxConsumer.config.brucenunk.homeManager.pi.themesDirectory == null;
-  builtins.deepSeq linuxModuleActivationDrvs (
-    builtins.deepSeq darwinActivationDrvs (
-      builtins.deepSeq linuxConsumer.activationPackage.drvPath
-        nativeHerdrConsumer.activationPackage.drvPath
-    )
-  )
-' >/dev/null
-
-printf 'exported Home Manager modules and custom option namespace evaluate with plain nixpkgs\n'
+  builtins.deepSeq activationDrvs "${builtins.currentSystem} exported Home Manager modules evaluate with plain nixpkgs"
+'
+printf '\n'

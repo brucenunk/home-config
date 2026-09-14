@@ -1,7 +1,7 @@
-{ ... }:
+{ inputs, ... }:
 
-{
-  flake.modules.homeManager.ghostty =
+let
+  homeManagerModule =
     {
       config,
       lib,
@@ -65,4 +65,59 @@
           };
       };
     };
+in
+{
+  perSystem =
+    { lib, pkgs, ... }:
+
+    let
+      home = inputs.home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [
+          homeManagerModule
+          {
+            home = {
+              username = "ghostty-module-check";
+              homeDirectory =
+                if pkgs.stdenv.hostPlatform.isDarwin then
+                  "/Users/ghostty-module-check"
+                else
+                  "/home/ghostty-module-check";
+              stateVersion = "25.05";
+            };
+
+            brucenunk.homeManager.ghostty = {
+              package = pkgs.hello;
+
+              canonicalLinuxService.enable = false;
+              extraConfig = "font-size = 12";
+            };
+          }
+        ];
+      };
+      ghosttyConfig = home.config.xdg.configFile."ghostty/config".text;
+      ghosttyThemeNames = builtins.filter (name: lib.hasPrefix "ghostty/themes/" name) (
+        builtins.attrNames home.config.xdg.configFile
+      );
+    in
+    {
+      checks.ghostty-home-manager-module =
+        assert builtins.elem pkgs.hello home.config.home.packages;
+        assert lib.hasSuffix "\n\nfont-size = 12" ghosttyConfig;
+        assert
+          ghosttyThemeNames == [
+            "ghostty/themes/doric-marble"
+            "ghostty/themes/doric-obsidian"
+          ];
+        assert
+          !(
+            home.config.xdg.configFile
+            ? "systemd/user/graphical-session.target.wants/app-com.mitchellh.ghostty.service"
+          );
+        pkgs.runCommand "ghostty-home-manager-module" { } ''
+          touch "$out"
+        '';
+    };
+
+  flake.modules.homeManager.ghostty = homeManagerModule;
 }

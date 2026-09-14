@@ -1,40 +1,7 @@
 { inputs, ... }:
 
-{
-  perSystem =
-    { pkgs, ... }:
-    {
-      checks = {
-        pi-apply-patch-tests =
-          pkgs.runCommand "pi-apply-patch-tests" { nativeBuildInputs = [ pkgs.nodejs ]; }
-            ''
-              node --test ${../../config/pi/extensions/apply-patch}/apply-patch.test.ts
-              touch "$out"
-            '';
-
-        pi-settings-defaults-tests =
-          pkgs.runCommand "pi-settings-defaults-tests"
-            {
-              nativeBuildInputs = [
-                pkgs.jq
-                pkgs.shellcheck
-              ];
-            }
-            ''
-              shellcheck \
-                ${../../config/pi/merge-settings-defaults.sh} \
-                ${../../config/pi/merge-settings-defaults.test.sh}
-              ${pkgs.bash}/bin/bash ${../../config/pi/merge-settings-defaults.test.sh} \
-                ${../../config/pi/merge-settings-defaults.sh} \
-                ${pkgs.jq}/bin/jq \
-                ${pkgs.bash}/bin/bash \
-                ${pkgs.coreutils}/bin
-              touch "$out"
-            '';
-      };
-    };
-
-  flake.modules.homeManager.pi =
+let
+  homeManagerModule =
     {
       config,
       lib,
@@ -170,4 +137,72 @@
         })
       ];
     };
+in
+{
+  perSystem =
+    { pkgs, ... }:
+    let
+      home = inputs.home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [
+          homeManagerModule
+          {
+            home = {
+              username = "pi-module-check";
+              homeDirectory =
+                if pkgs.stdenv.hostPlatform.isDarwin then "/Users/pi-module-check" else "/home/pi-module-check";
+              stateVersion = "25.05";
+            };
+
+            brucenunk.homeManager.pi = {
+              enable = false;
+
+              extensionsDirectory = null;
+              themesDirectory = null;
+            };
+          }
+        ];
+      };
+    in
+    {
+      checks = {
+        pi-apply-patch-tests =
+          pkgs.runCommand "pi-apply-patch-tests" { nativeBuildInputs = [ pkgs.nodejs ]; }
+            ''
+              node --test ${../../config/pi/extensions/apply-patch}/apply-patch.test.ts
+              touch "$out"
+            '';
+
+        pi-settings-defaults-tests =
+          pkgs.runCommand "pi-settings-defaults-tests"
+            {
+              nativeBuildInputs = [
+                pkgs.jq
+                pkgs.shellcheck
+              ];
+            }
+            ''
+              shellcheck \
+                ${../../config/pi/merge-settings-defaults.sh} \
+                ${../../config/pi/merge-settings-defaults.test.sh}
+              ${pkgs.bash}/bin/bash ${../../config/pi/merge-settings-defaults.test.sh} \
+                ${../../config/pi/merge-settings-defaults.sh} \
+                ${pkgs.jq}/bin/jq \
+                ${pkgs.bash}/bin/bash \
+                ${pkgs.coreutils}/bin
+              touch "$out"
+            '';
+
+        pi-home-manager-module =
+          assert !home.config.brucenunk.homeManager.pi.enable;
+          assert !(builtins.elem home.config.brucenunk.homeManager.pi.package home.config.home.packages);
+          assert home.config.brucenunk.homeManager.pi.extensionsDirectory == null;
+          assert home.config.brucenunk.homeManager.pi.themesDirectory == null;
+          pkgs.runCommand "pi-home-manager-module" { } ''
+            touch "$out"
+          '';
+      };
+    };
+
+  flake.modules.homeManager.pi = homeManagerModule;
 }

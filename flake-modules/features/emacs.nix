@@ -1,7 +1,7 @@
-{ ... }:
+{ inputs, ... }:
 
-{
-  flake.modules.homeManager.emacs =
+let
+  homeManagerModule =
     { lib, pkgs, ... }:
 
     let
@@ -95,4 +95,45 @@
       xdg.configFile."emacs/my-lisp".source = ../../config/emacs/my-lisp;
       xdg.configFile."emacs/my-emacs-modules".source = ../../config/emacs/my-emacs-modules;
     };
+in
+{
+  perSystem =
+    { lib, pkgs, ... }:
+
+    {
+      checks = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+        let
+          mkHome =
+            package:
+            inputs.home-manager.lib.homeManagerConfiguration {
+              inherit pkgs;
+              modules = [
+                homeManagerModule
+                {
+                  home = {
+                    username = "emacs-module-check";
+                    homeDirectory = "/home/emacs-module-check";
+                    stateVersion = "25.05";
+                  };
+                }
+              ]
+              ++ lib.optional (package != null) { programs.emacs.package = package; };
+            };
+          defaultHome = mkHome null;
+          emacs31Home = mkHome pkgs.emacs31;
+          emacsNoxHome = mkHome pkgs.emacs-nox;
+        in
+        {
+          emacs-home-manager-module =
+            assert defaultHome.config.programs.emacs.package.drvPath == pkgs.emacs.drvPath;
+            assert emacs31Home.config.programs.emacs.package.drvPath == pkgs.emacs31.drvPath;
+            assert emacsNoxHome.config.programs.emacs.package.drvPath == pkgs.emacs-nox.drvPath;
+            pkgs.runCommand "emacs-home-manager-module" { } ''
+              touch "$out"
+            '';
+        }
+      );
+    };
+
+  flake.modules.homeManager.emacs = homeManagerModule;
 }

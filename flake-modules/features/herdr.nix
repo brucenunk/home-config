@@ -1,31 +1,7 @@
-{ ... }:
+{ inputs, ... }:
 
-{
-  perSystem =
-    { pkgs, ... }:
-    {
-      checks.herdr-sync-workspaces-tests =
-        pkgs.runCommand "herdr-sync-workspaces-tests"
-          {
-            nativeBuildInputs = [ pkgs.shellcheck ];
-          }
-          ''
-            shellcheck \
-              ${../../config/herdr/herdr-sync-workspaces.sh} \
-              ${../../config/herdr/herdr-sync-workspaces.test.sh}
-            ${pkgs.bash}/bin/bash ${../../config/herdr/herdr-sync-workspaces.test.sh} \
-              ${../../config/herdr/herdr-sync-workspaces.sh} \
-              ${pkgs.jq}/bin/jq \
-              ${pkgs.bash}/bin/bash \
-              ${pkgs.git}/bin/git \
-              ${pkgs.coreutils}/bin \
-              ${pkgs.flock}/bin/flock \
-              ${pkgs.socat}/bin/socat
-            touch "$out"
-          '';
-    };
-
-  flake.modules.homeManager.herdr =
+let
+  homeManagerModule =
     {
       config,
       lib,
@@ -168,4 +144,87 @@
         };
       };
     };
+in
+{
+  perSystem =
+    { pkgs, ... }:
+    let
+      home = inputs.home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [
+          homeManagerModule
+          {
+            home = {
+              username = "herdr-module-check";
+              homeDirectory =
+                if pkgs.stdenv.hostPlatform.isDarwin then
+                  "/Users/herdr-module-check"
+                else
+                  "/home/herdr-module-check";
+              stateVersion = "25.05";
+            };
+
+            brucenunk.homeManager.herdr.ui.toast.delivery = "terminal";
+          }
+        ];
+      };
+      herdrConfig = home.config.xdg.configFile."herdr/config.toml".source;
+    in
+    {
+      checks = {
+        herdr-home-manager-module =
+          assert home.config.home.file ? ".pi/agent/extensions/herdr-agent-state.ts";
+          pkgs.runCommand "herdr-home-manager-module" { } ''
+            ${pkgs.python3}/bin/python - ${herdrConfig} <<'PY'
+            import sys
+            import tomllib
+
+            with open(sys.argv[1], "rb") as config_file:
+                config = tomllib.load(config_file)
+
+            assert config["terminal"]["kitty_graphics"] is True
+            assert config["terminal"]["new_cwd"] == "follow"
+            assert config["theme"]["custom"]["dark"]["text"] == "#e7e7e7"
+            assert config["theme"]["custom"]["light"]["text"] == "#202020"
+            assert config["remote"]["manage_ssh_config"] is False
+            assert config["ui"]["sidebar_width"] == 32
+            assert config["ui"]["sidebar_min_width"] == 30
+            assert config["ui"]["sidebar_max_width"] == 48
+            assert config["ui"]["sidebar"]["agents"]["rows"] == [
+                ["workspace", "tab"],
+                ["agent", "state_text"],
+            ]
+            assert config["ui"]["sidebar"]["spaces"]["rows"] == [
+                ["workspace"],
+                ["branch", "git_status"],
+            ]
+            assert config["ui"]["toast"]["delivery"] == "terminal"
+            assert config["update"]["version_check"] is False
+            PY
+            touch "$out"
+          '';
+
+        herdr-sync-workspaces-tests =
+          pkgs.runCommand "herdr-sync-workspaces-tests"
+            {
+              nativeBuildInputs = [ pkgs.shellcheck ];
+            }
+            ''
+              shellcheck \
+                ${../../config/herdr/herdr-sync-workspaces.sh} \
+                ${../../config/herdr/herdr-sync-workspaces.test.sh}
+              ${pkgs.bash}/bin/bash ${../../config/herdr/herdr-sync-workspaces.test.sh} \
+                ${../../config/herdr/herdr-sync-workspaces.sh} \
+                ${pkgs.jq}/bin/jq \
+                ${pkgs.bash}/bin/bash \
+                ${pkgs.git}/bin/git \
+                ${pkgs.coreutils}/bin \
+                ${pkgs.flock}/bin/flock \
+                ${pkgs.socat}/bin/socat
+              touch "$out"
+            '';
+      };
+    };
+
+  flake.modules.homeManager.herdr = homeManagerModule;
 }

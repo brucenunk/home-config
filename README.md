@@ -14,21 +14,20 @@ none of them; consumers select each module explicitly.
 ```
 
 The command evaluates the configuration identity and builds its activation
-package without activating it. Verify separately that the exported modules
-have no hidden consumer requirements and that custom options use the public
-namespace:
+package without activating it. On each supported platform, verify separately
+that exported modules have no hidden consumer requirements and run the
+feature-owned checks:
 
 ```sh
 ./scripts/check-exported-home-manager-modules
+nix flake check
 ```
 
-The narrower Pi compatibility check remains available as well:
+The exported-module command uses plain nixpkgs without consumer overlays or
+`extraSpecialArgs`; `nix flake check` covers behavior owned by individual
+features. See [`docs/home-manager-checks.md`](docs/home-manager-checks.md) for
+the assertion inventory and Linux, Darwin, and personal-host boundaries.
 
-```sh
-./scripts/check-exported-pi-module
-```
-
-That check uses plain nixpkgs without consumer overlays or `extraSpecialArgs`.
 For deliberate deployment, follow the source-machine-to-target matrix in
 [`docs/activation.md`](docs/activation.md). It identifies the exact source and
 target, invokes the Wampa activation package directly, and keeps build,

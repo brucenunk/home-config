@@ -1,7 +1,7 @@
-{ ... }:
+{ inputs, ... }:
 
-{
-  flake.modules.homeManager.git-maintenance =
+let
+  homeManagerModule =
     {
       config,
       lib,
@@ -121,4 +121,44 @@
             '';
       };
     };
+in
+{
+  perSystem =
+    { lib, pkgs, ... }:
+
+    {
+      checks = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin (
+        let
+          repository = "/Users/git-maintenance-module-check/work/example";
+          home = inputs.home-manager.lib.homeManagerConfiguration {
+            inherit pkgs;
+            modules = [
+              homeManagerModule
+              {
+                home = {
+                  username = "git-maintenance-module-check";
+                  homeDirectory = "/Users/git-maintenance-module-check";
+                  stateVersion = "25.05";
+                };
+
+                brucenunk.homeManager.gitMaintenance.repositories = [ repository ];
+              }
+            ];
+          };
+        in
+        {
+          git-maintenance-home-manager-module =
+            assert home.config.programs.git.enable;
+            assert home.config.programs.git.settings.maintenance.repo == [ repository ];
+            assert home.config.launchd.agents ? "git-maintenance-hourly";
+            builtins.deepSeq home.activationPackage.drvPath (
+              pkgs.runCommand "git-maintenance-home-manager-module" { } ''
+                touch "$out"
+              ''
+            );
+        }
+      );
+    };
+
+  flake.modules.homeManager.git-maintenance = homeManagerModule;
 }
