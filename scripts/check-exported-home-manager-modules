@@ -17,6 +17,10 @@ nix eval --impure --raw --expr '
       system = "aarch64-darwin";
       config.allowUnfree = true;
     };
+    nativePkgs = import flake.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      config.allowUnfree = true;
+    };
     lib = linuxPkgs.lib;
 
     identity = {
@@ -59,10 +63,9 @@ nix eval --impure --raw --expr '
       _: module: (mkHome linuxPkgs [ module ]).activationPackage.drvPath
     ) flake.modules.homeManager;
 
-    consumer = mkHome linuxPkgs [
+    linuxConsumer = mkHome linuxPkgs [
       flake.modules.homeManager.doric-waybar-themes
       flake.modules.homeManager.ghostty
-      flake.modules.homeManager.herdr
       flake.modules.homeManager.pi
       {
         brucenunk.homeManager.ghostty = {
@@ -78,9 +81,14 @@ nix eval --impure --raw --expr '
           extensionsDirectory = null;
           themesDirectory = null;
         };
-
-        brucenunk.homeManager.herdr.ui.toast.delivery = "terminal";
       }
+    ];
+
+    # Reading a generated file realizes its derivation, so use the invoking
+    # host platform for assertions over generated Herdr settings.
+    nativeHerdrConsumer = mkHome nativePkgs [
+      flake.modules.homeManager.herdr
+      { brucenunk.homeManager.herdr.ui.toast.delivery = "terminal"; }
     ];
 
     gitMaintenanceConsumer = mkHome darwinPkgs [
@@ -111,12 +119,12 @@ nix eval --impure --raw --expr '
       [ gitMaintenanceConsumer.activationPackage.drvPath ]
       ++ map (module: (mkHome darwinPkgs [ module ]).activationPackage.drvPath) darwinModules;
 
-    ghosttyConfig = consumer.config.xdg.configFile."ghostty/config".text;
+    ghosttyConfig = linuxConsumer.config.xdg.configFile."ghostty/config".text;
     ghosttyThemeNames = builtins.filter (
       name: lib.hasPrefix "ghostty/themes/" name
-    ) (builtins.attrNames consumer.config.xdg.configFile);
+    ) (builtins.attrNames linuxConsumer.config.xdg.configFile);
     herdrConfig = builtins.fromTOML (
-      builtins.readFile consumer.config.xdg.configFile."herdr/config.toml".source
+      builtins.readFile nativeHerdrConsumer.config.xdg.configFile."herdr/config.toml".source
     );
   in
   assert missingLinuxOnlyModuleNames == [ ];
@@ -124,7 +132,7 @@ nix eval --impure --raw --expr '
   assert lib.hasAttrByPath [ "brucenunk" "homeManager" "gitMaintenance" "repositories" ]
     gitMaintenanceConsumer.options;
   assert !(lib.hasAttrByPath [ "programs" "gitMaintenance" ] gitMaintenanceConsumer.options);
-  assert !(lib.hasAttrByPath [ "programs" "piAgent" ] consumer.options);
+  assert !(lib.hasAttrByPath [ "programs" "piAgent" ] linuxConsumer.options);
   assert emacsDefaultConsumer.config.programs.emacs.package.drvPath
     == linuxPkgs.emacs.drvPath;
   assert emacsOverrideConsumer.config.programs.emacs.package.drvPath
@@ -137,7 +145,7 @@ nix eval --impure --raw --expr '
     "/Users/exported-module-check/work/example"
   ];
   assert gitMaintenanceConsumer.config.launchd.agents ? "git-maintenance-hourly";
-  assert builtins.elem linuxPkgs.hello consumer.config.home.packages;
+  assert builtins.elem linuxPkgs.hello linuxConsumer.config.home.packages;
   assert lib.hasSuffix "\n\nfont-size = 12" ghosttyConfig;
   assert ghosttyThemeNames == [
     "ghostty/themes/doric-marble"
@@ -161,14 +169,17 @@ nix eval --impure --raw --expr '
   ];
   assert herdrConfig.ui.toast.delivery == "terminal";
   assert !herdrConfig.update.version_check;
-  assert consumer.config.home.file ? ".pi/agent/extensions/herdr-agent-state.ts";
-  assert !(consumer.config.xdg.configFile
+  assert nativeHerdrConsumer.config.home.file ? ".pi/agent/extensions/herdr-agent-state.ts";
+  assert !(linuxConsumer.config.xdg.configFile
     ? "systemd/user/graphical-session.target.wants/app-com.mitchellh.ghostty.service");
-  assert consumer.config.xdg.configFile."waybar/themes".recursive;
-  assert consumer.config.brucenunk.homeManager.pi.extensionsDirectory == null;
-  assert consumer.config.brucenunk.homeManager.pi.themesDirectory == null;
+  assert linuxConsumer.config.xdg.configFile."waybar/themes".recursive;
+  assert linuxConsumer.config.brucenunk.homeManager.pi.extensionsDirectory == null;
+  assert linuxConsumer.config.brucenunk.homeManager.pi.themesDirectory == null;
   builtins.deepSeq linuxModuleActivationDrvs (
-    builtins.deepSeq darwinActivationDrvs consumer.activationPackage.drvPath
+    builtins.deepSeq darwinActivationDrvs (
+      builtins.deepSeq linuxConsumer.activationPackage.drvPath
+        nativeHerdrConsumer.activationPackage.drvPath
+    )
   )
 ' >/dev/null
 
