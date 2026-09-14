@@ -6,15 +6,15 @@ let
   # Ghostel's nixpkgs package builds this module with Zig, whose dependency
   # fetcher is slow and unreliable. Keep the release metadata explicit so a
   # flake bump fails at evaluation time until the new assets are hash-pinned.
-  supportedVersion = "0.52.0";
+  supportedVersion = "0.53.0";
   modules = {
     "aarch64-darwin" = {
       asset = "ghostel-module-aarch64-macos.dylib";
-      hash = "sha256-utIOGi6gyqi9+84O1OODMOd43SX0G5bGmA60+gBzZJA=";
+      hash = "sha256-bkpQnCP+bDnpBhDdF8slQ2IkNomPhtr4D0fN5SMkC50=";
     };
     "x86_64-linux" = {
       asset = "ghostel-module-x86_64-linux.so";
-      hash = "sha256-jZyfY/s/VZdxOSFocaLZEqPq56CKzgjVOAj7ip6DwT4=";
+      hash = "sha256-t1c9rPcFOt6eHzrLCLTpEETubVybaRH/LCiRhwEdu4A=";
     };
   };
 
