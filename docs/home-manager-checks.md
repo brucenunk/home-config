@@ -48,8 +48,8 @@ Run all checks for the invoking platform with:
 nix flake check
 ```
 
-The existing Herdr workspace synchronization and Pi implementation tests are
-also flake checks and run under the same command.
+The Pi implementation tests are also flake checks and run under the same
+command.
 
 ## Personal-host boundary
 
