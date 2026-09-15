@@ -16,6 +16,6 @@ pkgs.symlinkJoin {
   nativeBuildInputs = [ pkgs.makeWrapper ];
   postBuild = ''
     wrapProgram "$out/bin/hephaestus" \
-      --prefix PATH : ${lib.makeBinPath [ pkgs.git ]}
+      --suffix PATH : ${lib.makeBinPath [ pkgs.git ]}
   '';
 }

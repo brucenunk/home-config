@@ -11,10 +11,25 @@ struct Sandbox {
     slot_b: PathBuf,
     scratch: PathBuf,
     seed: PathBuf,
+    backing: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy)]
+enum SandboxLayout {
+    LinkedWorktrees,
+    BareBacking,
 }
 
 impl Sandbox {
     fn new() -> Self {
+        Self::new_with_layout(SandboxLayout::LinkedWorktrees)
+    }
+
+    fn new_edenfs_shape() -> Self {
+        Self::new_with_layout(SandboxLayout::BareBacking)
+    }
+
+    fn new_with_layout(layout: SandboxLayout) -> Self {
         let tempdir = TempDir::new().expect("tempdir");
         let home = tempdir.path().join("home");
         let work_root = home.join("work");
@@ -57,17 +72,40 @@ impl Sandbox {
         );
         run_ok(&seed, ["git", "push", "-u", "origin", "main"]);
 
-        run_ok(
-            tempdir.path(),
-            [
-                "git",
-                "clone",
-                origin.to_str().unwrap(),
-                primary.to_str().unwrap(),
-            ],
-        );
+        let backing = match layout {
+            SandboxLayout::LinkedWorktrees => None,
+            SandboxLayout::BareBacking => Some(repo_root.join("backing.git")),
+        };
+        if let Some(backing) = backing.as_ref() {
+            run_ok(
+                tempdir.path(),
+                [
+                    "git",
+                    "clone",
+                    "--bare",
+                    origin.to_str().unwrap(),
+                    backing.to_str().unwrap(),
+                ],
+            );
+            run_ok(
+                backing,
+                ["git", "worktree", "add", primary.to_str().unwrap(), "main"],
+            );
+        } else {
+            run_ok(
+                tempdir.path(),
+                [
+                    "git",
+                    "clone",
+                    origin.to_str().unwrap(),
+                    primary.to_str().unwrap(),
+                ],
+            );
+        }
         configure_git_user(&primary);
-        run_ok(&primary, ["git", "remote", "set-head", "origin", "-a"]);
+        if matches!(layout, SandboxLayout::LinkedWorktrees) {
+            run_ok(&primary, ["git", "remote", "set-head", "origin", "-a"]);
+        }
         run_ok(
             &primary,
             [
@@ -111,14 +149,25 @@ impl Sandbox {
             slot_b,
             scratch,
             seed,
+            backing,
         }
     }
 
     fn hephaestus(&self, current_dir: &Path, args: &[&str]) -> Output {
+        self.hephaestus_with_env(current_dir, args, &[])
+    }
+
+    fn hephaestus_with_env(
+        &self,
+        current_dir: &Path,
+        args: &[&str],
+        environment: &[(&str, &str)],
+    ) -> Output {
         Command::new(env!("CARGO_BIN_EXE_hephaestus"))
             .current_dir(current_dir)
             .env("HOME", &self.home)
             .env("USER", "jamesl")
+            .envs(environment.iter().copied())
             .args(args)
             .output()
             .expect("run hephaestus")
@@ -138,6 +187,60 @@ impl Sandbox {
     fn switch_slot_to_new_branch(&self, slot: &Path, branch: &str) {
         run_ok(slot, ["git", "switch", "-c", branch, "origin/main"]);
     }
+}
+
+#[test]
+fn edenfs_mode_discovers_pointer_default_and_never_allocates_bare_backing_repo() {
+    let sandbox = Sandbox::new_edenfs_shape();
+    let backing = sandbox.backing.as_ref().expect("backing repo");
+    assert!(sandbox.primary.join(".git").is_file());
+
+    let porcelain = git_stdout(&sandbox.primary, ["worktree", "list", "--porcelain"]);
+    assert!(
+        porcelain.contains(&format!("worktree {}\nbare", canonical_display(backing))),
+        "{porcelain}"
+    );
+
+    let output = sandbox.hephaestus_with_env(
+        &sandbox.repo_root,
+        &["allocate", "TestOwner/testrepo", "edenfs-feature"],
+        &[("HEPHAESTUS_VFS_MODE", "edenfs")],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let allocated = PathBuf::from(stdout(&output));
+    assert_ne!(
+        allocated,
+        std::fs::canonicalize(backing).expect("canonical backing")
+    );
+    assert!(
+        [&sandbox.slot_a, &sandbox.slot_b, &sandbox.scratch]
+            .into_iter()
+            .map(|path| std::fs::canonicalize(path).expect("canonical slot"))
+            .any(|slot| slot == allocated)
+    );
+    assert_eq!(
+        git_stdout(&allocated, ["rev-parse", "--abbrev-ref", "HEAD"]),
+        "edenfs-feature"
+    );
+
+    let resume_backing = sandbox.hephaestus_with_env(
+        &sandbox.repo_root,
+        &["resume", "TestOwner/testrepo/backing.git", "main"],
+        &[("HEPHAESTUS_VFS_MODE", "edenfs")],
+    );
+    assert!(!resume_backing.status.success());
+    assert!(
+        stderr(&resume_backing).contains("refusing to resume unregistered worktree"),
+        "{}",
+        stderr(&resume_backing)
+    );
+
+    let release_backing = sandbox.hephaestus_with_env(
+        &sandbox.repo_root,
+        &["release", backing.to_str().expect("backing path")],
+        &[("HEPHAESTUS_VFS_MODE", "edenfs")],
+    );
+    assert!(!release_backing.status.success());
 }
 
 #[test]

@@ -12,6 +12,7 @@ pub struct Context {
 
 impl Context {
     pub fn from_environment() -> Result<Self, String> {
+        git::validate_environment()?;
         let home_dir = env::var_os("HOME")
             .map(PathBuf::from)
             .ok_or_else(|| "HOME is not set".to_string())?;

@@ -1,5 +1,5 @@
 use std::env;
-use std::ffi::{CStr, OsStr};
+use std::ffi::{CStr, OsStr, OsString};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -11,11 +11,69 @@ use time::macros::format_description;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WorktreeInfo {
     pub(crate) path: PathBuf,
-    pub(crate) branch: Option<String>,
-    pub(crate) detached: bool,
+    pub(crate) kind: WorktreeKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WorktreeKind {
+    Attached(String),
+    Detached,
+    Bare,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorktreeMode {
+    None,
+    EdenFs,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GitEnvironment {
+    executable: OsString,
+    mode: WorktreeMode,
+}
+
+impl GitEnvironment {
+    fn from_values(executable: Option<OsString>, mode: Option<OsString>) -> Result<Self, String> {
+        let executable = match executable {
+            Some(value) if value.is_empty() => {
+                return Err("HEPHAESTUS_GIT must not be empty".to_string());
+            }
+            Some(value) => value,
+            None => OsString::from("git"),
+        };
+        let mode = match mode.as_deref() {
+            None => WorktreeMode::None,
+            Some(value) if value == OsStr::new("none") => WorktreeMode::None,
+            Some(value) if value == OsStr::new("edenfs") => WorktreeMode::EdenFs,
+            Some(value) => {
+                return Err(format!(
+                    "invalid HEPHAESTUS_VFS_MODE (expected none or edenfs): {}",
+                    value.to_string_lossy()
+                ));
+            }
+        };
+        Ok(Self { executable, mode })
+    }
+
+    fn from_environment() -> Result<Self, String> {
+        Self::from_values(
+            env::var_os("HEPHAESTUS_GIT"),
+            env::var_os("HEPHAESTUS_VFS_MODE"),
+        )
+    }
+}
+
+pub(crate) fn validate_environment() -> Result<(), String> {
+    GitEnvironment::from_environment().map(|_| ())
 }
 
 pub(crate) fn find_primary_worktree(repo_root: &Path) -> Result<PathBuf, String> {
+    if GitEnvironment::from_environment()?.mode == WorktreeMode::EdenFs {
+        return find_edenfs_primary_worktree(repo_root);
+    }
+
     let entries = fs::read_dir(repo_root)
         .map_err(|err| format!("failed to read repo root {}: {err}", repo_root.display()))?;
 
@@ -41,6 +99,54 @@ pub(crate) fn find_primary_worktree(repo_root: &Path) -> Result<PathBuf, String>
     ))
 }
 
+fn find_edenfs_primary_worktree(repo_root: &Path) -> Result<PathBuf, String> {
+    let entries = fs::read_dir(repo_root)
+        .map_err(|err| format!("failed to read repo root {}: {err}", repo_root.display()))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|err| format!("failed to read repo root entry: {err}"))?;
+        let child = entry.path();
+        if !child.is_dir()
+            || git_output(&child, ["rev-parse", "--is-inside-work-tree"])
+                .map(|value| trim_line_endings(&value) != "true")
+                .unwrap_or(true)
+        {
+            continue;
+        }
+
+        let worktrees = list_worktrees(&child)?;
+        let default_branch = default_branch_name(&child)
+            .or_else(|_| default_branch_from_bare_backing(&worktrees))?;
+        if let Some(worktree) = worktrees.into_iter().find(|worktree| {
+            matches!(&worktree.kind, WorktreeKind::Attached(branch) if branch == &default_branch)
+                && worktree.path.parent() == Some(repo_root)
+        }) {
+            return Ok(worktree.path);
+        }
+    }
+
+    Err(format!(
+        "could not find default worktree for EdenFS repo {}",
+        repo_root.display()
+    ))
+}
+
+fn default_branch_from_bare_backing(worktrees: &[WorktreeInfo]) -> Result<String, String> {
+    let backing = worktrees
+        .iter()
+        .find(|worktree| worktree.kind == WorktreeKind::Bare)
+        .ok_or_else(|| "EdenFS worktree list has no bare backing repository".to_string())?;
+    let branch = git_output(
+        &backing.path,
+        ["symbolic-ref", "--quiet", "--short", "HEAD"],
+    )?;
+    let branch = trim_line_endings(&branch);
+    if branch.is_empty() {
+        return Err("bare backing repository has no symbolic HEAD branch".to_string());
+    }
+    Ok(branch.to_string())
+}
+
 pub(crate) fn find_attached_worktree_for_branch(
     repo_root: &Path,
     primary: &Path,
@@ -50,10 +156,7 @@ pub(crate) fn find_attached_worktree_for_branch(
         if !is_child_worktree(repo_root, primary, &worktree.path) {
             continue;
         }
-        if worktree.detached {
-            continue;
-        }
-        if worktree.branch.as_deref() == Some(branch_name) {
+        if matches!(&worktree.kind, WorktreeKind::Attached(branch) if branch == branch_name) {
             return Ok(Some(worktree.path));
         }
     }
@@ -69,7 +172,7 @@ pub(crate) fn first_detached_candidate(
         if !is_child_worktree(repo_root, primary, &worktree.path) {
             continue;
         }
-        if worktree.detached {
+        if worktree.kind == WorktreeKind::Detached {
             return Ok(Some(worktree.path));
         }
     }
@@ -78,9 +181,12 @@ pub(crate) fn first_detached_candidate(
 }
 
 pub(crate) fn is_registered_worktree_path(primary: &Path, target: &Path) -> Result<bool, String> {
-    Ok(list_worktrees(primary)?
-        .into_iter()
-        .any(|worktree| worktree.path == target))
+    Ok(list_worktrees(primary)?.into_iter().any(|worktree| {
+        matches!(
+            worktree.kind,
+            WorktreeKind::Attached(_) | WorktreeKind::Detached
+        ) && worktree.path == target
+    }))
 }
 
 pub(crate) fn is_child_worktree(repo_root: &Path, primary: &Path, worktree: &Path) -> bool {
@@ -176,14 +282,34 @@ pub(crate) fn default_branch_name(primary: &Path) -> Result<String, String> {
 }
 
 pub(crate) fn resolve_base_ref(primary: &Path) -> Result<String, String> {
-    let branch_name = default_branch_name(primary)?;
+    let environment = GitEnvironment::from_environment()?;
+    let branch_name = match default_branch_name(primary) {
+        Ok(branch_name) => branch_name,
+        Err(error) if environment.mode == WorktreeMode::None => return Err(error),
+        Err(_) => default_branch_from_bare_backing(&list_worktrees(primary)?)?,
+    };
     if branch_name.is_empty() {
         return Err(format!(
             "could not determine default base ref for {}",
             primary.display()
         ));
     }
-    Ok(format!("origin/{branch_name}"))
+    let remote_ref = format!("origin/{branch_name}");
+    if environment.mode == WorktreeMode::EdenFs
+        && git_status(
+            primary,
+            [
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("{remote_ref}^{{commit}}"),
+            ],
+        )
+        .is_err()
+    {
+        return Ok(branch_name);
+    }
+    Ok(remote_ref)
 }
 
 pub(crate) fn verify_base_ref(primary: &Path, base_ref: &str) -> Result<(), String> {
@@ -332,35 +458,39 @@ where
 
 fn list_worktrees(command_dir: &Path) -> Result<Vec<WorktreeInfo>, String> {
     let output = git_output(command_dir, ["worktree", "list", "--porcelain"])?;
+    let worktrees = parse_worktrees(&output);
+    normalize_worktrees(worktrees)
+}
+
+fn parse_worktrees(output: &str) -> Vec<WorktreeInfo> {
     let mut worktrees = Vec::new();
     let mut current_path: Option<PathBuf> = None;
-    let mut current_branch: Option<String> = None;
-    let mut detached = false;
+    let mut current_kind = WorktreeKind::Unknown;
 
-    let mut emit = |path: Option<PathBuf>, branch: Option<String>, detached_flag: bool| {
+    let mut emit = |path: Option<PathBuf>, kind: WorktreeKind| {
         if let Some(path) = path {
-            worktrees.push(WorktreeInfo {
-                path,
-                branch,
-                detached: detached_flag,
-            });
+            worktrees.push(WorktreeInfo { path, kind });
         }
     };
 
     for raw_line in output.lines() {
         if let Some(value) = raw_line.strip_prefix("worktree ") {
-            emit(current_path.take(), current_branch.take(), detached);
+            emit(current_path.take(), current_kind);
             current_path = Some(PathBuf::from(value));
-            current_branch = None;
-            detached = false;
+            current_kind = WorktreeKind::Unknown;
         } else if let Some(value) = raw_line.strip_prefix("branch refs/heads/") {
-            current_branch = Some(value.to_string());
+            current_kind = WorktreeKind::Attached(value.to_string());
         } else if raw_line == "detached" {
-            detached = true;
+            current_kind = WorktreeKind::Detached;
+        } else if raw_line == "bare" {
+            current_kind = WorktreeKind::Bare;
         }
     }
-    emit(current_path, current_branch, detached);
+    emit(current_path, current_kind);
+    worktrees
+}
 
+fn normalize_worktrees(worktrees: Vec<WorktreeInfo>) -> Result<Vec<WorktreeInfo>, String> {
     let mut normalized = Vec::new();
     for worktree in worktrees {
         if !worktree.path.is_dir() {
@@ -374,8 +504,7 @@ fn list_worktrees(command_dir: &Path) -> Result<Vec<WorktreeInfo>, String> {
         })?;
         normalized.push(WorktreeInfo {
             path,
-            branch: worktree.branch,
-            detached: worktree.detached,
+            kind: worktree.kind,
         });
     }
 
@@ -448,15 +577,20 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let mut command = Command::new("git");
-    command.arg("-c").arg("core.fsmonitor=false");
-    command.arg("-C").arg(worktree);
+    let environment = GitEnvironment::from_environment()?;
+    let mut command = configured_git_command(&environment, worktree);
     for arg in args {
         command.arg(arg.as_ref());
     }
     command
         .output()
         .map_err(|err| format!("failed to run git in {}: {err}", worktree.display()))
+}
+
+fn configured_git_command(environment: &GitEnvironment, worktree: &Path) -> Command {
+    let mut command = Command::new(&environment.executable);
+    command.arg("-C").arg(worktree);
+    command
 }
 
 fn git_status<I, S>(worktree: &Path, args: I) -> Result<(), String>
@@ -481,4 +615,75 @@ fn combined_output(output: &Output) -> String {
 
 fn trim_line_endings(value: &str) -> &str {
     value.trim_end_matches(['\r', '\n'])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_environment_defaults_to_git_without_vfs_mode() {
+        assert_eq!(
+            GitEnvironment::from_values(None, None),
+            Ok(GitEnvironment {
+                executable: OsString::from("git"),
+                mode: WorktreeMode::None,
+            })
+        );
+    }
+
+    #[test]
+    fn git_environment_accepts_executable_override_and_edenfs_mode() {
+        assert_eq!(
+            GitEnvironment::from_values(
+                Some(OsString::from("/managed/canva-git")),
+                Some(OsString::from("edenfs")),
+            ),
+            Ok(GitEnvironment {
+                executable: OsString::from("/managed/canva-git"),
+                mode: WorktreeMode::EdenFs,
+            })
+        );
+    }
+
+    #[test]
+    fn configured_git_command_uses_selected_executable_without_overriding_fsmonitor() {
+        for environment in [
+            GitEnvironment {
+                executable: OsString::from("git"),
+                mode: WorktreeMode::None,
+            },
+            GitEnvironment {
+                executable: OsString::from("/managed/canva-git"),
+                mode: WorktreeMode::EdenFs,
+            },
+        ] {
+            let command = configured_git_command(&environment, Path::new("/work/repo/main"));
+            let args: Vec<_> = command.get_args().collect();
+
+            assert_eq!(command.get_program(), environment.executable);
+            assert_eq!(args, [OsStr::new("-C"), OsStr::new("/work/repo/main")]);
+            assert!(
+                !args
+                    .iter()
+                    .any(|arg| arg.to_string_lossy().contains("fsmonitor"))
+            );
+        }
+    }
+
+    #[test]
+    fn porcelain_parser_marks_bare_entries() {
+        let worktrees = parse_worktrees(
+            "worktree /work/repo/backing.git\n\
+             bare\n\
+             \n\
+             worktree /work/repo/a\n\
+             HEAD 0123456789\n\
+             detached\n",
+        );
+
+        assert_eq!(worktrees.len(), 2);
+        assert_eq!(worktrees[0].kind, WorktreeKind::Bare);
+        assert_eq!(worktrees[1].kind, WorktreeKind::Detached);
+    }
 }
