@@ -53,7 +53,6 @@ nix eval --impure --raw --expr '
       "kube"
       "language-servers"
       "niri"
-      "ollama"
       "packages"
       "pi"
       "python"
