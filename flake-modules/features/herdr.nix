@@ -1,4 +1,4 @@
-{ inputs, ... }:
+{ inputs, mkPkgs, ... }:
 
 let
   homeManagerModule =
@@ -12,8 +12,10 @@ let
     let
       cfg = config.brucenunk.homeManager.herdr;
 
+      herdrPackage = pkgs.llm-agents.herdr;
+
       configReference = builtins.fromJSON (
-        builtins.readFile "${pkgs.herdr.src}/docs/next/website/src/data/config-reference.json"
+        builtins.readFile "${herdrPackage.src}/docs/next/website/src/data/config-reference.json"
       );
       configKeys = lib.concatMap (section: map (entry: entry.key) section.keys) configReference.sections;
       requiredConfigKeys = [
@@ -119,11 +121,11 @@ let
         ) pkgs.libnotify;
 
         home.file.".pi/agent/extensions/herdr-agent-state.ts".source =
-          "${pkgs.herdr.src}/src/integration/assets/pi/herdr-agent-state.ts";
+          "${herdrPackage.src}/src/integration/assets/pi/herdr-agent-state.ts";
 
         programs.herdr = {
           enable = true;
-          package = pkgs.herdr;
+          package = herdrPackage;
           inherit settings;
         };
       };
@@ -131,10 +133,10 @@ let
 in
 {
   perSystem =
-    { pkgs, ... }:
+    { pkgs, system, ... }:
     let
       home = inputs.home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
+        pkgs = mkPkgs system;
         modules = [
           homeManagerModule
           {

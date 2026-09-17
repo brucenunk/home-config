@@ -4,9 +4,9 @@ set -eu
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
 
-# Evaluate every module supported by the invoking platform with plain nixpkgs
-# and no consumer overlays or extraSpecialArgs. Feature-specific behavior is
-# covered by the flake checks defined beside each owning module.
+# Evaluate every module supported by the invoking platform with the repository's
+# shared package overlay and no consumer-specific overlays or extraSpecialArgs.
+# Feature-specific behavior is covered by the flake checks beside each module.
 # shellcheck disable=SC2016 # The single-quoted value is a Nix expression.
 nix eval --impure --raw --expr '
   let
@@ -14,6 +14,7 @@ nix eval --impure --raw --expr '
     pkgs = import flake.inputs.nixpkgs {
       system = builtins.currentSystem;
       config.allowUnfree = true;
+      overlays = [ flake.inputs.llm-agents.overlays.shared-nixpkgs ];
     };
     lib = pkgs.lib;
 
@@ -87,6 +88,6 @@ nix eval --impure --raw --expr '
   in
   assert builtins.attrNames exportedModules == expectedModuleNames;
   assert invalidOptionNames == [ ];
-  builtins.deepSeq activationDrvs "${builtins.currentSystem} exported Home Manager modules evaluate with plain nixpkgs"
+  builtins.deepSeq activationDrvs "${builtins.currentSystem} exported Home Manager modules evaluate with repository package overlays"
 '
 printf '\n'

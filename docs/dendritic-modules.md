@@ -87,9 +87,10 @@ assets. The consumer owns only its fragment, package compatibility choice, and
 any replacement service or session integration.
 
 `scripts/check-exported-home-manager-modules` evaluates each native-platform
-export with plain Home Manager and rejects public custom options outside the
-prefixed namespace. Feature-specific interface and behavior checks are flake
-checks co-located with their owning feature. See
+export with Home Manager and the repository's shared `llm-agents` package
+overlay, and rejects public custom options outside the prefixed namespace.
+External consumers must provide that overlay. Feature-specific interface and
+behavior checks are flake checks co-located with their owning feature. See
 [`home-manager-checks.md`](home-manager-checks.md) for the assertion inventory
 and platform boundaries.
 

@@ -10,8 +10,10 @@ system is not evidence for the other.
 ./scripts/check-exported-home-manager-modules
 ```
 
-The script evaluates each module supported by the invoking platform with plain
-nixpkgs, no consumer overlays, and no `extraSpecialArgs`. It checks that:
+The script evaluates each module supported by the invoking platform with the
+repository's shared `llm-agents` package overlay, no consumer-specific overlays,
+and no `extraSpecialArgs`. Exported modules may rely on that shared package set;
+external consumers must provide the same overlay. The script checks that:
 
 - the complete public export name set remains stable;
 - every native-platform module can produce an activation derivation in
@@ -24,7 +26,7 @@ from the Darwin evaluation. All other exports are evaluated on both Linux and
 Darwin. The script only evaluates derivation paths; it does not realize a
 foreign-platform derivation.
 
-The former `check-exported-pi-module` command was redundant: Pi's plain-nixpkgs
+The former `check-exported-pi-module` command was redundant: Pi's exported-module
 isolation is covered here, while its option behavior is covered by the Pi flake
 check.
 

@@ -14,17 +14,18 @@ none of them; consumers select each module explicitly.
 ```
 
 The command evaluates the configuration identity and builds its activation
-package without activating it. On each supported platform, verify separately
-that exported modules have no hidden consumer requirements and run the
-feature-owned checks:
+package without activating it. On each supported platform, verify exported
+modules against the expected shared package set and run the feature-owned
+checks:
 
 ```sh
 ./scripts/check-exported-home-manager-modules
 nix flake check
 ```
 
-The exported-module command uses plain nixpkgs without consumer overlays or
-`extraSpecialArgs`; `nix flake check` covers behavior owned by individual
+The exported-module command uses the shared `llm-agents` package overlay without
+consumer-specific overlays or `extraSpecialArgs`; external consumers must
+provide that overlay. `nix flake check` covers behavior owned by individual
 features. See [`docs/home-manager-checks.md`](docs/home-manager-checks.md) for
 the assertion inventory and Linux, Darwin, and personal-host boundaries.
 
