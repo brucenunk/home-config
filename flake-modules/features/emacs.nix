@@ -17,14 +17,7 @@ let
           consult-denote
           corfu
           denote
-          (doric-themes.overrideAttrs (_old: {
-            # TODO(bump-nix): Check whether nixpkgs provides doric-themes 1.3.0 or newer; remove this override when it does.
-            version = "1.3.0";
-            src = pkgs.fetchurl {
-              url = "https://elpa.gnu.org/packages/doric-themes-1.3.0.tar";
-              hash = "sha256-doeeXror2bOcEnCLJbQcYDUgp+qJamGltqsWsST7UTw=";
-            };
-          }))
+          doric-themes
           editorconfig
           embark
           embark-consult
