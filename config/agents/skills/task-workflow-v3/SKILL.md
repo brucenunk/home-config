@@ -11,18 +11,19 @@ The task note is a bootstrap artifact, not the main collaboration surface. Use c
 
 ## Invariants
 
-- **Branch management:** the task system has already selected the correct local branch (`jamesl-{task-id}`). Never create, rename, or switch local branches.
+- **Branch management:** the task system or approved task-launch tooling has already selected the correct local branch and worktree. Never create, rename, or switch local branches. Accept a readable `jamesl/<task-slug>` branch created by approved Herdr task tooling; otherwise the task system's conventional branch may be `jamesl-{task-id}`.
 - **Pushing:** pushing is not part of the default handoff. Push only when explicitly requested or required by repo workflow, using the applicable finish guidance.
 - **Waiting:** waiting means a blocking message has been sent and the agent is paused for user input. Do not use task waiting-marker commands or backend waiting hooks.
-- **Task note:** read it as durable bootstrap context. Do not turn it into a running work log or add phase markers, status history, or dense verification transcripts.
-- Edit the task note only when explicitly requested, dependencies need maintenance, a durable task-level constraint must survive later sessions, or repo guidance requires it.
+- **Task note:** read it as durable bootstrap context. Verbatim task-note content supplied in the initial conversation satisfies this requirement when the canonical file is on another machine. Do not turn it into a running work log or add phase markers, status history, or dense verification transcripts.
+- **Remote bootstrap:** keep the supplied note, its canonical local file, the current worktree, and Pi session state distinct. If the canonical note is inaccessible, do not claim to edit, maintain, or finish it; ask for that local mutation separately when it is required.
+- Edit the canonical task note only when it is accessible and explicitly requested, dependencies need maintenance, a durable task-level constraint must survive later sessions, or repo guidance requires it. When only verbatim bootstrap content is available, report any needed note change for the local owner instead of editing a substitute.
 
 ## On Entry
 
-1. Read the task note and extract its identifier and `repo` slug when present.
+1. Read the canonical task note or its verbatim launcher-supplied content and extract its identifier and `repo` slug when present.
 2. Read the applicable `AGENTS.md` hierarchy and load this skill before implementation.
 3. Recenter from current chat, the task note, `git status --short`, and relevant diffs or recent commits.
-4. If `## Dependencies` contains unchecked `denote:` targets that still resolve, stop and report the unresolved prerequisites. Mention and ignore unchecked targets that no longer resolve.
+4. When the canonical local task store is accessible, if `## Dependencies` contains unchecked `denote:` targets that still resolve, stop and report the unresolved prerequisites. Mention and ignore unchecked targets only when the canonical store confirms that they no longer resolve. For a launcher-supplied remote note, preserve dependency text but do not parse, resolve, enforce, or describe it as missing; dependency policy remains with the canonical local task system.
 5. If prior approved scope is unclear, reconstruct the likely contract from the note and worktree, then ask the smallest necessary clarification.
 
 ## Phase 1 — Scope Conversation
