@@ -55,6 +55,21 @@ let
           "$request"
       '';
     };
+  mkFinishTask =
+    {
+      pkgs,
+      quitTimeout ? 30,
+    }:
+    pkgs.writeShellApplication {
+      name = "finish-task";
+      runtimeInputs = [
+        pkgs.coreutils
+        pkgs.jq
+      ];
+      text = builtins.replaceStrings [ "@quitTimeout@" ] [ (toString quitTimeout) ] (
+        builtins.readFile ../../config/agents/finish-task.sh
+      );
+    };
 
   homeManagerModule =
     {
@@ -99,9 +114,11 @@ let
         else
           fallbackPiPackage pkgs;
       startTask = mkStartTask pkgs piPackage;
+      finishTask = mkFinishTask { inherit pkgs; };
     in
     {
       home.packages = [
+        finishTask
         startTask
       ]
       ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
@@ -141,6 +158,7 @@ in
     let
       checkedPkgs = mkPkgs system;
       startTask = mkStartTask checkedPkgs (fallbackPiPackage checkedPkgs);
+      finishTask = mkFinishTask { pkgs = checkedPkgs; };
 
       identity = {
         home.username = "agents-module-check";
@@ -161,6 +179,7 @@ in
 
       configuredPi = pkgs.writeShellScriptBin "pi" "exit 0";
       configuredStartTask = mkStartTask pkgs configuredPi;
+      configuredFinishTask = mkFinishTask { inherit pkgs; };
       configuredHome = inputs.home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         modules = [
@@ -181,6 +200,8 @@ in
           assert plainHome.activationPackage.drvPath != "";
           assert builtins.elem (mkStartTask pkgs (fallbackPiPackage pkgs)) plainHome.config.home.packages;
           assert builtins.elem configuredStartTask configuredHome.config.home.packages;
+          assert builtins.elem (mkFinishTask { inherit pkgs; }) plainHome.config.home.packages;
+          assert builtins.elem configuredFinishTask configuredHome.config.home.packages;
           pkgs.runCommand "agents-plain-nixpkgs-home-manager-check" { } ''
             grep -F '${configuredPi}/bin' ${configuredStartTask}/bin/start-task
             touch "$out"
@@ -233,6 +254,28 @@ in
             missing-context.out
           touch "$out"
         '';
+
+        finish-task =
+          let
+            testFinishTask = mkFinishTask {
+              inherit pkgs;
+              quitTimeout = 1;
+            };
+          in
+          pkgs.runCommand "finish-task-check"
+            {
+              nativeBuildInputs = [ pkgs.python3 ];
+            }
+            ''
+              export FINISH_TASK=${testFinishTask}/bin/finish-task
+              ${pkgs.bash}/bin/bash ${../../config/agents/tests/finish-task.sh}
+              grep -F 'worktree remove --workspace' ${finishTask}/bin/finish-task
+              if grep -F -- 'worktree remove --force' ${finishTask}/bin/finish-task; then
+                echo 'finish-task must not force worktree removal' >&2
+                exit 1
+              fi
+              touch "$out"
+            '';
       };
     };
 

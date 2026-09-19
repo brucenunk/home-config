@@ -20,6 +20,13 @@ start-task "Start task 20260918T162459 on devbox"
 start-task "Start task 20260918T162459 on devbox with base branch release/train"
 ```
 
+The matching human-facing lifecycle commands are deliberately small:
+
+```text
+start-task "<task request>"
+finish-task <animal>
+```
+
 ## 1. Establish context
 
 Require `HERDR_ENV=1`, `HERDR_WORKSPACE_ID`, `HERDR_PANE_ID`, and a live local
@@ -115,7 +122,24 @@ kookaburra echidna platypus cockatoo
 Prefer a bare animal. Add a short Jira/slug disambiguator only if every bare
 name is occupied, and keep Herdr's `[a-z][a-z0-9_-]{0,31}` constraint.
 
-Before mutation, inspect `workspace list`, `agent list`, and host Git state.
+Animal occupancy is global client policy even though Herdr names are scoped per
+server. Before selecting a name, parse `herdr machine list --json`, inspect the
+Local server, and inspect every enabled saved profile with
+`herdr --machine PROFILE agent list` and `workspace list`. Use the saved profile
+ID as the selector and retain its meaningful label for diagnostics. Any
+connection failure, timeout, invalid JSON, or incompatible enabled server makes
+occupancy unknown: stop before mutation rather than allocating a name. Treat an
+exact case-sensitive name on any inspected server as occupied.
+
+Search those same inventories for an existing assignment to this exact task
+workspace/path before selecting a fresh animal. Preserve its name when there is
+one unambiguous matching Pi; conflicting or partial state still stops under the
+recovery rules below. This preservation does not authorize reuse of an animal
+from another task or bypass the requirement that a new assignment be globally
+unused.
+
+Before mutation, inspect the cross-server `workspace list`/`agent list`
+inventories described above and the target host Git state.
 Check exact conflicts for the proposed parent source, task workspace label,
 branch, worktree path/registration, and animal. A matching or partial task
 state must stop with useful recovery/select-existing guidance. A repeated
