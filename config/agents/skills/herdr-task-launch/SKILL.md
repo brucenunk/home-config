@@ -37,6 +37,20 @@ follow it. The installed 0.9.1 CLI is authoritative;
 `herdr --machine <saved-label> ...` is the confirmed saved-machine interface.
 Parse all IDs from command JSON rather than predicting them.
 
+Require every request to name its execution machine explicitly. Do not inspect
+repository availability or infer whether Local or a saved machine is viable
+when the request omits it. Stop before task lookup or any other preflight and
+return exact reruns formed from the unchanged request, for example:
+
+```sh
+start-task "Start task 20260918T162459 on local"
+start-task "Start task 20260918T162459 on devbox"
+```
+
+These examples make placement explicit; they do not imply that every named
+machine is currently supported or configured. `local` remains reserved for the
+downstream local migration and must stop without mutation under section 3.
+
 ## 2. Resolve the local task
 
 Tasks under `$HOME/work/tasks` are canonical. Accept an identifier, unique
@@ -59,10 +73,11 @@ enforce dependencies.
 
 ## 3. Select machine and repository
 
-Use the explicitly requested saved machine, otherwise `devbox`. Resolve exactly
-one enabled case-sensitive label from `herdr machine list --json`, retaining its
-profile selector and OpenSSH target. `local` is reserved for the downstream
-local migration and is not enabled by this skill yet.
+Require the explicitly requested machine from section 1. If it is `local`,
+report that Local launch is not enabled yet and stop without mutation. Otherwise
+resolve exactly one enabled case-sensitive label from `herdr machine list
+--json`, retaining its profile selector and OpenSSH target. Never substitute or
+default to `devbox` (or any other saved machine).
 
 Use system OpenSSH for simple host/Git probes so configured host-key,
 ProxyCommand, agent, Roo, Teleport, and forwarding policy remain authoritative:
