@@ -92,7 +92,7 @@ error.  Evaluate the theme's package source once and retry to register it."
   (setq fontaine-presets
         '((t
            :default-family "Aporetic Serif Mono"
-           :default-height 140
+           :default-height 150
            :fixed-pitch-family "Aporetic Serif Mono"
            :fixed-pitch-height 1.0
            :variable-pitch-family "Bricolage Grotesque"
