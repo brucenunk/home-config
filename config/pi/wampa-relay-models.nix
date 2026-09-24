@@ -19,6 +19,75 @@
             input = 0;
             output = 0;
           };
+          id = "gpt-6-astra";
+          input = [
+            "text"
+            "image"
+          ];
+          maxTokens = 128000;
+          name = "GPT-6 Astra (OpenAI Proxy)";
+          reasoning = true;
+          thinkingLevelMap = {
+            off = null;
+            minimal = null;
+            xhigh = "xhigh";
+            max = "max";
+          };
+        }
+        {
+          contextWindow = 1050000;
+          cost = {
+            cacheRead = 0;
+            cacheWrite = 0;
+            input = 0;
+            output = 0;
+          };
+          id = "gpt-6-sol";
+          input = [
+            "text"
+            "image"
+          ];
+          maxTokens = 128000;
+          name = "GPT-6 Sol (OpenAI Proxy)";
+          reasoning = true;
+          thinkingLevelMap = {
+            off = "none";
+            minimal = null;
+            xhigh = "xhigh";
+            max = "max";
+          };
+        }
+        {
+          contextWindow = 1050000;
+          cost = {
+            cacheRead = 0;
+            cacheWrite = 0;
+            input = 0;
+            output = 0;
+          };
+          id = "gpt-6-luna";
+          input = [
+            "text"
+            "image"
+          ];
+          maxTokens = 128000;
+          name = "GPT-6 Luna (OpenAI Proxy)";
+          reasoning = true;
+          thinkingLevelMap = {
+            off = "none";
+            minimal = null;
+            xhigh = "xhigh";
+            max = "max";
+          };
+        }
+        {
+          contextWindow = 1050000;
+          cost = {
+            cacheRead = 0;
+            cacheWrite = 0;
+            input = 0;
+            output = 0;
+          };
           id = "gpt-5.6-sol";
           input = [
             "text"

@@ -142,6 +142,37 @@ in
   perSystem =
     { pkgs, ... }:
     let
+      wampaRelayModels = import ../../config/pi/wampa-relay-models.nix {
+        bedrockBaseUrl = "http://127.0.0.1:18766/bedrock";
+        openAIBaseUrl = "http://127.0.0.1:18765/openai/v1";
+      };
+      wampaOpenAIModels = wampaRelayModels.providers.openai-proxy.models;
+      wampaSettings = builtins.fromJSON (builtins.readFile ../../config/pi/settings-wampa.json);
+      gpt6ModelIds = [
+        "gpt-6-astra"
+        "gpt-6-sol"
+        "gpt-6-luna"
+      ];
+      gpt6ModelsValid = builtins.all (
+        id:
+        builtins.any (
+          model:
+          model.id == id
+          && model.contextWindow == 1050000
+          && model.maxTokens == 128000
+          && model.reasoning
+          && builtins.elem "text" model.input
+          && builtins.elem "image" model.input
+          && model.thinkingLevelMap.minimal == null
+          && (
+            if id == "gpt-6-astra" then
+              model.thinkingLevelMap.off == null
+            else
+              model.thinkingLevelMap.off == "none"
+          )
+        ) wampaOpenAIModels
+      ) gpt6ModelIds;
+
       home = inputs.home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         modules = [
@@ -199,6 +230,14 @@ in
           assert home.config.brucenunk.homeManager.pi.extensionsDirectory == null;
           assert home.config.brucenunk.homeManager.pi.themesDirectory == null;
           pkgs.runCommand "pi-home-manager-module" { } ''
+            touch "$out"
+          '';
+
+        pi-wampa-gpt6-models =
+          assert gpt6ModelsValid;
+          assert wampaSettings.defaultProvider == "openai-proxy";
+          assert wampaSettings.defaultModel == "gpt-6-sol";
+          pkgs.runCommand "pi-wampa-gpt6-models" { } ''
             touch "$out"
           '';
       };
