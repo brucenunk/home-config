@@ -35,12 +35,19 @@ def parent():
     return {"workspace_id":"wparent", "label":"owner/repo", "pane_count":1,
             "worktree":{"checkout_path":"/repo/main", "repo_key":"/repo/.git",
                         "is_linked_worktree":False}}
+def unrelated_agent():
+    return {"name":"quokka", "agent":"pi", "agent_status":"idle",
+            "workspace_id":"wother", "pane_id":"pother"}
+def unrelated_workspace():
+    return {"workspace_id":"wother", "label":"Unrelated task", "pane_count":1,
+            "worktree":{"checkout_path":"/repo/other", "repo_key":"/repo/.git",
+                        "is_linked_worktree":True}}
 def agents():
     if scenario == "zero":
-        value = agent(); value["name"] = "quokka"; return [value]
+        return [unrelated_agent()]
     if machine == "devbox" and scenario != "duplicate": return []
-    if state != "initial" and scenario != "timeout": return []
-    return [agent()]
+    if state != "initial" and scenario != "timeout": return [unrelated_agent()]
+    return [agent(), unrelated_agent()]
 def worktrees():
     return {"source":{"source_workspace_id":None if scenario == "bad-parent" else "wparent"},
             "worktrees":[{"path":"/repo/task", "open_workspace_id":"wtask",
@@ -62,7 +69,8 @@ elif args == ["agent", "list"]:
     if scenario == "malformed-after" and state != "initial": values = None
     emit({"agents":values})
 elif args == ["workspace", "list"]:
-    emit({"workspaces":None if scenario == "malformed-workspace" else [workspace()]})
+    emit({"workspaces":None if scenario == "malformed-workspace" else
+         [workspace(), parent(), unrelated_workspace()]})
 elif args[:2] == ["worktree", "list"]:
     emit(worktrees())
 elif args == ["workspace", "get", "wparent"]:
@@ -116,6 +124,10 @@ grep -F 'separate Local Herdr shell pane' "$root/context.out"
 run_case success success
 grep -Fx 'prompt possum /quit' "$MOCK_LOG"
 grep -Fx 'remove --workspace wtask' "$MOCK_LOG"
+if grep -E 'quokka|wother|wparent' "$MOCK_LOG"; then
+  echo 'Local cleanup mutated unrelated agent, workspace, or default checkout' >&2
+  exit 1
+fi
 grep -F 'Finished possum on Local: parent owner/repo; removed task workspace Task at /repo/task' "$root/success.out"
 run_case moved-caller success
 grep -F 'Finished possum on Local' "$root/moved-caller.out"

@@ -255,6 +255,12 @@ in
           touch "$out"
         '';
 
+        herdr-task-launch = pkgs.runCommand "herdr-task-launch-check" { } ''
+          export TASK_LAUNCH_SKILL=${taskLaunchSkill}/SKILL.md
+          ${pkgs.bash}/bin/bash ${../../config/agents/tests/herdr-task-launch.sh}
+          touch "$out"
+        '';
+
         finish-task =
           let
             testFinishTask = mkFinishTask {
