@@ -6,6 +6,8 @@
 
 ;;; Code:
 
+(require 'seq)
+
 (declare-function my/task-file-p "my-task" ())
 (defvar my/tasks-map)
 
@@ -19,6 +21,26 @@ with avoiding redundant reverts during rapid agent edits."
 
 (defvar-local my/task-auto-revert-debounce-timer nil
   "Debounce timer for task file auto-revert notifications.")
+
+(defun my/denote--mermaid-theme ()
+  "Return the first enabled Doric theme with a Mermaid template."
+  (or (seq-find (lambda (theme)
+                  (memq theme '(doric-marble doric-obsidian)))
+                custom-enabled-themes)
+      'doric-marble))
+
+(defun my/denote--mermaid-template ()
+  "Return the Mermaid template for the active supported Doric theme."
+  (let ((template
+         (expand-file-name
+          (format "mermaid/themes/%s.md" (my/denote--mermaid-theme))
+          (or (getenv "XDG_CONFIG_HOME")
+              (expand-file-name ".config" "~")))))
+    (unless (file-readable-p template)
+      (user-error "Mermaid template is not readable: %s" template))
+    (with-temp-buffer
+      (insert-file-contents template)
+      (buffer-string))))
 
 (use-package denote
   :ensure nil
@@ -37,6 +59,7 @@ with avoiding redundant reverts during rapid agent edits."
     (setq denote-templates
           `((task-workflow-v3 . ,task-workflow-v3-template)
             (task . ,task-workflow-v3-template)
+            (mermaid . my/denote--mermaid-template)
             (empty . ""))))
   (setq denote-directory (expand-file-name "~/work/tasks/"))
   (setq denote-dired-directories (list denote-directory))

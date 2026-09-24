@@ -21,6 +21,14 @@ For Emacs debugging, live evaluation, UI inspection, or a wedged `emacsclient`, 
 - **File references**: When discussing files in the current repo/worktree, use worktree-relative filesystem paths such as `terraform/platform/network/vpc-cells-sharing/v2/share/main.tf`. Add `:{line}` only when the line number materially helps the reader jump to a specific location, for example `terraform/platform/network/vpc-cells-sharing/v2/share/main.tf:56`. Avoid repeating the same file reference multiple times in nearby prose; cite it once where it is most useful, then refer to the file normally. Do not use GitHub URLs for local repo file references unless the user explicitly asks for a GitHub link or the target is genuinely outside the local worktree/repo context.
 - **Temporary files**: For transient logs, plans, patches, or scratch artifacts, prefer a temp directory created with `mktemp` instead of writing ad hoc files into the worktree. Do not assume `/tmp`; use `mktemp` so the platform chooses an appropriate location.
 
+## Mermaid Diagrams
+
+- Start flowcharts with `flowchart TD` unless another direction communicates the structure better.
+- Use a Doric `base` template from `~/.config/mermaid/themes/`; keep most surfaces neutral and reserve palette accents for meaningful distinctions.
+- Assign semantic classes intentionally for the diagram's domain rather than treating their example names or colours as universal categories.
+- Use solid edges for the primary flow or dependency and dashed edges for secondary, optional, or reference relationships. Keep edge labels to concise relationship or transition descriptions.
+- Model an action as a node when it is a genuine process, responsibility, or lifecycle step; do not style an edge label to imitate a node.
+
 ## Rules
 
 - **Always use absolute paths** with the `cwd` parameter (e.g., `/Users/alice/work/owner/repository/a`), never `~/work/...`

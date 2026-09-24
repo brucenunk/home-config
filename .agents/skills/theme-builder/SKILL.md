@@ -1,6 +1,6 @@
 ---
 name: theme-builder
-description: "Generate and verify the public Doric theme assets for Fuzzel, Ghostty, Herdr, Niri, Pi, and Waybar. Use when adding, refreshing, or checking application themes derived from Doric Emacs palettes."
+description: "Generate and verify the public Doric theme assets for Fuzzel, Ghostty, Herdr, Mermaid, Niri, Pi, and Waybar. Use when adding, refreshing, or checking application themes derived from Doric Emacs palettes."
 ---
 
 # Theme Builder
@@ -17,13 +17,19 @@ Its supported targets and output trees are:
 | `fuzzel` | `config/fuzzel/themes/` |
 | `ghostty` | `config/ghostty/themes/` |
 | `herdr` | `config/herdr/themes/` |
+| `mermaid` | `config/mermaid/themes/` |
 | `niri` | `config/niri/themes/` |
 | `pi` | `config/pi/themes/` |
 | `waybar` | `config/waybar/themes/` |
 
-`--target all` generates all six targets. The legacy `--target both` alias
+`--target all` generates all seven targets. The legacy `--target both` alias
 generates Ghostty and Pi. `--theme doric-NAME` is required and repeatable; the
 generator only writes the explicitly requested themes and never prunes files.
+
+The Mermaid outputs are content-free fenced templates: they provide the theme
+frontmatter, default `flowchart TD` declaration, and palette class definitions.
+Denote selects between the generated Marble and Obsidian files according to the
+active Emacs theme; it does not generate theme values at insertion time.
 
 The available Doric themes are:
 
@@ -62,8 +68,8 @@ The available Doric themes are:
 
    ```bash
    git status --short -- \
-     config/fuzzel/themes config/ghostty/themes config/herdr/themes config/niri/themes \
-     config/pi/themes config/waybar/themes
+     config/fuzzel/themes config/ghostty/themes config/herdr/themes config/mermaid/themes \
+     config/niri/themes config/pi/themes config/waybar/themes
    ```
 
 3. Check which installed package supplies the source palettes:
@@ -97,7 +103,8 @@ intentionally narrower:
 ```
 
 The generator emits each target's canonical text formatting. Do not run a
-separate formatter over generated INI, Ghostty, TOML, KDL, JSON, or CSS files.
+separate formatter over generated INI, Ghostty, TOML, Markdown, KDL, JSON, or
+CSS files.
 
 ## Verify
 
@@ -119,18 +126,19 @@ To prove every supported output independently reproduces the tracked theme
 tree, begin with clean output trees, run:
 
 ```bash
-for target in fuzzel ghostty herdr niri pi waybar; do
+for target in fuzzel ghostty herdr mermaid niri pi waybar; do
   .agents/skills/theme-builder/scripts/build-doric-themes.py \
     --theme doric-marble \
     --theme doric-obsidian \
     --target "$target"
 done
 
-for target in fuzzel ghostty herdr niri pi waybar; do
+for target in fuzzel ghostty herdr mermaid niri pi waybar; do
   case "$target" in
     fuzzel) suffix=.ini ;;
     ghostty) suffix= ;;
     herdr) suffix=.toml ;;
+    mermaid) suffix=.md ;;
     niri) suffix=.kdl ;;
     pi) suffix=.json ;;
     waybar) suffix=.css ;;
@@ -141,16 +149,16 @@ for target in fuzzel ghostty herdr niri pi waybar; do
 done
 ```
 
-Then inspect both tracked and untracked differences across all six trees:
+Then inspect both tracked and untracked differences across all seven trees:
 
 ```bash
 git status --short -- \
-  config/fuzzel/themes config/ghostty/themes config/herdr/themes config/niri/themes \
-  config/pi/themes config/waybar/themes
+  config/fuzzel/themes config/ghostty/themes config/herdr/themes config/mermaid/themes \
+  config/niri/themes config/pi/themes config/waybar/themes
 git diff --check
 git diff -- \
-  config/fuzzel/themes config/ghostty/themes config/herdr/themes config/niri/themes \
-  config/pi/themes config/waybar/themes
+  config/fuzzel/themes config/ghostty/themes config/herdr/themes config/mermaid/themes \
+  config/niri/themes config/pi/themes config/waybar/themes
 ```
 
 Passing the exact file-list check proves that no stale themes remain. An empty

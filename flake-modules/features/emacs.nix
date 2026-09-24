@@ -87,6 +87,7 @@ let
       xdg.configFile."emacs/init.el".source = ../../config/emacs/init.el;
       xdg.configFile."emacs/my-lisp".source = ../../config/emacs/my-lisp;
       xdg.configFile."emacs/my-emacs-modules".source = ../../config/emacs/my-emacs-modules;
+      xdg.configFile."mermaid/themes".source = ../../config/mermaid/themes;
     };
 in
 {
