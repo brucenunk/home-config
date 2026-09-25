@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; Regression coverage for read-only-by-default file buffer policy.
+;; Regression coverage for editing defaults.
 
 ;;; Code:
 
@@ -39,51 +39,15 @@
   (should (memq #'my/markdown-follow-file-link-other-window
                 markdown-follow-link-functions)))
 
-(ert-deftest my/global-read-only-file-buffers-enable-makes-ordinary-file-read-only ()
-  (let* ((temp-dir (make-temp-file "my-editing-test" t))
-         (file (expand-file-name "ordinary.txt" temp-dir))
-         (my/global-read-only-file-buffers-writable-directories nil))
+(ert-deftest my/editing-ordinary-file-opens-writable ()
+  (let ((file (make-temp-file "my-editing-test")))
     (unwind-protect
-        (progn
-          (with-temp-file file
-            (insert "content\n"))
-          (with-temp-buffer
-            (setq buffer-file-name file)
-            (my/global-read-only-file-buffers-enable)
-            (should buffer-read-only)))
-      (delete-directory temp-dir t))))
-
-(ert-deftest my/global-read-only-file-buffers-enable-keeps-task-files-writable ()
-  (let* ((temp-dir (make-temp-file "my-editing-test" t))
-         (tasks-dir (expand-file-name "tasks/" temp-dir))
-         (file (expand-file-name "20260507T130729==todo--sample.md" tasks-dir))
-         (my/global-read-only-file-buffers-writable-directories (list tasks-dir)))
-    (unwind-protect
-        (progn
-          (make-directory tasks-dir t)
-          (with-temp-file file
-            (insert "---\ntitle: Sample\n---\n"))
-          (with-temp-buffer
-            (setq buffer-file-name file
-                  buffer-read-only t)
-            (my/global-read-only-file-buffers-enable)
-            (should-not buffer-read-only)))
-      (delete-directory temp-dir t))))
-
-(ert-deftest my/global-read-only-file-buffers-enable-keeps-editor-files-writable ()
-  (let* ((temp-dir (make-temp-file "my-editing-test" t))
-         (file (expand-file-name "COMMIT_EDITMSG" temp-dir))
-         (my/global-read-only-file-buffers-writable-directories nil))
-    (unwind-protect
-        (progn
-          (with-temp-file file
-            (insert "commit message\n"))
-          (with-temp-buffer
-            (setq buffer-file-name file
-                  buffer-read-only t)
-            (my/global-read-only-file-buffers-enable)
-            (should-not buffer-read-only)))
-      (delete-directory temp-dir t))))
+        (let ((buffer (find-file-noselect file)))
+          (unwind-protect
+              (with-current-buffer buffer
+                (should-not buffer-read-only))
+            (kill-buffer buffer)))
+      (delete-file file))))
 
 (provide 'my-emacs-editing-tests)
 ;;; my-emacs-editing-tests.el ends here
