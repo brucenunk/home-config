@@ -14,7 +14,6 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 FUZZEL_THEME_DIR = REPO_ROOT / "config/fuzzel/themes"
 GHOSTTY_THEME_DIR = REPO_ROOT / "config/ghostty/themes"
 HERDR_THEME_DIR = REPO_ROOT / "config/herdr/themes"
-MERMAID_THEME_DIR = REPO_ROOT / "config/mermaid/themes"
 NIRI_THEME_DIR = REPO_ROOT / "config/niri/themes"
 PI_THEME_DIR = REPO_ROOT / "config/pi/themes"
 WAYBAR_THEME_DIR = REPO_ROOT / "config/waybar/themes"
@@ -371,66 +370,6 @@ def waybar_theme_text(theme: dict[str, str]) -> str:
     )
 
 
-def mermaid_theme_text(theme: dict[str, str]) -> str:
-    class_definitions = [
-        ("main", "bg_main", "border"),
-        ("shadowSubtle", "bg_shadow_subtle", "fg_shadow_subtle"),
-        ("neutral", "bg_neutral", "fg_neutral"),
-        ("shadowIntense", "bg_shadow_intense", "fg_shadow_intense"),
-        ("accent", "bg_accent", "fg_accent"),
-        ("red", "bg_red", "fg_red"),
-        ("green", "bg_green", "fg_green"),
-        ("yellow", "bg_yellow", "fg_yellow"),
-        ("blue", "bg_blue", "fg_blue"),
-        ("magenta", "bg_magenta", "fg_magenta"),
-        ("cyan", "bg_cyan", "fg_cyan"),
-    ]
-    lines = [
-        "```mermaid",
-        "---",
-        "config:",
-        "  look: handDrawn",
-        "  theme: base",
-        "  fontFamily: Verdana",
-        "  themeCSS: |",
-        "    .cluster-label text,",
-        "    .cluster-label span {",
-        "      font-size: 20px !important;",
-        "      font-weight: 600 !important;",
-        "      letter-spacing: 0.02em;",
-        "    }",
-        "  themeVariables:",
-        f'    background: "{theme["bg_main"]}"',
-        f'    clusterBkg: "{theme["bg_main"]}"',
-        f'    clusterBorder: "{theme["border"]}"',
-        f'    defaultLinkColor: "{theme["fg_shadow_subtle"]}"',
-        f'    edgeLabelBackground: "{theme["bg_main"]}"',
-        f'    lineColor: "{theme["fg_shadow_subtle"]}"',
-        f'    mainBkg: "{theme["bg_shadow_subtle"]}"',
-        f'    nodeBorder: "{theme["border"]}"',
-        f'    nodeTextColor: "{theme["fg_main"]}"',
-        f'    primaryBorderColor: "{theme["border"]}"',
-        f'    primaryColor: "{theme["bg_shadow_subtle"]}"',
-        f'    primaryTextColor: "{theme["fg_main"]}"',
-        f'    secondaryBorderColor: "{theme["fg_shadow_subtle"]}"',
-        f'    secondaryColor: "{theme["bg_neutral"]}"',
-        f'    secondaryTextColor: "{theme["fg_main"]}"',
-        f'    tertiaryBorderColor: "{theme["fg_accent"]}"',
-        f'    tertiaryColor: "{theme["bg_accent"]}"',
-        f'    tertiaryTextColor: "{theme["fg_accent"]}"',
-        f'    textColor: "{theme["fg_main"]}"',
-        f'    titleColor: "{theme["fg_accent"]}"',
-        "---",
-        "flowchart TD",
-    ]
-    lines.extend(
-        f"  classDef {name} fill:{theme[fill]},stroke:{theme[stroke]},color:{theme['fg_main']}"
-        for name, fill, stroke in class_definitions
-    )
-    lines.extend(["```", ""])
-    return "\n".join(lines)
-
-
 def with_alpha(color: str, alpha: str) -> str:
     return f"{color}{alpha}"
 
@@ -510,15 +449,10 @@ def toml_filename(theme_name: str) -> str:
     return f"{theme_name}.toml"
 
 
-def markdown_filename(theme_name: str) -> str:
-    return f"{theme_name}.md"
-
-
 TARGETS = {
     "fuzzel": Target(FUZZEL_THEME_DIR, ini_filename, fuzzel_theme_text),
     "ghostty": Target(GHOSTTY_THEME_DIR, unchanged_filename, ghostty_theme_text),
     "herdr": Target(HERDR_THEME_DIR, toml_filename, herdr_theme_text),
-    "mermaid": Target(MERMAID_THEME_DIR, markdown_filename, mermaid_theme_text),
     "niri": Target(NIRI_THEME_DIR, kdl_filename, niri_theme_text),
     "pi": Target(PI_THEME_DIR, json_filename, pi_theme_json),
     "waybar": Target(WAYBAR_THEME_DIR, css_filename, waybar_theme_text),

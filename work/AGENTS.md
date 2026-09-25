@@ -24,8 +24,8 @@ For Emacs debugging, live evaluation, UI inspection, or a wedged `emacsclient`, 
 ## Mermaid Diagrams
 
 - Start flowcharts with `flowchart TD` unless another direction communicates the structure better.
-- Use a Doric `base` template from `~/.config/mermaid/themes/`; keep most surfaces neutral and reserve palette accents for meaningful distinctions.
-- Assign semantic classes intentionally for the diagram's domain rather than treating their example names or colours as universal categories.
+- Use `~/.config/mermaid/themes/neutral.md`; add diagram-specific styling only when it communicates a meaningful distinction.
+- When styling a diagram, name classes for their semantic role rather than relying on palette-specific class names.
 - Use solid edges for the primary flow or dependency and dashed edges for secondary, optional, or reference relationships. Keep edge labels to concise relationship or transition descriptions.
 - Model an action as a node when it is a genuine process, responsibility, or lifecycle step; do not style an edge label to imitate a node.
 
