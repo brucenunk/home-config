@@ -13,8 +13,6 @@
         packages = with pkgs; [
           aporetic
           (google-fonts.override { fonts = [ "Bricolage Grotesque" ]; })
-          jetbrains-mono
-          maple-mono.truetype
           open-sans
         ];
       };

@@ -92,18 +92,15 @@ error.  Evaluate the theme's package source once and retry to register it."
   (setq fontaine-presets
         '((t
            :default-family "Aporetic Serif Mono"
-           :default-height 120
+           :default-height 130
            :fixed-pitch-family "Aporetic Serif Mono"
            :fixed-pitch-height 1.0
            :variable-pitch-family "Bricolage Grotesque"
            :variable-pitch-height 1.0)
           (aporetic-serif-mono)
-          (jetbrains-mono
-           :default-family "JetBrains Mono"
-           :fixed-pitch-family "JetBrains Mono")
-          (maple-mono
-           :default-family "Maple Mono"
-           :fixed-pitch-family "Maple Mono")
+          (aporetic-sans-mono
+           :default-family "Aporetic Sans Mono"
+           :fixed-pitch-family "Aporetic Sans Mono")
           (open-sans
            :variable-pitch-family "Open Sans"))))
 
