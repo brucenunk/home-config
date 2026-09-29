@@ -21,6 +21,7 @@
           gnused
           go-jsonnet
           graphviz
+          grpcurl
           htop
           jq
           jsonnet-bundler
