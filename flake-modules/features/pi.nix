@@ -147,11 +147,13 @@ in
         openAIBaseUrl = "http://127.0.0.1:18765/openai/v1";
       };
       wampaOpenAIModels = wampaRelayModels.providers.openai-proxy.models;
+      wampaBedrockModels = wampaRelayModels.providers.bedrock-proxy.models;
       wampaSettings = builtins.fromJSON (builtins.readFile ../../config/pi/settings-wampa.json);
       gpt6ModelIds = [
         "gpt-6-astra"
         "gpt-6-sol"
         "gpt-6-luna"
+        "gpt-6.1-sol"
       ];
       gpt6ModelsValid = builtins.all (
         id:
@@ -165,13 +167,27 @@ in
           && builtins.elem "image" model.input
           && model.thinkingLevelMap.minimal == null
           && (
-            if id == "gpt-6-astra" then
+            if id == "gpt-6-astra" || id == "gpt-6.1-sol" then
               model.thinkingLevelMap.off == null
             else
               model.thinkingLevelMap.off == "none"
           )
         ) wampaOpenAIModels
       ) gpt6ModelIds;
+      newBedrockModelsValid = builtins.all (
+        id:
+        builtins.any (
+          model:
+          model.id == id
+          && model.contextWindow == (if id == "global.xai.grok-4.7" then 500000 else 1000000)
+          && model.maxTokens == (if id == "global.xai.grok-4.7" then 500000 else 128000)
+          && builtins.elem "text" model.input
+          && model.reasoning == (id != "global.xai.grok-4.7")
+        ) wampaBedrockModels
+      ) [
+        "global.xai.grok-4.7"
+        "global.anthropic.claude-sonnet-5-5"
+      ];
 
       home = inputs.home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
@@ -235,8 +251,9 @@ in
 
         pi-wampa-gpt6-models =
           assert gpt6ModelsValid;
+          assert newBedrockModelsValid;
           assert wampaSettings.defaultProvider == "openai-proxy";
-          assert wampaSettings.defaultModel == "gpt-6-sol";
+          assert wampaSettings.defaultModel == "gpt-6.1-sol";
           pkgs.runCommand "pi-wampa-gpt6-models" { } ''
             touch "$out"
           '';

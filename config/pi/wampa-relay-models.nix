@@ -88,6 +88,29 @@
             input = 0;
             output = 0;
           };
+          id = "gpt-6.1-sol";
+          input = [
+            "text"
+            "image"
+          ];
+          maxTokens = 128000;
+          name = "GPT-6.1 Sol (OpenAI Proxy)";
+          reasoning = true;
+          thinkingLevelMap = {
+            off = null;
+            minimal = null;
+            xhigh = "xhigh";
+            max = "max";
+          };
+        }
+        {
+          contextWindow = 1050000;
+          cost = {
+            cacheRead = 0;
+            cacheWrite = 0;
+            input = 0;
+            output = 0;
+          };
           id = "gpt-5.6-sol";
           input = [
             "text"
@@ -173,6 +196,22 @@
           reasoning = false;
         }
         {
+          contextWindow = 500000;
+          cost = {
+            cacheRead = 0;
+            cacheWrite = 0;
+            input = 0;
+            output = 0;
+          };
+          id = "global.xai.grok-4.7";
+          input = [ "text" ];
+          maxTokens = 500000;
+          name = "Grok 4.7 (Bedrock Proxy)";
+          # Pi's Bedrock transport currently sends reasoning fields only for
+          # Claude models.
+          reasoning = false;
+        }
+        {
           contextWindow = 1000000;
           cost = {
             cacheRead = 0;
@@ -221,6 +260,24 @@
           input = [ "text" ];
           maxTokens = 128000;
           name = "Claude Sonnet 5 (Bedrock Proxy)";
+          reasoning = true;
+          thinkingLevelMap = {
+            xhigh = "xhigh";
+            max = "max";
+          };
+        }
+        {
+          contextWindow = 1000000;
+          cost = {
+            cacheRead = 0;
+            cacheWrite = 0;
+            input = 0;
+            output = 0;
+          };
+          id = "global.anthropic.claude-sonnet-5-5";
+          input = [ "text" ];
+          maxTokens = 128000;
+          name = "Claude Sonnet 5.5 (Bedrock Proxy)";
           reasoning = true;
           thinkingLevelMap = {
             xhigh = "xhigh";
