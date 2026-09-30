@@ -104,6 +104,9 @@ and platform boundaries.
 - `herdr` deploys the pinned upstream Herdr package, generated Doric light/dark
   theme policy, and release-matched Pi integration. Consumers may select only
   the typed `brucenunk.homeManager.herdr.ui.toast.delivery` host policy.
+- `herdsman` packages the Go companion launcher and seeds a writable inventory
+  once through `brucenunk.homeManager.herdsman.initialConfig`. Machine/repository
+  policy belongs to hosts or downstream consumers; see [`herdsman.md`](herdsman.md).
 - `pi` exposes its deployment interface under
   `brucenunk.homeManager.pi`. Its public theme and extension directories are
   defaults, so provider or transport adapters can replace them without

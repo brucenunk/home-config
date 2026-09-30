@@ -48,6 +48,7 @@ in
           config.flake.modules.homeManager.golang
           config.flake.modules.homeManager.hephaestus
           config.flake.modules.homeManager.herdr
+          config.flake.modules.homeManager.herdsman
           config.flake.modules.homeManager.kube
           config.flake.modules.homeManager.language-servers
           config.flake.modules.homeManager.ripgrep
@@ -88,6 +89,30 @@ in
         };
 
         brucenunk.homeManager.herdr.ui.toast.delivery = "system";
+
+        brucenunk.homeManager.herdsman.initialConfig.agentNames = [
+          "bushturkey"
+          "binchicken"
+          "possum"
+          "quokka"
+          "wallaby"
+          "wombat"
+          "bilby"
+          "numbat"
+          "kookaburra"
+          "echidna"
+          "platypus"
+          "cockatoo"
+        ];
+
+        brucenunk.homeManager.herdsman.initialConfig.machines.local = [
+          "brucenunk/cluster-api-x"
+          "brucenunk/home-config"
+          "brucenunk/nixos-config"
+          "brucenunk/playground"
+          "brucenunk/tinkerbell-x"
+          "brucenunk/zsa-voyager-keymap"
+        ];
 
         programs.emacs = {
           package = pkgs.emacs-pgtk;

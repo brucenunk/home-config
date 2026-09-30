@@ -51,6 +51,7 @@ nix eval --impure --raw --expr '
       "golang"
       "hephaestus"
       "herdr"
+      "herdsman"
       "kube"
       "language-servers"
       "niri"
