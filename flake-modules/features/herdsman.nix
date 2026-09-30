@@ -35,10 +35,15 @@ let
         agent_names = cfg.agentNames;
         tasks_dir = cfg.tasksDir;
         default_base = cfg.defaultBase;
+        theme = cfg.theme;
         machines = lib.mapAttrs (_: repositories: { inherit repositories; }) cfg.machines;
         repositories = lib.mapAttrs (_: base: { inherit base; }) cfg.repositoryBases;
       };
       configPath = "${config.xdg.configHome}/herdsman/config.toml";
+      themeEntries = lib.mapAttrs' (name: _: {
+        name = "herdsman/themes/${name}";
+        value.source = ../../config/herdsman/themes/${name};
+      }) (lib.filterAttrs (_: type: type == "regular") (builtins.readDir ../../config/herdsman/themes));
     in
     {
       options.brucenunk.homeManager.herdsman.initialConfig = lib.mkOption {
@@ -71,12 +76,40 @@ let
               default = "~/work/tasks";
               description = "Local directory used by the task picker.";
             };
+            theme = lib.mkOption {
+              default = { };
+              description = "Initial theme selection. Existing writable configs are not overwritten.";
+              type = lib.types.submodule {
+                options = {
+                  dark = lib.mkOption {
+                    type = lib.types.str;
+                    default = "doric-obsidian";
+                    description = "Palette name used for dark terminals; absent files use terminal-native styling.";
+                  };
+                  light = lib.mkOption {
+                    type = lib.types.str;
+                    default = "doric-marble";
+                    description = "Palette name used for light terminals; absent files use terminal-native styling.";
+                  };
+                  mode = lib.mkOption {
+                    type = lib.types.enum [
+                      "auto"
+                      "light"
+                      "dark"
+                    ];
+                    default = "auto";
+                    description = "Detect the terminal background at startup, or force light/dark.";
+                  };
+                };
+              };
+            };
           };
         };
       };
 
       config = {
         home.packages = [ (packageFor pkgs) ];
+        xdg.configFile = themeEntries;
         # This is deliberately not xdg.configFile: users can edit inventory in place.
         home.activation.herdsmanInitialConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           if [ ! -e ${lib.escapeShellArg configPath} ] && [ ! -L ${lib.escapeShellArg configPath} ]; then
@@ -132,7 +165,25 @@ in
               config = tomllib.load(f)
           assert config["default_base"] == "main"
           assert config["agent_names"] == ["example-agent"]
+          assert config["theme"] == {
+              "mode": "auto", "light": "doric-marble", "dark": "doric-obsidian"
+          }
           assert config["machines"]["local"]["repositories"] == ["example/repo"]
+          PY
+          ${pkgs.python3}/bin/python - \
+            ${home.config.xdg.configFile."herdsman/themes/doric-marble.toml".source} \
+            ${home.config.xdg.configFile."herdsman/themes/doric-obsidian.toml".source} <<'PY'
+          import sys
+          import tomllib
+          for path, text in zip(sys.argv[1:], ["#202020", "#e7e7e7"]):
+              with open(path, "rb") as f:
+                  palette = tomllib.load(f)
+              assert set(palette) == {"colors"}
+              assert palette["colors"]["text"] == text
+              assert set(palette["colors"]) == {
+                  "text", "muted", "accent", "selection_background",
+                  "selection_text", "match", "error",
+              }
           PY
           printf 'user-owned inventory\n' >test-config/herdsman/config.toml
           source ${activationScript}

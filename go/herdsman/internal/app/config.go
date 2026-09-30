@@ -9,10 +9,12 @@ import (
 	"strings"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
+	"github.com/brucenunk/home-config/go/herdsman/internal/tui/themes"
 	"github.com/pelletier/go-toml/v2"
 )
 
 type Config struct {
+	Theme        themes.Config               `toml:"theme"`
 	AgentNames   []string                    `toml:"agent_names"`
 	TasksDir     string                      `toml:"tasks_dir"`
 	DefaultBase  string                      `toml:"default_base"`
@@ -77,6 +79,10 @@ func LoadConfig(path string) (Config, error) {
 	var c Config
 	if err := toml.Unmarshal(data, &c); err != nil {
 		return c, fmt.Errorf("parse config: %w", err)
+	}
+	c.Theme = c.Theme.WithDefaults()
+	if err := c.Theme.Validate(); err != nil {
+		return c, err
 	}
 	if err := validateAgentNames(c.AgentNames); err != nil {
 		return c, err

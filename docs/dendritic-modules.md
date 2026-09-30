@@ -105,7 +105,9 @@ and platform boundaries.
   theme policy, and release-matched Pi integration. Consumers may select only
   the typed `brucenunk.homeManager.herdr.ui.toast.delivery` host policy.
 - `herdsman` packages the Go companion launcher and seeds a writable inventory
-  once through `brucenunk.homeManager.herdsman.initialConfig`. Machine/repository
+  and named light/dark theme selection once through
+  `brucenunk.homeManager.herdsman.initialConfig`. Generated Doric palettes are
+  deployed to the user config directory, not embedded in the binary. Machine/repository
   policy belongs to hosts or downstream consumers; see [`herdsman.md`](herdsman.md).
 - `pi` exposes its deployment interface under
   `brucenunk.homeManager.pi`. Its public theme and extension directories are

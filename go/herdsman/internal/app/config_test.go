@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
+	"github.com/brucenunk/home-config/go/herdsman/internal/tui/themes"
 )
 
 func load(t *testing.T, text string) (Config, error) {
@@ -38,6 +39,9 @@ base = "master"
 	if !reflect.DeepEqual(c.AgentNames, []string{"runner", "helper"}) {
 		t.Fatal(c.AgentNames)
 	}
+	if c.Theme != (themes.Config{Mode: "auto", Light: "doric-marble", Dark: "doric-obsidian"}) {
+		t.Fatal(c.Theme)
+	}
 	if c.TasksDir != filepath.Join(os.Getenv("HOME"), "work/tasks") {
 		t.Fatal(c.TasksDir)
 	}
@@ -57,6 +61,22 @@ base = "master"
 	profiles = append(profiles, herdr.Machine{ID: "r3", Label: "remote", Enabled: true})
 	if len(c.Destinations("owner/three", profiles)) != 0 {
 		t.Fatal("ambiguous label offered")
+	}
+}
+
+func TestThemeConfig(t *testing.T) {
+	base := "agent_names = [\"runner\"]\n[machines.local]\nrepositories = [\"owner/repo\"]\n[theme]\n"
+	c, err := load(t, base+"mode = \"light\"\nlight = \"doric-obsidian\"\ndark = \"doric-marble\"\n")
+	if err != nil || c.Theme != (themes.Config{Mode: "light", Light: "doric-obsidian", Dark: "doric-marble"}) {
+		t.Fatal(c, err)
+	}
+	for _, field := range []string{`mode = "invalid"`, `light = "../escape"`, `dark = "/absolute"`, `mode = 1`} {
+		if _, err := load(t, base+field); err == nil {
+			t.Fatalf("accepted %s", field)
+		}
+	}
+	if _, err := load(t, base+`light = "custom"`); err != nil {
+		t.Fatal("custom or missing palettes must be accepted", err)
 	}
 }
 

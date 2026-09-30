@@ -99,7 +99,7 @@ func TestTaskFilenameControlsCannotReachTerminal(t *testing.T) {
 	if view := s.view(false, false); strings.Contains(view, "\x1b]52;") || strings.ContainsRune(view, '\a') {
 		t.Fatal("terminal command in filename rendering")
 	}
-	m := New(config(t), nil)
+	m := newModel(t, config(t), nil)
 	m.message = "cannot read " + path
 	if view := m.View(); strings.Contains(view, "\x1b]52;") || strings.ContainsRune(view, '\a') {
 		t.Fatal("terminal command in error rendering")

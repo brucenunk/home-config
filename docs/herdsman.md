@@ -25,6 +25,11 @@ agent_names = ["bushturkey", "binchicken", "possum", "quokka"]
 tasks_dir = "~/work/tasks"
 default_base = "main"
 
+[theme]
+mode = "auto"
+light = "doric-marble"
+dark = "doric-obsidian"
+
 [machines.local]
 repositories = ["brucenunk/home-config", "owner/legacy-repo"]
 
@@ -67,11 +72,64 @@ brucenunk.homeManager.herdsman.initialConfig = {
   machines.local = [ "owner/repo" ];
   repositoryBases."owner/other-repo" = "master";
   tasksDir = "~/work/tasks";
+  theme = {
+    mode = "auto";
+    light = "doric-marble";
+    dark = "doric-obsidian";
+  };
 };
 ```
 
 Like the other public modules, consumers must supply the shared `llm-agents`
 package overlay.
+
+## Styling and themes
+
+The `[theme]` table assigns named palettes to light and dark terminals, like
+Ghostty's `light:NAME,dark:NAME` selection. `mode` accepts `auto`, `light`, or
+`dark`. Missing fields default to `auto`, `doric-marble`, and `doric-obsidian`,
+respectively, so existing configs do not need migration. Theme names must use
+lowercase letters, digits, and hyphens; invalid names and modes are rejected
+before entering the picker.
+
+Auto detection uses Lip Gloss's terminal-background detection once at startup,
+before Bubble Tea reads input. It queries the terminal, falls back to
+`COLORFGBG` where available, and otherwise assumes a dark background. It does
+not follow background changes while the picker is open. If detection is wrong
+in your terminal, set `mode` explicitly. Colors respect the terminal's color
+capabilities; selection borders/brackets remain usable without color.
+
+Both palettes are generated from Doric by the `theme-builder` skill's
+`herdsman` target. The color-only TOML files live in
+`config/herdsman/themes/`; Home Manager deploys them to
+`$XDG_CONFIG_HOME/herdsman/themes/`. They contain no light/dark classification:
+the main config owns that mapping. Herdsman reads the selected named file from
+a `themes/` directory beside its active config file, including when using
+`--config PATH`.
+
+The shipped names are `doric-marble` and `doric-obsidian`. You can copy one
+under a new name and configure it as a light or dark palette. Shipped files
+are Home Manager-managed; custom files are user-owned. Palette edits require
+only restarting Herdsman, not rebuilding the executable. For example, a
+`custom.toml` palette has this schema (all seven colors are required):
+
+```toml
+[colors]
+text = "#202020"
+muted = "#4a4a4a"
+accent = "#603d3a"
+selection_background = "#b0b0b0"
+selection_text = "#202020"
+match = "#603d3a"
+error = "#a01010"
+```
+
+No palettes are embedded in the binary. If the selected file or theme directory
+is absent, Herdsman uses terminal-native styling: bold/underline and selection
+markers without custom colors. A misspelled theme name therefore also selects
+neutral styling. Present but unreadable, malformed, or incomplete files are
+errors rather than silently falling back; unknown palette fields are rejected.
+Repository and machine rows have no blank spacer lines.
 
 ## Selection and launch
 
@@ -174,6 +232,6 @@ Repository verification additionally requires the staged Wampa Home Manager
 build; see `AGENTS.md`. These checks do not activate configuration or demonstrate
 a running Pi/remote server has loaded it.
 
-Finish, custom Doric themes, model comparisons, plugin integration, and existing
+Finish, model comparisons, plugin integration, and existing
 workspace cleanup are intentionally deferred. Existing `start-task` and
 `finish-task` commands remain available.

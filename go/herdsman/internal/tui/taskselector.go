@@ -14,8 +14,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 type taskFile struct {
@@ -89,9 +87,10 @@ func discoverTasks(root string) ([]taskFile, error) {
 }
 
 type taskSelector struct {
-	query textinput.Model
-	list  list.Model
-	files []taskFile
+	styles styles
+	query  textinput.Model
+	list   list.Model
+	files  []taskFile
 }
 
 func newTaskSelector(width, height int) taskSelector {
@@ -112,6 +111,13 @@ func newTaskSelector(width, height int) taskSelector {
 func (s *taskSelector) resize(width, height int) {
 	s.query.Width = max(1, width-6)
 	s.list.SetSize(width, max(3, height-10))
+}
+
+func (s *taskSelector) applyStyles(styles styles) {
+	s.styles = styles
+	s.list.SetDelegate(taskDelegate{styles: styles.items()})
+	styles.list(&s.list)
+	styles.input(&s.query)
 }
 
 func (s *taskSelector) setFiles(files []taskFile) {
@@ -168,10 +174,10 @@ func (s taskSelector) selectedPath() string {
 func (s taskSelector) view(loadingIndex, loadingTask bool) string {
 	body := s.list.View()
 	if loadingIndex {
-		body = "Reading task filenames…"
+		body = s.styles.muted.Render("Reading task filenames…")
 	}
 	if loadingTask {
-		body = "Reading task file…"
+		body = s.styles.muted.Render("Reading task file…")
 	}
 	return s.query.View() + "\n\n" + body
 }
@@ -187,7 +193,5 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	if index == m.Index() {
 		style = d.styles.SelectedTitle
 	}
-	title := ansi.Truncate(f.relative, max(1, m.Width()-2), "…")
-	title = lipgloss.StyleRunes(title, f.matches, style.Inline(true).Inherit(d.styles.FilterMatch), style.Inline(true))
-	fmt.Fprint(w, style.Render(title))
+	renderTitle(w, f.relative, f.matches, style, d.styles.FilterMatch, m.Width())
 }

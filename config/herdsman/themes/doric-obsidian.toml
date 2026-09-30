@@ -1,0 +1,11 @@
+# Generated from the installed Emacs doric-themes palette: doric-obsidian.
+# Do not edit directly; regenerate with build-doric-themes.py.
+
+[colors]
+text = "#e7e7e7"
+muted = "#bcbcbc"
+accent = "#b59487"
+selection_background = "#505050"
+selection_text = "#e7e7e7"
+match = "#b59487"
+error = "#eca28f"

@@ -7,8 +7,10 @@ import (
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/app"
 	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
+	"github.com/brucenunk/home-config/go/herdsman/internal/tui/themes"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type stage int
@@ -34,6 +36,7 @@ func (i machineItem) Description() string { return "" }
 func (i machineItem) FilterValue() string { return i.Title() }
 
 type Model struct {
+	styles        styles
 	config        app.Config
 	profiles      []herdr.Machine
 	stage         stage
@@ -50,8 +53,20 @@ type Model struct {
 	Ready         bool
 }
 
-func New(c app.Config, profiles []herdr.Machine) Model {
-	return Model{config: c, profiles: profiles, yes: true, width: 80, height: 22}
+func New(c app.Config, profiles []herdr.Machine, themeDir string) (Model, error) {
+	// Configuration is validated before constructing the UI. Detect once, before
+	// Bubble Tea starts reading terminal input, rather than during rendering.
+	theme := c.Theme.WithDefaults()
+	if theme.Mode != "auto" {
+		// Bubbles renders adaptive colors during construction, even though we
+		// replace them. Prevent it from querying the terminal inside Update.
+		lipgloss.SetHasDarkBackground(theme.Mode == "dark")
+	}
+	colors, err := themes.Load(themeDir, theme.Name(lipgloss.HasDarkBackground))
+	if err != nil {
+		return Model{}, err
+	}
+	return Model{config: c, profiles: profiles, styles: newStyles(colors), yes: true, width: 80, height: 22}, nil
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -80,6 +95,7 @@ func (m *Model) readTask(path string) tea.Cmd {
 
 func (m *Model) beginTasks() tea.Cmd {
 	m.selector = newTaskSelector(m.width, m.height)
+	m.selector.applyStyles(m.styles)
 	m.readID++
 	m.indexLoading, m.taskLoading = true, false
 	id, root := m.readID, m.config.TasksDir
@@ -96,7 +112,10 @@ func (m *Model) choices(title string, names []string, preselect string) {
 	}
 	d := list.NewDefaultDelegate()
 	d.ShowDescription = false
-	m.list = list.New(items, d, m.width, max(8, m.height-5))
+	d.SetSpacing(0)
+	d.Styles = m.styles.items()
+	m.list = list.New(items, choiceDelegate{d}, m.width, max(8, m.height-5))
+	m.styles.list(&m.list)
 	m.list.Title = title
 	m.list.SetShowStatusBar(false)
 	m.list.DisableQuitKeybindings()
@@ -280,18 +299,18 @@ func (m Model) View() string {
 		if m.stage == askEmpty {
 			question = "Start an empty session instead? (No cancels)"
 		}
-		choices := "  Yes    [No]"
+		choices := m.styles.text.Render("  Yes    ") + m.styles.selected.Render("[No]")
 		if m.yes {
-			choices = " [Yes]    No"
+			choices = " " + m.styles.selected.Render("[Yes]") + m.styles.text.Render("    No")
 		}
-		body = question + "\n\n" + choices + "\n\n←/→ choose · enter confirm · y/n · esc cancel"
+		body = m.styles.title.Render(question) + "\n\n" + choices + "\n\n" + m.styles.muted.Render("←/→ choose · enter confirm · y/n · esc cancel")
 	case pickTask:
-		body = "Choose task file\n" + m.selector.view(m.indexLoading, m.taskLoading) + "\ntype to find · ↑/↓ choose · enter select · esc empty-session/cancel"
+		body = m.styles.title.Render("Choose task file") + "\n" + m.selector.view(m.indexLoading, m.taskLoading) + "\n" + m.styles.muted.Render("type to find · ↑/↓ choose · enter select · esc empty-session/cancel")
 	case pickRepo, pickMachine:
-		body = m.list.View() + "\nesc back"
+		body = m.list.View() + "\n" + m.styles.muted.Render("esc back")
 	}
 	if m.message != "" {
-		body += "\n\n" + displayText(m.message)
+		body += "\n\n" + m.styles.error.Render(displayText(m.message))
 	}
-	return fmt.Sprintf("\nherdsman start\n\n%s\n\nctrl+c cancels\n", strings.TrimRight(body, "\n"))
+	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n", m.styles.title.Render("herdsman start"), strings.TrimRight(body, "\n"), m.styles.muted.Render("ctrl+c cancels"))
 }

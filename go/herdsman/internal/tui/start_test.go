@@ -16,6 +16,15 @@ func config(t *testing.T) app.Config {
 	return app.Config{AgentNames: []string{"runner"}, TasksDir: t.TempDir(), DefaultBase: "main", Machines: map[string]app.MachineConfig{"local": {Repositories: []string{"owner/one", "owner/two"}}}}
 }
 
+func newModel(t *testing.T, c app.Config, profiles []herdr.Machine) Model {
+	t.Helper()
+	m, err := New(c, profiles, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
 func key(m Model, s string) (Model, tea.Cmd) {
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	switch s {
@@ -31,7 +40,7 @@ func key(m Model, s string) (Model, tea.Cmd) {
 }
 
 func TestEmptySelectionAndCancellation(t *testing.T) {
-	m := New(config(t), nil)
+	m := newModel(t, config(t), nil)
 	m, _ = key(m, "n")
 	if m.stage != pickRepo || m.Ready {
 		t.Fatal(m.stage, m.Ready)
@@ -45,7 +54,7 @@ func TestEmptySelectionAndCancellation(t *testing.T) {
 		t.Fatal(m.Request, m.Ready)
 	}
 	for _, s := range []string{"esc", "ctrl+c", "q"} {
-		m, cmd = key(New(config(t), nil), s)
+		m, cmd = key(newModel(t, config(t), nil), s)
 		if m.Ready || cmd == nil {
 			t.Fatal("cancel did not exit")
 		}
@@ -56,7 +65,7 @@ func TestLocalDisplayDoesNotChangeMachineIdentity(t *testing.T) {
 	c := config(t)
 	c.Machines["Local"] = app.MachineConfig{Repositories: []string{"owner/one"}}
 	profiles := []herdr.Machine{{ID: "remote-profile", Label: "Local", Target: "ssh-alias", Enabled: true}}
-	m, _ := key(New(c, profiles), "n")
+	m, _ := key(newModel(t, c, profiles), "n")
 	m, _ = key(m, "enter")
 	if selected := m.list.SelectedItem().(machineItem); selected.Title() != "Local" || !selected.machine.IsLocal() {
 		t.Fatal(selected)
@@ -76,7 +85,7 @@ func TestLocalDisplayDoesNotChangeMachineIdentity(t *testing.T) {
 
 func TestLeavingTaskPickerOffersEmptyOrCancel(t *testing.T) {
 	for _, answer := range []string{"y", "n"} {
-		m := New(config(t), nil)
+		m := newModel(t, config(t), nil)
 		m, _ = key(m, "y")
 		if m.stage != pickTask {
 			t.Fatal(m.stage)
@@ -102,7 +111,7 @@ func TestTaskFileSelectionAndRepoOverride(t *testing.T) {
 	if err := os.WriteFile(p, []byte("---\ntitle: Task\nrepo: owner/two\n---\nTask body\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	m := New(c, nil)
+	m := newModel(t, c, nil)
 	m, cmd := key(m, "y")
 	// Filename indexing runs as a command; deliver its result as Tea would.
 	next, _ := m.Update(cmd())
@@ -127,13 +136,13 @@ func TestTaskFileSelectionAndRepoOverride(t *testing.T) {
 func TestUnavailableMachineAndBackNavigation(t *testing.T) {
 	c := config(t)
 	c.Machines = map[string]app.MachineConfig{"missing": {Repositories: []string{"owner/one"}}}
-	m := New(c, nil)
+	m := newModel(t, c, nil)
 	m, _ = key(m, "n")
 	m, _ = key(m, "enter")
 	if m.stage != pickRepo || m.message == "" || m.Ready {
 		t.Fatal(m.stage, m.message)
 	}
-	m = New(config(t), nil)
+	m = newModel(t, config(t), nil)
 	m, _ = key(m, "n")
 	m, _ = key(m, "enter")
 	m, _ = key(m, "esc")
@@ -147,7 +156,7 @@ func TestUnavailableMachineAndBackNavigation(t *testing.T) {
 }
 
 func TestFilteringEnterDoesNotChoosePrematurely(t *testing.T) {
-	m := New(config(t), nil)
+	m := newModel(t, config(t), nil)
 	m, _ = key(m, "n")
 	m, _ = key(m, "/")
 	if m.list.FilterState() != list.Filtering {
@@ -160,7 +169,7 @@ func TestFilteringEnterDoesNotChoosePrematurely(t *testing.T) {
 }
 
 func TestInitialAndLaterWindowSizes(t *testing.T) {
-	m := New(config(t), nil)
+	m := newModel(t, config(t), nil)
 	resize := func() {
 		next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 		m = next.(Model)
@@ -182,7 +191,7 @@ func TestInitialAndLaterWindowSizes(t *testing.T) {
 func TestMissingTaskDirectoryOffersEmptyOrCancel(t *testing.T) {
 	c := config(t)
 	c.TasksDir = filepath.Join(c.TasksDir, "missing")
-	m, cmd := key(New(c, nil), "y")
+	m, cmd := key(newModel(t, c, nil), "y")
 	next, _ := m.Update(cmd())
 	m = next.(Model)
 	if m.stage != askEmpty || m.Ready || !strings.Contains(m.View(), "cannot read task directory") {
@@ -210,7 +219,7 @@ func TestUnreadableEpicReportsIndexError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(blocked, 0700) })
-	m, cmd := key(New(c, nil), "y")
+	m, cmd := key(newModel(t, c, nil), "y")
 	next, _ := m.Update(cmd())
 	m = next.(Model)
 	if m.stage != askEmpty || !strings.Contains(m.message, blocked) || strings.Contains(m.View(), "stale.md") {
@@ -219,7 +228,7 @@ func TestUnreadableEpicReportsIndexError(t *testing.T) {
 }
 
 func TestLatePickerReadCannotReopenCancelledSelection(t *testing.T) {
-	m, cmd := key(New(config(t), nil), "y")
+	m, cmd := key(newModel(t, config(t), nil), "y")
 	m, _ = key(m, "esc")
 	next, _ := m.Update(cmd())
 	m = next.(Model)
@@ -234,7 +243,7 @@ func TestTaskReadResultCannotUndoCancellation(t *testing.T) {
 	if err := os.WriteFile(path, []byte("---\ntitle: Task\nskill: review\n---\nBody"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	m, cmd := key(New(c, nil), "y")
+	m, cmd := key(newModel(t, c, nil), "y")
 	next, _ := m.Update(cmd())
 	m = next.(Model)
 	m, cmd = key(m, "enter")
@@ -255,7 +264,7 @@ func TestDisappearingTaskDoesNotCrashOrLaunch(t *testing.T) {
 	if err := os.WriteFile(path, []byte("task"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	m, cmd := key(New(c, nil), "y")
+	m, cmd := key(newModel(t, c, nil), "y")
 	next, _ := m.Update(cmd())
 	m = next.(Model)
 	if err := os.Remove(path); err != nil {
@@ -282,7 +291,7 @@ func TestQueryBeforeIndexCompletesAndOneEnterSelection(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(c.TasksDir, "20260930T193615==todo--other.md"), []byte("invalid"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	m, indexCmd := key(New(c, nil), "y")
+	m, indexCmd := key(newModel(t, c, nil), "y")
 	m, _ = key(m, "netshare")
 	next, _ := m.Update(indexCmd())
 	m = next.(Model)

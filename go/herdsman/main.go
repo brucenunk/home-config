@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/app"
@@ -58,7 +59,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("read Herdr machines: %w", err)
 	}
-	model, err := tea.NewProgram(tui.New(c, profiles), tea.WithContext(ctx)).Run()
+	initial, err := tui.New(c, profiles, filepath.Join(filepath.Dir(*configPath), "themes"))
+	if err != nil {
+		return err
+	}
+	model, err := tea.NewProgram(initial, tea.WithContext(ctx)).Run()
 	if err != nil {
 		return err
 	}
