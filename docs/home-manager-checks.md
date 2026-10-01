@@ -38,8 +38,8 @@ owns it:
 | Check | Platforms | Regression caught |
 | --- | --- | --- |
 | `ghostty-home-manager-module` | Linux, Darwin | Package overrides remain effective, extra configuration remains appended, the two generated themes remain deployed, and disabling the canonical Linux service suppresses its link. |
-| `herdr-home-manager-module` | Linux, Darwin | The generated Herdr TOML remains parseable and retains terminal, Doric theme, sidebar, notification, SSH, and update policy, and the matching Pi integration remains deployed. The native check realizes only the generated configuration needed to inspect that artifact. |
-| `herdsman`, `herdsman-home-manager-module` | Linux, Darwin | The Go package passes its tests; the isolated feature deploys Nix-managed TOML with independent source directories/base refs, retains normal file-collision protection, and installs the command. |
+| `herdr-home-manager-module` | Linux, Darwin | The generated Herdr TOML remains parseable and retains terminal, Doric theme, sidebar, notification, SSH, update policy, and the Ctrl+Space prefix, and the matching Pi integration remains deployed. The native check realizes only the generated configuration needed to inspect that artifact. |
+| `herdsman`, `herdsman-home-manager-module` | Linux, Darwin | The Go package passes its tests; the isolated feature deploys Nix-managed TOML with independent source directories/base refs, retains normal file-collision protection, and installs the command. Plugin checks cover the start-only popup manifest, offline link/relink, shim routing, and `prefix+t` binding, not live popup/focus behavior. |
 | `pi-home-manager-module` | Linux, Darwin | Consumers can disable Pi and override its extension and theme directory defaults with `null`. |
 | `doric-waybar-themes-home-manager-module` | Linux, Darwin | The portable Waybar theme module continues to deploy its theme directory recursively. |
 | `git-maintenance-home-manager-module` | Darwin | A non-empty repository list enables Git maintenance settings and the launchd schedule. |

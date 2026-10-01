@@ -30,7 +30,57 @@ let
     }:
     let
       cfg = config.brucenunk.homeManager.herdsman.config;
+      package = packageFor pkgs;
+      herdrPackage = pkgs.llm-agents.herdr;
       format = pkgs.formats.toml { };
+      popupRunner = pkgs.writeShellScript "herdsman-popup" ''
+        if ${package}/bin/herdsman start; then
+          exit 0
+        else
+          status=$?
+          printf '\nHerdsman exited with status %s. Inspect the error above before retrying.\nPress Enter to close.\n' "$status"
+          read -r acknowledgement || true
+          exit "$status"
+        fi
+      '';
+      pluginManifest = format.generate "herdr-plugin.toml" {
+        id = "brucenunk.herdsman";
+        name = "Herdsman";
+        version = "0.1.0";
+        min_herdr_version = "0.9.1";
+        platforms = [
+          "linux"
+          "macos"
+        ];
+        actions = [
+          {
+            id = "start";
+            title = "Start task";
+            command = [ "./herdsman-plugin" ];
+          }
+        ];
+        panes = [
+          {
+            id = "launcher";
+            title = "Start task";
+            placement = "popup";
+            width = "80%";
+            height = "80%";
+            command = [ popupRunner ];
+          }
+        ];
+      };
+      pluginStarter = pkgs.writeShellScript "herdsman-plugin" ''
+        exec "''${HERDR_BIN_PATH:-${herdrPackage}/bin/herdr}" plugin pane open \
+          --plugin brucenunk.herdsman --entrypoint launcher
+      '';
+      # Herdr canonicalizes the manifest and derives plugin_root from its parent.
+      # A symlinked manifest would incorrectly make /nix/store the plugin root.
+      plugin = pkgs.runCommand "herdsman-plugin" { } ''
+        mkdir -p "$out"
+        cp ${pluginManifest} "$out/herdr-plugin.toml"
+        cp ${pluginStarter} "$out/herdsman-plugin"
+      '';
       managedConfig = format.generate "herdsman-config.toml" {
         agent_names = cfg.agentNames;
         tasks_dir = cfg.tasksDir;
@@ -128,9 +178,31 @@ let
       };
 
       config = {
-        home.packages = [ (packageFor pkgs) ];
+        home.packages = [ package ];
+        # Keep the registry user-owned; Herdr merges this link with other plugins.
+        home.activation.herdsmanPlugin = lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" ] ''
+          # Register offline with the pinned CLI, independent of any older server.
+          # This socket cannot exist in the immutable generated plugin directory.
+          run ${pkgs.coreutils}/bin/env \
+            XDG_CONFIG_HOME=${lib.escapeShellArg config.xdg.configHome} \
+            XDG_DATA_HOME=${lib.escapeShellArg config.xdg.dataHome} \
+            HERDR_SOCKET_PATH=${plugin}/offline.sock \
+            ${herdrPackage}/bin/herdr plugin link \
+            ${lib.escapeShellArg "${config.xdg.configHome}/herdsman/plugin"}
+        '';
+        programs.herdr.settings = lib.mkIf config.programs.herdr.enable {
+          keys.command = [
+            {
+              key = "prefix+t";
+              type = "plugin_action";
+              command = "brucenunk.herdsman.start";
+              description = "Start task";
+            }
+          ];
+        };
         xdg.configFile = themeEntries // {
           "herdsman/config.toml".source = managedConfig;
+          "herdsman/plugin".source = plugin;
         };
       };
     };
@@ -157,6 +229,8 @@ in
                   "/home/herdsman-module-check";
               stateVersion = "25.05";
             };
+            programs.herdr.enable = true;
+            programs.herdr.package = pkgs.llm-agents.herdr;
             brucenunk.homeManager.herdsman.config = {
               agentNames = [ "example-agent" ];
               machines.local = [
@@ -183,7 +257,112 @@ in
       checks.herdsman-home-manager-module = builtins.deepSeq home.activationPackage.drvPath (
         assert !configFile.force;
         assert !(home.config.home.activation ? herdsmanInitialConfig);
+        assert home.config.home.activation ? herdsmanPlugin;
+        assert
+          home.config.programs.herdr.settings.keys.command == [
+            {
+              key = "prefix+t";
+              type = "plugin_action";
+              command = "brucenunk.herdsman.start";
+              description = "Start task";
+            }
+          ];
         pkgs.runCommand "herdsman-home-manager-module" { } ''
+          plugin=${home.config.xdg.configFile."herdsman/plugin".source}
+          ${pkgs.python3}/bin/python - "$plugin/herdr-plugin.toml" <<'PY'
+          import sys
+          import tomllib
+          with open(sys.argv[1], "rb") as f:
+              plugin = tomllib.load(f)
+          assert plugin["id"] == "brucenunk.herdsman"
+          assert plugin["min_herdr_version"] == "0.9.1"
+          assert plugin["platforms"] == ["linux", "macos"]
+          assert plugin["actions"] == [{
+              "id": "start", "title": "Start task", "command": ["./herdsman-plugin"]
+          }]
+          pane_command = plugin["panes"][0]["command"]
+          assert len(pane_command) == 1
+          assert plugin["panes"] == [{
+              "id": "launcher", "title": "Start task", "placement": "popup",
+              "width": "80%", "height": "80%", "command": pane_command
+          }]
+          # Exercise the runner with only its Herdsman executable mocked.
+          import os
+          import subprocess
+          import tempfile
+          with open(pane_command[0]) as f:
+              runner = f.read()
+          assert "${package}/bin/herdsman start" in runner
+          with tempfile.TemporaryDirectory() as directory:
+              mock = os.path.join(directory, "herdsman")
+              with open(mock, "w") as f:
+                  f.write('#!${pkgs.runtimeShell}\necho "launch diagnostic"\nexit "$MOCK_STATUS"\n')
+              os.chmod(mock, 0o755)
+              script = runner.replace("${package}/bin/herdsman", mock)
+              env = dict(os.environ, MOCK_STATUS="0")
+              success = subprocess.run(["${pkgs.runtimeShell}", "-c", script],
+                  input="", text=True, capture_output=True, env=env, timeout=5)
+              assert success.returncode == 0
+              assert "Press Enter" not in success.stdout
+              env["MOCK_STATUS"] = "7"
+              failure = subprocess.Popen(["${pkgs.runtimeShell}", "-c", script],
+                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                  text=True, env=env)
+              lines = []
+              while True:
+                  line = failure.stdout.readline()
+                  assert line, "runner exited before acknowledging failure"
+                  lines.append(line)
+                  if "Press Enter" in line:
+                      break
+              assert failure.poll() is None
+              assert "launch diagnostic" in "".join(lines)
+              failure.communicate(input="\n", timeout=5)
+              assert failure.returncode == 7
+          assert not any(k in plugin for k in ["startup", "events", "build"])
+          PY
+          # No real server or user registry: validate link/relink offline in a sandbox.
+          export HOME="$PWD/home"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_RUNTIME_DIR="$PWD/runtime"
+          export HERDR_SOCKET_PATH="$plugin/offline.sock"
+          mkdir -p "$HOME" "$XDG_RUNTIME_DIR"
+          # Explicit directories/socket must override a stale activation environment.
+          XDG_CONFIG_HOME="$PWD/stale-config" XDG_DATA_HOME="$PWD/stale-data" \
+            HERDR_SOCKET_PATH="$PWD/stale.sock" ${pkgs.coreutils}/bin/env \
+            XDG_CONFIG_HOME="$XDG_CONFIG_HOME" XDG_DATA_HOME="$XDG_DATA_HOME" \
+            HERDR_SOCKET_PATH="$plugin/offline.sock" \
+            ${pkgs.llm-agents.herdr}/bin/herdr plugin link "$plugin"
+          test ! -e "$PWD/stale-config/herdr/plugins.json"
+          ${pkgs.llm-agents.herdr}/bin/herdr plugin link "$plugin"
+          ${pkgs.python3}/bin/python - "$XDG_CONFIG_HOME/herdr/plugins.json" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1]) as f:
+              plugins = json.load(f)
+          assert len(plugins) == 1
+          assert plugins[0]["plugin_id"] == "brucenunk.herdsman"
+          assert plugins[0]["enabled"] is True
+          PY
+          cat >mock-herdr <<'SH'
+          #!${pkgs.runtimeShell}
+          printf '%s\n' "$@"
+          SH
+          chmod +x mock-herdr
+          HERDR_BIN_PATH="$PWD/mock-herdr" ${pkgs.python3}/bin/python - \
+            "$XDG_CONFIG_HOME/herdr/plugins.json" "$plugin" >shim-args <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          with open(sys.argv[1]) as f:
+              plugin = json.load(f)[0]
+          assert plugin["plugin_root"] == os.path.realpath(sys.argv[2])
+          subprocess.run(plugin["actions"][0]["command"], cwd=plugin["plugin_root"], check=True)
+          PY
+          printf '%s\n' plugin pane open --plugin brucenunk.herdsman --entrypoint launcher >expected-args
+          cmp shim-args expected-args
           ${pkgs.python3}/bin/python - ${configFile.source} <<'PY'
           import sys
           import tomllib

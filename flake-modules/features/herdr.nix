@@ -35,6 +35,7 @@ let
 
       settings = {
         onboarding = false;
+        keys.prefix = "ctrl+space";
 
         terminal = {
           kitty_graphics = true;
@@ -169,6 +170,7 @@ in
                 config = tomllib.load(config_file)
 
             assert config["terminal"]["kitty_graphics"] is True
+            assert config["keys"]["prefix"] == "ctrl+space"
             assert config["terminal"]["new_cwd"] == "follow"
             assert config["theme"]["custom"]["dark"]["text"] == "#e7e7e7"
             assert config["theme"]["custom"]["light"]["text"] == "#202020"

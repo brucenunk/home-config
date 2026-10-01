@@ -13,6 +13,52 @@ or change project trust.
 
 ## Configuration
 
+### Herdr integration
+
+The Herdsman Home Manager feature deploys a local plugin at
+`$XDG_CONFIG_HOME/herdsman/plugin` and registers it with `herdr plugin link`
+during activation. Registration uses the configured XDG directories and the
+pinned CLI's offline path, without depending on a compatible running server.
+The registry stays user-owned: other plugins are retained.
+Each activation refreshes and enables `brucenunk.herdsman`; this plugin ID is
+owned by the feature. Removing the feature does not automatically unregister
+the plugin; run `herdr plugin unlink brucenunk.herdsman` if retiring it.
+
+When Herdr is enabled in Home Manager, the feature also binds `prefix+t` to
+the **Start task** action. This repository's Herdr feature sets the prefix to
+**Ctrl+Space**: press and release Ctrl+Space, then press **t**. Use
+**Ctrl+Space, ?** for the active keybinding help. Ctrl+Space is intercepted
+by Herdr rather than passed to terminal applications; terminal/input-method
+support can vary.
+
+The action runs `herdsman-plugin`, a small shim that asks the invoking Herdr
+binary to open the plugin's `launcher` popup. The popup runs the packaged
+`herdsman start`, using the same inventory and themes as terminal launches.
+Its width and height are 80% of **Herdr's terminal area**, not the display.
+It does not add a persistent tab or pane and closes after success or normal
+cancellation. On failure, the popup keeps the diagnostic and recovery output
+visible until you press Enter; it does not retry or clean up partial launches.
+Escape follows Herdsman's normal selection/back behavior; Ctrl+C cancels.
+There is no finish action or automatic launch hook.
+
+After activation, use a newly started Herdr server to check the plugin with
+the commands below. Offline registration alone is not evidence that an
+already-running server has loaded it.
+
+```sh
+herdr plugin action list --plugin brucenunk.herdsman
+herdr plugin action invoke brucenunk.herdsman.start
+```
+
+The pane ID and shim are independent of the `start` subcommand: a future
+in-app start/finish menu can keep them and change only the runner's command to
+bare `herdsman`. That menu is not implemented here. Build checks validate
+the generated plugin, offline registration/re-registration, registered action
+routing, and the popup runner's success/failure acknowledgement behavior;
+they do not prove popup interaction or focus behavior in a live Herdr session.
+
+### Managed application configuration
+
 The dedicated `herdsman` Home Manager feature installs the program and manages
 `$XDG_CONFIG_HOME/herdsman/config.toml` (normally
 `~/.config/herdsman/config.toml`) as a Nix-generated file. Change inventory,
@@ -343,6 +389,6 @@ Repository verification additionally requires the staged Wampa Home Manager
 build; see `AGENTS.md`. These checks do not activate configuration or demonstrate
 a running Pi/remote server has loaded it.
 
-The bare-command entry menu, model comparisons, plugin integration, branch
+The bare-command entry menu, model comparisons, finish plugin integration, branch
 deletion, and cleanup of workspaces without a live agent are deferred. Existing `start-task` and
 `finish-task` commands remain available.
