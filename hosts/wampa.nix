@@ -90,7 +90,7 @@ in
 
         brucenunk.homeManager.herdr.ui.toast.delivery = "system";
 
-        brucenunk.homeManager.herdsman.initialConfig.agentNames = [
+        brucenunk.homeManager.herdsman.config.agentNames = [
           "bushturkey"
           "binchicken"
           "possum"
@@ -105,7 +105,7 @@ in
           "cockatoo"
         ];
 
-        brucenunk.homeManager.herdsman.initialConfig.machines.local = [
+        brucenunk.homeManager.herdsman.config.machines.local = [
           "brucenunk/cluster-api-x"
           "brucenunk/home-config"
           "brucenunk/nixos-config"

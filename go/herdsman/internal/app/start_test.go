@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -12,14 +13,16 @@ import (
 )
 
 type fakeLauncher struct {
-	profiles      []herdr.Machine
-	agents        map[string][]herdr.Agent
-	workspaces    []herdr.Workspace
-	sourceID      string
-	calls         []string
-	fail          string
-	worktree      herdr.WorktreeRequest
-	title, prompt string
+	profiles                      []herdr.Machine
+	agents                        map[string][]herdr.Agent
+	workspaces                    []herdr.Workspace
+	sourceID                      string
+	sourcePath                    string
+	requestedSource, parentSource string
+	calls                         []string
+	fail                          string
+	worktree                      herdr.WorktreeRequest
+	title, prompt                 string
 }
 
 func (f *fakeLauncher) call(m herdr.Machine, op string) error {
@@ -40,6 +43,10 @@ func (f *fakeLauncher) Workspaces(_ context.Context, m herdr.Machine) ([]herdr.W
 	return f.workspaces, f.call(m, "workspaces")
 }
 func (f *fakeLauncher) Source(_ context.Context, m herdr.Machine, path string) (herdr.Source, error) {
+	f.requestedSource = path
+	if f.sourcePath != "" {
+		path = f.sourcePath
+	}
 	return herdr.Source{CheckoutPath: path, WorkspaceID: f.sourceID}, f.call(m, "source")
 }
 func creation(id, pane string) herdr.Created {
@@ -48,7 +55,8 @@ func creation(id, pane string) herdr.Created {
 	return c
 }
 func (f *fakeLauncher) CreateParent(_ context.Context, m herdr.Machine, source, label string) (herdr.Created, error) {
-	if source != "/home/test/work/owner/repo/main" || label != "owner/repo" {
+	f.parentSource = source
+	if label != "owner/repo" {
 		return herdr.Created{}, errors.New("bad parent arguments")
 	}
 	return creation("parent", "parent:p1"), f.call(m, "parent")
@@ -75,7 +83,7 @@ func (f *fakeLauncher) Focus(_ context.Context, m herdr.Machine, name string) er
 var testAgentNames = []string{"runner", "helper", "quokka", "platypus"}
 
 func startConfig() Config {
-	return Config{AgentNames: testAgentNames, DefaultBase: "main", Machines: map[string]MachineConfig{"local": {Repositories: []string{"owner/repo"}}, "remote": {Repositories: []string{"owner/repo"}}}}
+	return Config{AgentNames: testAgentNames, DefaultGitdir: "main", DefaultBase: "origin/main", Machines: map[string]MachineConfig{"local": {Repositories: []string{"owner/repo"}}, "remote": {Repositories: []string{"owner/repo"}}}}
 }
 
 func TestStartLocalRemoteAndEmpty(t *testing.T) {
@@ -105,7 +113,7 @@ func TestStartLocalRemoteAndEmpty(t *testing.T) {
 			if !reflect.DeepEqual(f.calls, want) {
 				t.Fatal(f.calls, want)
 			}
-			if r.Branch != "jamesl/"+filepath.Base(r.Path) || f.worktree.Base != "main" || f.worktree.Parent != "parent" {
+			if r.Branch != "jamesl/"+filepath.Base(r.Path) || f.worktree.Base != "origin/main" || f.worktree.Parent != "parent" || f.parentSource != "/home/test/work/owner/repo/main" {
 				t.Fatal(r, f.worktree)
 			}
 			if withTask {
@@ -234,11 +242,56 @@ func TestGlobalAgentNamesAreExcluded(t *testing.T) {
 
 func TestLaunchUsesBaseOverride(t *testing.T) {
 	c := startConfig()
-	c.Repositories = map[string]RepositoryConfig{"owner/repo": {Base: "master"}}
+	c.Repositories = map[string]RepositoryConfig{"owner/repo": {Base: "origin/train/first-pr"}}
 	f := &fakeLauncher{sourceID: "ordinary", workspaces: []herdr.Workspace{{ID: "ordinary", Label: "owner/repo"}}}
 	_, err := Start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
-	if err != nil || f.worktree.Base != "master" {
+	if err != nil || f.worktree.Base != "origin/train/first-pr" || f.requestedSource != "/home/test/work/owner/repo/main" {
 		t.Fatal(err, f.worktree)
+	}
+}
+
+func TestLaunchIndependentSourceAndBase(t *testing.T) {
+	for _, m := range []herdr.Machine{herdr.Local(), {ID: "profile", Label: "remote", Target: "ssh-alias", Enabled: true}} {
+		for _, dir := range []string{"main", "master", "master.git"} {
+			for _, reuse := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/reuse=%t", m.Label, dir, reuse), func(t *testing.T) {
+					c := startConfig()
+					c.Repositories = map[string]RepositoryConfig{"owner/repo": {Gitdir: dir, Base: "origin/master"}}
+					f := &fakeLauncher{profiles: []herdr.Machine{{ID: "profile", Label: "remote", Enabled: true}}}
+					if reuse {
+						f.sourceID = "existing"
+						f.workspaces = []herdr.Workspace{{ID: "existing", Label: "owner/repo"}}
+					}
+					// In particular, master.git needs no inventory entry or probe for master.
+					r, err := Start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: m})
+					path := "/home/test/work/owner/repo/" + dir
+					if err != nil || f.requestedSource != path || f.worktree.Base != "origin/master" {
+						t.Fatal(r, err, f)
+					}
+					if reuse {
+						if r.Parent != "existing" || f.parentSource != "" {
+							t.Fatal(r, f)
+						}
+					} else if f.parentSource != path {
+						t.Fatal(f)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestLaunchRejectsDifferentSourceBeforeMutation(t *testing.T) {
+	for _, dir := range []string{"main", "master.git"} {
+		for _, resolved := range []string{"/home/test/work/other/repo/main", "/home/test/work/owner/repo/other.git", "/home/test/work/owner/repo/master"} {
+			c := startConfig()
+			c.Repositories = map[string]RepositoryConfig{"owner/repo": {Gitdir: dir, Base: "origin/master"}}
+			f := &fakeLauncher{sourcePath: resolved, sourceID: "existing", workspaces: []herdr.Workspace{{ID: "existing", Label: "owner/repo"}}}
+			r, err := Start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+			if err == nil || !strings.Contains(err.Error(), "different source checkout") || len(r.Steps) != 0 || f.calls[len(f.calls)-1] != "local:source" {
+				t.Fatal(r, err, f.calls)
+			}
+		}
 	}
 }
 

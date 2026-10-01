@@ -94,7 +94,7 @@ func Start(ctx context.Context, c Config, client Launcher, req StartRequest) (r 
 		return r, err
 	}
 	base := c.Base(req.Repo)
-	source := filepath.Join(home, "work", req.Repo, base)
+	source := filepath.Join(home, "work", req.Repo, c.Gitdir(req.Repo))
 	stamp := time.Now().UTC().Format("20060102T150405.000000000Z")
 	r.Path = filepath.Join(home, "work", req.Repo, stamp)
 	r.Branch = "jamesl/" + stamp

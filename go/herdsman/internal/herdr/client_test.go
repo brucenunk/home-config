@@ -157,6 +157,16 @@ func TestOrdinarySourceInventory(t *testing.T) {
 	checkArgs(t, path, []string{"worktree", "list", "--cwd", "/home/person/work/owner/repo/main"})
 }
 
+func TestBareSourceInventory(t *testing.T) {
+	c, path := fakeCLI(t, `{"result":{"source":{"repo_root":"/home/person/work/Canva/k8s/master.git","source_checkout_path":"/home/person/work/Canva/k8s/master.git","source_workspace_id":"bare-workspace"},"worktrees":[{"path":"/home/person/work/Canva/k8s/master.git","is_bare":true}]}}`)
+	m := Machine{ID: "devbox-id", Label: "devbox"}
+	source, err := c.Source(context.Background(), m, "/home/person/work/Canva/k8s/master.git")
+	if err != nil || source.WorkspaceID != "bare-workspace" || source.CheckoutPath != "/home/person/work/Canva/k8s/master.git" {
+		t.Fatal(source, err)
+	}
+	checkArgs(t, path, []string{"--machine", "devbox-id", "worktree", "list", "--cwd", "/home/person/work/Canva/k8s/master.git"})
+}
+
 func TestMalformedResponsesAndErrors(t *testing.T) {
 	for _, response := range []string{"not json", `{}`, `{"result":null}`, `{"result":{}}`, `{"error":{"message":"blocked"}}`} {
 		t.Run(response, func(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 )
 
 func config(t *testing.T) app.Config {
-	return app.Config{AgentNames: []string{"runner"}, TasksDir: t.TempDir(), DefaultBase: "main", Machines: map[string]app.MachineConfig{"local": {Repositories: []string{"owner/one", "owner/two"}}}}
+	return app.Config{AgentNames: []string{"runner"}, TasksDir: t.TempDir(), DefaultGitdir: "main", DefaultBase: "origin/main", Machines: map[string]app.MachineConfig{"local": {Repositories: []string{"owner/one", "owner/two"}}}}
 }
 
 func newModel(t *testing.T, c app.Config, profiles []herdr.Machine) Model {

@@ -12,18 +12,20 @@ or change project trust.
 
 ## Configuration
 
-The dedicated `herdsman` Home Manager feature installs the program and seeds
+The dedicated `herdsman` Home Manager feature installs the program and manages
 `$XDG_CONFIG_HOME/herdsman/config.toml` (normally
-`~/.config/herdsman/config.toml`) only if absent. The resulting file is writable:
-edit inventory without rebuilding. Later activation does **not** update or
-overwrite it, even when the initial host configuration changes.
+`~/.config/herdsman/config.toml`) as a Nix-generated file. Change inventory,
+source directories, base refs and theme selection in the host's Nix configuration,
+then rebuild and activate through that host's prescribed route. Do not edit the
+managed TOML file directly. Restart Herdsman to load an updated configuration.
 
-Use `herdsman start --config PATH` for a different file.
+`herdsman start --config PATH` can still use a separate, user-owned file.
 
 ```toml
 agent_names = ["bushturkey", "binchicken", "possum", "quokka"]
 tasks_dir = "~/work/tasks"
-default_base = "main"
+default_base = "origin/main"
+default_gitdir = "main"
 
 [theme]
 mode = "auto"
@@ -35,42 +37,74 @@ repositories = ["brucenunk/home-config", "owner/legacy-repo"]
 
 # Optional: must match an enabled saved Herdr machine label.
 [machines.devbox]
-repositories = ["brucenunk/home-config"]
+repositories = ["brucenunk/home-config", "Canva/k8s"]
 
 [repositories."owner/legacy-repo"]
-base = "master"
+base = "origin/master"
+gitdir = "master"
+
+[repositories."Canva/k8s"]
+base = "origin/master"
+gitdir = "master.git"
 ```
 
-`tasks_dir` and `default_base` default to the values above. `local` is reserved
+`tasks_dir`, `default_base` and `default_gitdir` default to the values above.
+Per-repository `base` and `gitdir` override their respective defaults independently.
+`local` is reserved
 as the configuration/internal selector and is displayed as **Local** in the UI
 and launch output;
 other machine labels are case-sensitive Herdr labels. SSH targets, credentials,
 and session selection remain in Herdr/OpenSSH, not this file.
 
 `agent_names` is required and must be non-empty, with no duplicates. Names must
-match Herdr's `[a-z][a-z0-9_-]{0,31}` rule. Wampa seeds the existing twelve names;
-they are configuration, not a built-in Go pool. Changing the list needs no rebuild.
-If an older writable config already exists, add this field manually: activation
-deliberately does not migrate or overwrite existing inventory.
+match Herdr's `[a-z][a-z0-9_-]{0,31}` rule. Wampa declares its twelve names;
+they are configuration, not a built-in Go pool. For managed configuration,
+declare this pool in Nix and rebuild.
 
 The repository picker shows the union of configured slugs. Task `repo` metadata
 preselects a configured entry but can be overridden. The machine picker shows
 only configured hosts for that repo which are Local or uniquely labelled,
 enabled saved Herdr machines. There is no availability probing while navigating.
 
-Sources are `$HOME/work/{owner}/{repo}/{base}` on the destination. Bases must be
-single checkout directory names (`main`, `master`, etc.); custom PR-train refs
-and alternative layouts are not supported in this first version.
+Sources are `$HOME/work/{owner}/{repo}/{gitdir}` on the destination. Despite the
+name, `gitdir` identifies a source directory for Herdr, **not** necessarily a
+literal `.git` directory. It must be a single directory name, such as `main`,
+`master` or `master.git`, not an absolute path or a path containing `/`.
+Ordinary repositories use their primary checkout; bare-backed repositories can
+use their bare backing directory directly. A `master.git` source does not require
+a linked `master` checkout to exist. Personal repositories can retain `main`
+for their local merge workflow independently of the base used for new tasks.
+
+`base` is a Git branch/ref name passed unchanged to Herdr. Names can contain
+slash-separated components, such as `origin/master`, `upstream/main` or
+`refs/heads/train/first-pr`. Components use ASCII letters, digits, `_`, `-` and
+`.`; they cannot start with `.` or `-`, contain `..`, or end with `.` or `.lock`.
+Revision expressions such as `main~1` are rejected. Herdsman does not prepend
+`origin/`, fetch, or resolve freshness: `origin/main` uses the locally cached
+remote-tracking ref. A missing ref fails through Herdr, with the normal
+inspect-before-retry guidance. Per-launch base overrides for PR trains remain
+deferred; configuring a branch/ref does not couple it to the source directory.
 
 An external Home Manager consumer imports `modules.homeManager.herdsman` and
-may seed its initial inventory with:
+declares its managed inventory with:
 
 ```nix
-brucenunk.homeManager.herdsman.initialConfig = {
+brucenunk.homeManager.herdsman.config = {
   agentNames = [ "runner" "helper" ];
-  defaultBase = "main";
-  machines.local = [ "owner/repo" ];
-  repositoryBases."owner/other-repo" = "master";
+  defaultBase = "origin/main";
+  defaultGitdir = "main";
+  machines.local = [ "owner/repo" "owner/other-repo" ];
+  machines.devbox = [ "Canva/k8s" ];
+  repositories = {
+    "owner/other-repo" = {
+      base = "origin/master";
+      gitdir = "master";
+    };
+    "Canva/k8s" = {
+      base = "origin/master";
+      gitdir = "master.git";
+    };
+  };
   tasksDir = "~/work/tasks";
   theme = {
     mode = "auto";
@@ -83,12 +117,31 @@ brucenunk.homeManager.herdsman.initialConfig = {
 Like the other public modules, consumers must supply the shared `llm-agents`
 package overlay.
 
+### Migration from writable configuration
+
+The former `brucenunk.homeManager.herdsman.initialConfig` option and its
+`repositoryBases` map are replaced by `config` and the `repositories` records
+above. Move host declarations to that interface. The old `base` served as both
+directory and ref: now declare `gitdir` separately. For example, an old
+`base = "master"` becomes `gitdir = "master"` / `base = "origin/master"` for an
+ordinary primary checkout, or `gitdir = "master.git"` / `base = "origin/master"`
+for the devbox bare layout. The default base also changes from `main` to
+`origin/main`; keep `base = "main"` explicitly if a local branch is intended.
+
+Before the first managed-file activation, inspect the existing writable TOML
+and transfer any inventory, names, paths or theme edits into Nix. Preserve a
+backup and move the old file out of the managed destination, or use the host's
+approved Home Manager backup mechanism. Do this deliberately; the module uses
+normal Home Manager collision protection, not `force`, and does not silently
+overwrite or migrate a user-owned file. Subsequent activations manage the file
+normally. Build checks do not perform that migration or activation.
+
 ## Styling and themes
 
 The `[theme]` table assigns named palettes to light and dark terminals, like
 Ghostty's `light:NAME,dark:NAME` selection. `mode` accepts `auto`, `light`, or
 `dark`. Missing fields default to `auto`, `doric-marble`, and `doric-obsidian`,
-respectively, so existing configs do not need migration. Theme names must use
+respectively. Theme names must use
 lowercase letters, digits, and hyphens; invalid names and modes are rejected
 before entering the picker.
 
@@ -194,8 +247,12 @@ global availability cannot be established. This policy is not a distributed
 lock: simultaneous launchers can race; Herdr enforces names on its own server.
 
 Herdsman uses Herdr's source resolver to select an existing non-linked source
-workspace, renaming it to `owner/repo`, or creates that parent. This anchors the
-repository group using the configured base checkout, not a hard-coded `main`.
+workspace, renaming it to `owner/repo`, or creates that parent at the configured
+`gitdir`. The resolved source path must match the configured source directory;
+an unrelated source or a linked checkout resolving to a different backing
+repository is rejected before launch mutations. Configure the backing repository
+itself for bare-backed layouts. This anchors the repository group independently
+of the Git `base` ref used to create its task worktrees.
 If multiple ordinary workspaces point at that same checkout, accepting Herdr's
 first match is intentional: either can anchor the group. Herdsman does not scan
 every ordinary workspace to enforce uniqueness or remove duplicate workspaces.

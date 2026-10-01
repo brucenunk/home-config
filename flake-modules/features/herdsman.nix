@@ -29,25 +29,25 @@ let
       ...
     }:
     let
-      cfg = config.brucenunk.homeManager.herdsman.initialConfig;
+      cfg = config.brucenunk.homeManager.herdsman.config;
       format = pkgs.formats.toml { };
-      initialConfig = format.generate "herdsman-config.toml" {
+      managedConfig = format.generate "herdsman-config.toml" {
         agent_names = cfg.agentNames;
         tasks_dir = cfg.tasksDir;
         default_base = cfg.defaultBase;
+        default_gitdir = cfg.defaultGitdir;
         theme = cfg.theme;
         machines = lib.mapAttrs (_: repositories: { inherit repositories; }) cfg.machines;
-        repositories = lib.mapAttrs (_: base: { inherit base; }) cfg.repositoryBases;
+        repositories = cfg.repositories;
       };
-      configPath = "${config.xdg.configHome}/herdsman/config.toml";
       themeEntries = lib.mapAttrs' (name: _: {
         name = "herdsman/themes/${name}";
         value.source = ../../config/herdsman/themes/${name};
       }) (lib.filterAttrs (_: type: type == "regular") (builtins.readDir ../../config/herdsman/themes));
     in
     {
-      options.brucenunk.homeManager.herdsman.initialConfig = lib.mkOption {
-        description = "Initial writable inventory. Activation seeds it only when absent; later edits are user-owned.";
+      options.brucenunk.homeManager.herdsman.config = lib.mkOption {
+        description = "Nix-managed Herdsman inventory, source directories, base refs and theme selection.";
         default = { };
         type = lib.types.submodule {
           options = {
@@ -58,18 +58,38 @@ let
             };
             defaultBase = lib.mkOption {
               type = lib.types.str;
+              default = "origin/main";
+              description = "Default Git branch/ref, used as written without fetching.";
+            };
+            defaultGitdir = lib.mkOption {
+              type = lib.types.str;
               default = "main";
-              description = "Default source checkout directory and base branch.";
+              description = "Default source directory under ~/work/owner/repo; an ordinary checkout or bare repository, not a literal .git directory.";
             };
             machines = lib.mkOption {
               type = lib.types.attrsOf (lib.types.listOf lib.types.str);
               default = { };
               description = "Repository slugs by Herdr saved-machine label; local is reserved.";
             };
-            repositoryBases = lib.mkOption {
-              type = lib.types.attrsOf lib.types.str;
+            repositories = lib.mkOption {
+              type = lib.types.attrsOf (
+                lib.types.submodule {
+                  options = {
+                    base = lib.mkOption {
+                      type = lib.types.str;
+                      default = cfg.defaultBase;
+                      description = "Git branch/ref for new worktrees; independent of the source directory.";
+                    };
+                    gitdir = lib.mkOption {
+                      type = lib.types.str;
+                      default = cfg.defaultGitdir;
+                      description = "Single source directory name under ~/work/owner/repo.";
+                    };
+                  };
+                }
+              );
               default = { };
-              description = "Per-repository base overrides.";
+              description = "Per-repository source directory and Git base ref overrides.";
             };
             tasksDir = lib.mkOption {
               type = lib.types.str;
@@ -78,7 +98,7 @@ let
             };
             theme = lib.mkOption {
               default = { };
-              description = "Initial theme selection. Existing writable configs are not overwritten.";
+              description = "Nix-managed theme selection.";
               type = lib.types.submodule {
                 options = {
                   dark = lib.mkOption {
@@ -109,14 +129,9 @@ let
 
       config = {
         home.packages = [ (packageFor pkgs) ];
-        xdg.configFile = themeEntries;
-        # This is deliberately not xdg.configFile: users can edit inventory in place.
-        home.activation.herdsmanInitialConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-          if [ ! -e ${lib.escapeShellArg configPath} ] && [ ! -L ${lib.escapeShellArg configPath} ]; then
-            run ${pkgs.coreutils}/bin/mkdir -p ${lib.escapeShellArg (builtins.dirOf configPath)}
-            run ${pkgs.coreutils}/bin/install -m 0644 ${initialConfig} ${lib.escapeShellArg configPath}
-          fi
-        '';
+        xdg.configFile = themeEntries // {
+          "herdsman/config.toml".source = managedConfig;
+        };
       };
     };
 in
@@ -142,33 +157,53 @@ in
                   "/home/herdsman-module-check";
               stateVersion = "25.05";
             };
-            brucenunk.homeManager.herdsman.initialConfig.machines.local = [ "example/repo" ];
-            brucenunk.homeManager.herdsman.initialConfig.agentNames = [ "example-agent" ];
+            brucenunk.homeManager.herdsman.config = {
+              agentNames = [ "example-agent" ];
+              machines.local = [
+                "example/repo"
+                "example/bare"
+                "example/train"
+              ];
+              repositories = {
+                "example/bare" = {
+                  base = "origin/master";
+                  gitdir = "master.git";
+                };
+                "example/train".base = "refs/heads/train/first-pr";
+              };
+            };
           }
         ];
       };
-      activationScript = pkgs.writeText "herdsman-seed-test.sh" (
-        pkgs.lib.replaceStrings [ home.config.xdg.configHome ] [ "./test-config" ]
-          home.config.home.activation.herdsmanInitialConfig.data
-      );
+      configFile = home.config.xdg.configFile."herdsman/config.toml";
     in
     {
       packages.herdsman = package;
       checks.herdsman = package;
       checks.herdsman-home-manager-module = builtins.deepSeq home.activationPackage.drvPath (
+        assert !configFile.force;
+        assert !(home.config.home.activation ? herdsmanInitialConfig);
         pkgs.runCommand "herdsman-home-manager-module" { } ''
-          run() { "$@"; }
-          source ${activationScript}
-          ${pkgs.python3}/bin/python - <<'PY'
+          ${pkgs.python3}/bin/python - ${configFile.source} <<'PY'
+          import sys
           import tomllib
-          with open("test-config/herdsman/config.toml", "rb") as f:
+          with open(sys.argv[1], "rb") as f:
               config = tomllib.load(f)
-          assert config["default_base"] == "main"
+          assert config["default_base"] == "origin/main"
+          assert config["default_gitdir"] == "main"
           assert config["agent_names"] == ["example-agent"]
           assert config["theme"] == {
               "mode": "auto", "light": "doric-marble", "dark": "doric-obsidian"
           }
-          assert config["machines"]["local"]["repositories"] == ["example/repo"]
+          assert config["machines"]["local"]["repositories"] == [
+              "example/repo", "example/bare", "example/train"
+          ]
+          assert config["repositories"]["example/bare"] == {
+              "base": "origin/master", "gitdir": "master.git"
+          }
+          assert config["repositories"]["example/train"] == {
+              "base": "refs/heads/train/first-pr", "gitdir": "main"
+          }
           PY
           ${pkgs.python3}/bin/python - \
             ${home.config.xdg.configFile."herdsman/themes/doric-marble.toml".source} \
@@ -182,17 +217,10 @@ in
               assert palette["colors"]["text"] == text
               assert set(palette["colors"]) == {
                   "text", "muted", "accent", "selection_background",
-                  "selection_text", "match", "error",
+                  "selection_text", "filename_secondary", "filename_muted",
+                  "match", "error",
               }
           PY
-          printf 'user-owned inventory\n' >test-config/herdsman/config.toml
-          source ${activationScript}
-          grep -Fx 'user-owned inventory' test-config/herdsman/config.toml
-          rm test-config/herdsman/config.toml
-          ln -s missing-target test-config/herdsman/config.toml
-          source ${activationScript}
-          test -L test-config/herdsman/config.toml
-          test ! -e test-config/herdsman/missing-target
           ${package}/bin/herdsman --help | grep -F 'herdsman start'
           touch "$out"
         ''

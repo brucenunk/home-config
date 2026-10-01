@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -28,12 +29,16 @@ repositories = ["owner/one", "owner/two"]
 [machines.remote]
 repositories = ["owner/one", "owner/three"]
 [repositories."owner/two"]
-base = "master"
+gitdir = "master.git"
+base = "origin/master"
 `)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DefaultBase != "main" || c.Base("owner/two") != "master" || c.Base("owner/one") != "main" {
+	if c.DefaultBase != "origin/main" || c.Base("owner/two") != "origin/master" || c.Base("owner/one") != "origin/main" {
+		t.Fatal(c)
+	}
+	if c.DefaultGitdir != "main" || c.Gitdir("owner/two") != "master.git" || c.Gitdir("owner/one") != "main" {
 		t.Fatal(c)
 	}
 	if !reflect.DeepEqual(c.AgentNames, []string{"runner", "helper"}) {
@@ -77,6 +82,62 @@ func TestThemeConfig(t *testing.T) {
 	}
 	if _, err := load(t, base+`light = "custom"`); err != nil {
 		t.Fatal("custom or missing palettes must be accepted", err)
+	}
+}
+
+func TestSourceAndBaseDefaultsAreIndependent(t *testing.T) {
+	c, err := load(t, `agent_names = ["runner"]
+default_gitdir = "master.git"
+default_base = "origin/master"
+[machines.local]
+repositories = ["owner/source-only", "owner/base-only", "owner/defaults"]
+[repositories."owner/source-only"]
+gitdir = "main"
+[repositories."owner/base-only"]
+base = "refs/heads/train/first-pr"
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Gitdir("owner/source-only") != "main" || c.Base("owner/source-only") != "origin/master" ||
+		c.Gitdir("owner/base-only") != "master.git" || c.Base("owner/base-only") != "refs/heads/train/first-pr" ||
+		c.Gitdir("owner/defaults") != "master.git" || c.Base("owner/defaults") != "origin/master" {
+		t.Fatal(c)
+	}
+}
+
+func TestConfigSourceAndRefValidation(t *testing.T) {
+	for _, value := range []string{"main", "master.git", "checkout-1"} {
+		if !validComponent(value) {
+			t.Fatalf("rejected source directory %q", value)
+		}
+	}
+	for _, value := range []string{"main", "origin/master", "upstream/main", "refs/heads/train/first-pr", "refs/remotes/origin/train/first-pr"} {
+		if !validBase(value) {
+			t.Fatalf("rejected branch/ref %q", value)
+		}
+	}
+	for _, value := range []string{"", "../main", "/main", "origin//main", "origin/main/", "-main", "main..other", "main.lock", "main.", "main~1", "main^", "main:other", "@{1}", "main*", "main?", "main[", `main\other`, "main branch", "main\nother", "main\x00other", ".hidden"} {
+		if validBase(value) {
+			t.Fatalf("accepted unsafe branch/ref %q", value)
+		}
+		for _, field := range []string{"default_base", "default_gitdir"} {
+			// Empty values select defaults, not an invalid path/ref.
+			if value == "" {
+				continue
+			}
+			text := fmt.Sprintf("agent_names = [\"runner\"]\n%s = %q\n[machines.local]\nrepositories = [\"owner/repo\"]", field, value)
+			if _, err := load(t, text); err == nil {
+				t.Fatalf("accepted %s = %q", field, value)
+			}
+		}
+	}
+	for _, field := range []string{`default_gitdir = "origin/main"`, `default_gitdir = "/absolute"`, `[repositories."owner/repo"]
+gitdir = "../escape"`, `[repositories."owner/repo"]
+base = "origin/main~1"`} {
+		if _, err := load(t, "agent_names = [\"runner\"]\n"+field+"\n[machines.local]\nrepositories = [\"owner/repo\"]"); err == nil {
+			t.Fatalf("accepted %s", field)
+		}
 	}
 }
 

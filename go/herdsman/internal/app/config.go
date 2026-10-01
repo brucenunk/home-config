@@ -14,19 +14,21 @@ import (
 )
 
 type Config struct {
-	Theme        themes.Config               `toml:"theme"`
-	AgentNames   []string                    `toml:"agent_names"`
-	TasksDir     string                      `toml:"tasks_dir"`
-	DefaultBase  string                      `toml:"default_base"`
-	Machines     map[string]MachineConfig    `toml:"machines"`
-	Repositories map[string]RepositoryConfig `toml:"repositories"`
+	Theme         themes.Config               `toml:"theme"`
+	AgentNames    []string                    `toml:"agent_names"`
+	TasksDir      string                      `toml:"tasks_dir"`
+	DefaultBase   string                      `toml:"default_base"`
+	DefaultGitdir string                      `toml:"default_gitdir"`
+	Machines      map[string]MachineConfig    `toml:"machines"`
+	Repositories  map[string]RepositoryConfig `toml:"repositories"`
 }
 
 type MachineConfig struct {
 	Repositories []string `toml:"repositories"`
 }
 type RepositoryConfig struct {
-	Base string `toml:"base"`
+	Base   string `toml:"base"`
+	Gitdir string `toml:"gitdir"`
 }
 
 var component = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
@@ -52,6 +54,16 @@ func validateAgentNames(names []string) error {
 
 func validComponent(s string) bool {
 	return component.MatchString(s) && !strings.Contains(s, "..") && !strings.HasSuffix(s, ".lock") && !strings.HasSuffix(s, ".")
+}
+
+// Accept branch/ref names, not revision expressions, options, or filesystem paths.
+func validBase(s string) bool {
+	for _, part := range strings.Split(s, "/") {
+		if !validComponent(part) {
+			return false
+		}
+	}
+	return true
 }
 
 func validRepo(s string) bool {
@@ -91,10 +103,16 @@ func LoadConfig(path string) (Config, error) {
 		c.TasksDir = "~/work/tasks"
 	}
 	if c.DefaultBase == "" {
-		c.DefaultBase = "main"
+		c.DefaultBase = "origin/main"
 	}
-	if !validComponent(c.DefaultBase) {
-		return c, fmt.Errorf("invalid default_base %q: expected a checkout directory name", c.DefaultBase)
+	if c.DefaultGitdir == "" {
+		c.DefaultGitdir = "main"
+	}
+	if !validBase(c.DefaultBase) {
+		return c, fmt.Errorf("invalid default_base %q: expected a branch/ref name", c.DefaultBase)
+	}
+	if !validComponent(c.DefaultGitdir) {
+		return c, fmt.Errorf("invalid default_gitdir %q: expected a source directory name", c.DefaultGitdir)
 	}
 	if len(c.Machines) == 0 {
 		return c, fmt.Errorf("config must declare at least one machine and repository")
@@ -110,7 +128,7 @@ func LoadConfig(path string) (Config, error) {
 		}
 	}
 	for repo, r := range c.Repositories {
-		if !validRepo(repo) || (r.Base != "" && !validComponent(r.Base)) {
+		if !validRepo(repo) || (r.Base != "" && !validBase(r.Base)) || (r.Gitdir != "" && !validComponent(r.Gitdir)) {
 			return c, fmt.Errorf("invalid repository override %q", repo)
 		}
 	}
@@ -137,6 +155,13 @@ func (c Config) Base(repo string) string {
 		return b
 	}
 	return c.DefaultBase
+}
+
+func (c Config) Gitdir(repo string) string {
+	if dir := c.Repositories[repo].Gitdir; dir != "" {
+		return dir
+	}
+	return c.DefaultGitdir
 }
 
 func (c Config) RepositoryNames() []string {
