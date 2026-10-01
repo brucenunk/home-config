@@ -9,10 +9,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"io"
+	"strings"
+	"unicode/utf8"
 )
 
 type styles struct {
 	text, muted, title, selected, match, error lipgloss.Style
+	filenameSecondary, filenameMuted           lipgloss.Style
 }
 
 func newStyles(c themes.Colors) styles {
@@ -32,9 +35,11 @@ func newStyles(c themes.Colors) styles {
 		muted: lipgloss.NewStyle().Foreground(lipgloss.Color(c.Muted)),
 		title: lipgloss.NewStyle().Foreground(lipgloss.Color(c.Accent)).Bold(true),
 		selected: lipgloss.NewStyle().Foreground(lipgloss.Color(c.SelectionText)).
-			Background(lipgloss.Color(c.SelectionBackground)).Bold(true),
-		match: lipgloss.NewStyle().Foreground(lipgloss.Color(c.Match)).Underline(true),
-		error: lipgloss.NewStyle().Foreground(lipgloss.Color(c.Error)),
+			Background(lipgloss.Color(c.SelectionBackground)),
+		filenameSecondary: lipgloss.NewStyle().Foreground(lipgloss.Color(c.FilenameSecondary)),
+		filenameMuted:     lipgloss.NewStyle().Foreground(lipgloss.Color(c.FilenameMuted)),
+		match:             lipgloss.NewStyle().Foreground(lipgloss.Color(c.Match)).Underline(true),
+		error:             lipgloss.NewStyle().Foreground(lipgloss.Color(c.Error)),
 	}
 }
 
@@ -103,12 +108,67 @@ func (d choiceDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 }
 
 func renderTitle(w io.Writer, title string, matches []int, style, match lipgloss.Style, width int) {
-	if width <= 0 {
+	renderFilenameTitle(w, title, matches, style, match, nil, width)
+}
+
+func renderFilenameTitle(w io.Writer, title string, matches []int, style, match lipgloss.Style, parts []lipgloss.Style, width int) {
+	contentWidth := width - style.GetHorizontalFrameSize()
+	if contentWidth <= 0 {
 		return
 	}
-	title = ansi.Truncate(title, max(1, width-style.GetHorizontalFrameSize()), "…")
+	original := title
+	// Bubbles forwards sahilm/fuzzy's byte offsets. Lip Gloss and filename
+	// parts use rune indexes, so convert before truncating the original text.
+	runeMatches := make([]int, 0, len(matches))
+	for _, index := range matches {
+		if index >= 0 && index < len(original) && utf8.RuneStart(original[index]) {
+			runeMatches = append(runeMatches, utf8.RuneCountInString(original[:index]))
+		}
+	}
+	title = ansi.Truncate(title, contentWidth, "…")
 	base := style.Inline(true)
-	matched := base.Inherit(match).Foreground(match.GetForeground())
-	title = lipgloss.StyleRunes(title, matches, matched, base)
+	if parts == nil {
+		matched := base.Inherit(match).Foreground(match.GetForeground())
+		title = lipgloss.StyleRunes(title, runeMatches, matched, base)
+	} else {
+		matched := make(map[int]bool, len(matches))
+		for _, index := range runeMatches {
+			matched[index] = true
+		}
+		var rendered strings.Builder
+		remaining, state, index := title, -1, 0
+		for remaining != "" {
+			cluster, rest, _, nextState := ansi.FirstGraphemeCluster(remaining, state)
+			count := utf8.RuneCountInString(cluster)
+			part := base
+			if index < len(parts) && !(title != original && rest == "") {
+				part = parts[index].Inherit(base)
+			}
+			// Highlight the whole grapheme if any of
+			// its runes match, never inserting escapes inside an emoji/accent.
+			for i := index; i < index+count; i++ {
+				if matched[i] {
+					part = part.Inherit(match).Foreground(match.GetForeground())
+					break
+				}
+			}
+			if part.GetUnderline() {
+				// Lip Gloss's underline renderer styles individual runes even
+				// within a cluster. Apply underline around the intact rendered
+				// cluster using its terminal profile instead.
+				text := part.Underline(false).Render(cluster)
+				rendered.WriteString(lipgloss.ColorProfile().String(text).Underline().String())
+			} else {
+				rendered.WriteString(part.Render(cluster))
+			}
+			remaining, state, index = rest, nextState, index+count
+		}
+		title = rendered.String()
+	}
+	// Keep terminal-native fallback rendering unchanged. Themed selections fill
+	// the list width, including the space after short filenames.
+	if style.GetBackground() != (lipgloss.NoColor{}) {
+		style = style.Width(width - style.GetHorizontalBorderSize())
+	}
 	fmt.Fprint(w, style.Render(title))
 }

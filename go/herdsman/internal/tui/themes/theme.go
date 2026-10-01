@@ -59,6 +59,8 @@ type Colors struct {
 	Accent              string `toml:"accent"`
 	SelectionBackground string `toml:"selection_background"`
 	SelectionText       string `toml:"selection_text"`
+	FilenameSecondary   string `toml:"filename_secondary"`
+	FilenameMuted       string `toml:"filename_muted"`
 	Match               string `toml:"match"`
 	Error               string `toml:"error"`
 }
@@ -91,7 +93,14 @@ func Load(dir, name string) (Colors, error) {
 		return Colors{}, fmt.Errorf("parse theme %q: %w", name, err)
 	}
 	c := palette.Colors
-	for _, value := range []string{c.Text, c.Muted, c.Accent, c.SelectionBackground, c.SelectionText, c.Match, c.Error} {
+	// Older custom palettes remain valid; filename tones default to muted text.
+	if c.FilenameSecondary == "" {
+		c.FilenameSecondary = c.Muted
+	}
+	if c.FilenameMuted == "" {
+		c.FilenameMuted = c.Muted
+	}
+	for _, value := range []string{c.Text, c.Muted, c.Accent, c.SelectionBackground, c.SelectionText, c.FilenameSecondary, c.FilenameMuted, c.Match, c.Error} {
 		if !color.MatchString(value) {
 			return Colors{}, fmt.Errorf("theme %q has a missing or invalid color", name)
 		}

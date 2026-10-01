@@ -24,7 +24,7 @@ func TestLoadExternalPalette(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, err := Load(dir, "custom")
-	if err != nil || c.Text != "#202020" || c.Match != "#603d3a" {
+	if err != nil || c.Text != "#202020" || c.Match != "#603d3a" || c.FilenameSecondary != c.Muted || c.FilenameMuted != c.Muted {
 		t.Fatal(c, err)
 	}
 	// No embedded fallback: missing names and missing directories are neutral.
@@ -52,6 +52,8 @@ func TestMalformedOrUnreadablePalette(t *testing.T) {
 		strings.ReplaceAll(palette, "#202020", "bad color"),
 		"background_mode = 'light'\n" + palette,
 		palette + "unknown = '#202020'\n",
+		palette + "filename_secondary = 'invalid'\n",
+		palette + "filename_muted = 'invalid'\n",
 	} {
 		if err := os.WriteFile(path, []byte(text), 0600); err != nil {
 			t.Fatal(err)
@@ -102,6 +104,18 @@ func TestConfigSelection(t *testing.T) {
 	}
 	if c.Name(func() bool { return true }) != "custom-light" || c.Name(func() bool { return false }) != "custom-dark" {
 		t.Fatal("ignored configured theme names")
+	}
+}
+
+func TestFilenamePaletteColors(t *testing.T) {
+	dir := t.TempDir()
+	data := palette + "filename_secondary = '#404040'\nfilename_muted = '#595959'\n"
+	if err := os.WriteFile(filepath.Join(dir, "custom.toml"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(dir, "custom")
+	if err != nil || c.FilenameSecondary != "#404040" || c.FilenameMuted != "#595959" {
+		t.Fatal(c, err)
 	}
 }
 

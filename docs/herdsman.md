@@ -111,15 +111,18 @@ The shipped names are `doric-marble` and `doric-obsidian`. You can copy one
 under a new name and configure it as a light or dark palette. Shipped files
 are Home Manager-managed; custom files are user-owned. Palette edits require
 only restarting Herdsman, not rebuilding the executable. For example, a
-`custom.toml` palette has this schema (all seven colors are required):
+`custom.toml` palette has this schema (the original seven colors are required;
+the two filename colors are optional and default to `muted`):
 
 ```toml
 [colors]
 text = "#202020"
 muted = "#4a4a4a"
 accent = "#603d3a"
-selection_background = "#b0b0b0"
+selection_background = "#e5d7c5"
 selection_text = "#202020"
+filename_secondary = "#404040"
+filename_muted = "#595959"
 match = "#603d3a"
 error = "#a01010"
 ```
@@ -130,6 +133,17 @@ markers without custom colors. A misspelled theme name therefore also selects
 neutral styling. Present but unreadable, malformed, or incomplete files are
 errors rather than silently falling back; unknown palette fields are rejected.
 Repository and machine rows have no blank spacer lines.
+
+Themed selections use Doric's `bg-accent` (Emacs's `hl-line` and
+`pulsar-generic` background): list selections fill the row without making the
+whole filename bold; confirmation buttons have equal padding and spacing,
+without brackets in colour-capable terminals. Colourless terminals retain
+brackets to identify the selected choice. In the task picker,
+Denote filenames follow Emacs's face distinctions: directories, signatures,
+and keywords are bold in `fg-shadow-intense`; timestamps use the same colour
+without bold; delimiters and extensions use `fg-shadow-subtle`; titles retain
+the row's text colour. Fuzzy matches retain their accent and underline over
+these styles. Ordinary filenames and terminal-native fallback are unchanged.
 
 ## Selection and launch
 

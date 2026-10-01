@@ -6,14 +6,17 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type taskFile struct {
@@ -117,7 +120,7 @@ func (s *taskSelector) resize(width, height int) {
 
 func (s *taskSelector) applyStyles(styles styles) {
 	s.styles = styles
-	s.list.SetDelegate(taskDelegate{styles: styles.items()})
+	s.list.SetDelegate(taskDelegate{styles: styles.items(), filenameSecondary: styles.filenameSecondary, filenameMuted: styles.filenameMuted})
 	styles.list(&s.list)
 	styles.input(&s.query)
 }
@@ -184,7 +187,54 @@ func (s taskSelector) view(loadingIndex, loadingTask bool) string {
 	return s.query.View() + "\n\n" + body
 }
 
-type taskDelegate struct{ styles list.DefaultItemStyles }
+type taskDelegate struct {
+	styles                           list.DefaultItemStyles
+	filenameSecondary, filenameMuted lipgloss.Style
+}
+
+// The groups follow Denote's identifier, optional signature, title, optional
+// keywords, and extension. Ordinary filenames retain their existing styling.
+var denoteFilename = regexp.MustCompile(`^([0-9]{8})(T)([0-9]{6})(?:(==)([^=]+))?(--)(.*?)(?:(__)(.+))?(\.[^.]+)$`)
+
+func filenameStyles(name string, secondary, muted lipgloss.Style) []lipgloss.Style {
+	// No palette means no filename fontification: retain terminal-native styles.
+	if secondary.GetForeground() == (lipgloss.NoColor{}) {
+		return nil
+	}
+	start := strings.LastIndex(name, "/") + 1
+	groups := denoteFilename.FindStringSubmatchIndex(name[start:])
+	if groups == nil {
+		return nil
+	}
+	parts := make([]lipgloss.Style, utf8.RuneCountInString(name))
+	set := func(begin, end int, style lipgloss.Style) {
+		first := utf8.RuneCountInString(name[:begin])
+		last := first + utf8.RuneCountInString(name[begin:end])
+		for i := first; i < last; i++ {
+			parts[i] = style
+		}
+	}
+	set(0, start, secondary.Bold(true))
+	for group := 1; group <= 10; group++ {
+		begin, end := groups[2*group], groups[2*group+1]
+		if begin < 0 {
+			continue
+		}
+		var style lipgloss.Style
+		switch group {
+		case 1, 3: // Date and time.
+			style = secondary
+		case 5, 9: // Signature and keywords.
+			style = secondary.Bold(true)
+		case 2, 4, 6, 8, 10: // Delimiters and extension.
+			style = muted
+		default: // Title inherits the row foreground.
+			continue
+		}
+		set(start+begin, start+end, style)
+	}
+	return parts
+}
 
 func (taskDelegate) Height() int                         { return 1 }
 func (taskDelegate) Spacing() int                        { return 0 }
@@ -195,5 +245,6 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	if index == m.Index() {
 		style = d.styles.SelectedTitle
 	}
-	renderTitle(w, f.relative, f.matches, style, d.styles.FilterMatch, m.Width())
+	parts := filenameStyles(f.relative, d.filenameSecondary, d.filenameMuted)
+	renderFilenameTitle(w, f.relative, f.matches, style, d.styles.FilterMatch, parts, m.Width())
 }

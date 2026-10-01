@@ -254,8 +254,10 @@ def herdsman_theme_text(theme: dict[str, str]) -> str:
         "text": theme["fg_main"],
         "muted": theme["fg_neutral"],
         "accent": theme["fg_accent"],
-        "selection_background": theme["bg_shadow_intense"],
+        "selection_background": theme["bg_accent"],
         "selection_text": theme["fg_main"],
+        "filename_secondary": theme["fg_shadow_intense"],
+        "filename_muted": theme["fg_shadow_subtle"],
         "match": theme["fg_accent"],
         "error": theme["fg_red"],
     }
