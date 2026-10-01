@@ -24,13 +24,14 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 || os.Args[1] == "--help" || os.Args[1] == "-h" {
-		fmt.Println("usage: herdsman start [--config PATH]")
+		fmt.Println("usage: herdsman start [--config PATH]\n       herdsman finish [--config PATH]")
 		return nil
 	}
-	if os.Args[1] != "start" {
-		return fmt.Errorf("unknown command %q; usage: herdsman start [--config PATH]", os.Args[1])
+	command := os.Args[1]
+	if command != "start" && command != "finish" {
+		return fmt.Errorf("unknown command %q; usage: herdsman {start|finish} [--config PATH]", command)
 	}
-	fs := flag.NewFlagSet("start", flag.ContinueOnError)
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	configPath := fs.String("config", "", "configuration file (default: user config directory/herdsman/config.toml)")
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		if err == flag.ErrHelp {
@@ -39,7 +40,7 @@ func run() error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("start takes no positional arguments")
+		return fmt.Errorf("%s takes no positional arguments", command)
 	}
 	if *configPath == "" {
 		path, err := app.DefaultConfigPath()
@@ -58,6 +59,9 @@ func run() error {
 	profiles, err := client.Machines(ctx)
 	if err != nil {
 		return fmt.Errorf("read Herdr machines: %w", err)
+	}
+	if command == "finish" {
+		return runFinish(ctx, c, client, profiles, filepath.Join(filepath.Dir(*configPath), "themes"))
 	}
 	initial, err := tui.New(c, profiles, filepath.Join(filepath.Dir(*configPath), "themes"))
 	if err != nil {
@@ -85,4 +89,37 @@ func run() error {
 		fmt.Printf("If the client did not switch, select %s → %s in Herdr.\n", r.Machine, r.Title)
 	}
 	return nil
+}
+
+func runFinish(ctx context.Context, c app.Config, client *herdr.Client, profiles []herdr.Machine, themeDir string) error {
+	targets, err := app.FinishTargets(ctx, client, profiles)
+	if err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		fmt.Println("No eligible sessions to finish (requires idle/done Pi in a linked-worktree workspace).")
+		return nil
+	}
+	initial, err := tui.NewFinish(c, targets, themeDir)
+	if err != nil {
+		return err
+	}
+	model, err := tea.NewProgram(initial, tea.WithContext(ctx)).Run()
+	if err != nil {
+		return err
+	}
+	m := model.(tui.FinishModel)
+	if !m.Ready {
+		fmt.Println("Cancelled; nothing finished.")
+		return nil
+	}
+	if err := app.Finish(ctx, client, m.Target); err != nil {
+		return fmt.Errorf("finish %q on %q: %w", m.Target.Agent.Name, m.Target.Machine.DisplayName(), err)
+	}
+	fmt.Print(finishSummary(m.Target))
+	return nil
+}
+
+func finishSummary(target app.FinishTarget) string {
+	return fmt.Sprintf("Finished %q on %q; removed %q at %q\nBranch and saved Pi transcript retained.\n", target.Agent.Name, target.Machine.DisplayName(), target.Workspace.Label, target.Workspace.Worktree.CheckoutPath)
 }

@@ -1,8 +1,9 @@
 # Herdsman
 
 `herdsman start` collects an optional local task file, a repository, and a
-destination machine, then starts a new Pi session through the Herdr CLI. It
-does not invoke a coordinator agent. The source lives in `go/herdsman/`.
+destination machine, then starts a new Pi session through the Herdr CLI.
+`herdsman finish` selects and cleans up an existing session. Neither command
+invokes a coordinator agent. The source lives in `go/herdsman/`.
 
 The launcher can run outside Herdr, including an ordinary terminal or Emacs
 terminal. A local Herdr server and any selected saved-machine server must
@@ -275,6 +276,44 @@ remote connection. **Inspect Herdr before retrying.** Herdsman never automatical
 retries, sends a second prompt, closes workspaces, or deletes worktrees.
 Each deliberate invocation is a fresh launch, not task resumption.
 
+## Finishing a session
+
+Run `herdsman finish [--config PATH]` from an ordinary terminal or a Herdr
+pane. It uses the same configuration and themes as `start`. The sorted picker
+lists workspace labels (the task title, or agent name for an empty session)
+across Local and every enabled saved Herdr machine, including machines absent
+from the configured repository inventory. Duplicate labels gain an agent/machine
+prefix. An unreachable server stops discovery without changing anything.
+
+Only idle/done Pi agents in linked-worktree workspaces are eligible. This status
+check uses the inventory already returned by Herdr, with no extra calls or
+waiting. Checkouts reported as shared by multiple agents are excluded; the
+current session is not excluded. There is no special default selection or filtering.
+Use arrows or Ctrl+N/Ctrl+P to navigate and Enter to select.
+Escape or Ctrl+C cancels.
+
+**Enter immediately starts cleanup, without a confirmation dialog.** Herdsman
+rechecks the selected session, sends `/quit` once, and waits up to 30 seconds
+for the agent to disappear. It then rechecks the checkout and agents and calls
+`herdr worktree remove --workspace ID --force`. Forced removal intentionally
+discards uncommitted checkout contents and removes the task workspace. The
+parent repository workspace, Git branch, and saved Pi transcript remain.
+Finish runs no direct SSH commands; saved-machine routing belongs to Herdr.
+
+Herdr submits `/quit` through Pi's editor without clearing it. An existing draft
+can therefore be submitted instead of quitting. Check that the target session's
+editor is empty before finishing; Herdsman intentionally leaves input untouched.
+
+Shared-checkout detection is best-effort: it uses Herdr's workspace worktree
+metadata and can miss an agent using the same checkout from an ordinary workspace
+or after changing directories. You are responsible for ensuring that no other
+session is using the checkout being finished.
+
+Timeouts, lost contact, changed targets, and unexpected removal responses stop
+cleanup without retrying mutations. Pi may already have quit, or removal may
+already have applied: inspect Herdr before retrying. Rechecks are not a lock;
+avoid concurrent changes to the selected workspace while finishing it.
+
 ## Task-directory snapshots
 
 Entering the task selector takes one recursive filename snapshot. It does not
@@ -304,6 +343,6 @@ Repository verification additionally requires the staged Wampa Home Manager
 build; see `AGENTS.md`. These checks do not activate configuration or demonstrate
 a running Pi/remote server has loaded it.
 
-Finish, model comparisons, plugin integration, and existing
-workspace cleanup are intentionally deferred. Existing `start-task` and
+The bare-command entry menu, model comparisons, plugin integration, branch
+deletion, and cleanup of workspaces without a live agent are deferred. Existing `start-task` and
 `finish-task` commands remain available.

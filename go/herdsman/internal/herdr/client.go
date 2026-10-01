@@ -42,7 +42,19 @@ type Workspace struct {
 }
 
 type Agent struct {
-	Name string `json:"name"`
+	Name        string        `json:"name"`
+	Kind        string        `json:"agent"`
+	Status      string        `json:"agent_status"`
+	WorkspaceID string        `json:"workspace_id"`
+	PaneID      string        `json:"pane_id"`
+	Session     *AgentSession `json:"agent_session"`
+}
+
+type AgentSession struct {
+	Agent  string `json:"agent"`
+	Kind   string `json:"kind"`
+	Source string `json:"source"`
+	Value  string `json:"value"`
 }
 
 type Source struct {
@@ -233,4 +245,18 @@ func (c *Client) Prompt(ctx context.Context, m Machine, name, prompt string) err
 
 func (c *Client) Focus(ctx context.Context, m Machine, name string) error {
 	return c.call(ctx, m, c.Timeout, nil, "agent", "focus", name)
+}
+
+func (c *Client) RemoveWorktree(ctx context.Context, m Machine, workspace, path string) error {
+	var result struct {
+		Type        string `json:"type"`
+		WorkspaceID string `json:"workspace_id"`
+		Path        string `json:"path"`
+		Forced      bool   `json:"forced"`
+	}
+	err := c.call(ctx, m, c.Timeout, &result, "worktree", "remove", "--workspace", workspace, "--force")
+	if err == nil && (result.Type != "worktree_removed" || result.WorkspaceID != workspace || result.Path != path || !result.Forced) {
+		err = fmt.Errorf("unexpected worktree removal result; outcome may be uncertain")
+	}
+	return err
 }

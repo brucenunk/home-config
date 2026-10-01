@@ -219,3 +219,18 @@ func TestTimeoutStopsOwnedDescendant(t *testing.T) {
 		t.Fatal("descendant survived timeout", err, len(before), len(after))
 	}
 }
+
+func TestFinishOperations(t *testing.T) {
+	c, path := fakeCLI(t, `{"result":{"type":"worktree_removed","workspace_id":"task","path":"/repo/task","forced":true}}`)
+	m := Machine{ID: "remote-id", Label: "remote"}
+	if err := c.RemoveWorktree(context.Background(), m, "task", "/repo/task"); err != nil {
+		t.Fatal(err)
+	}
+	checkArgs(t, path, []string{"--machine", "remote-id", "worktree", "remove", "--workspace", "task", "--force"})
+	for _, response := range []string{`{"result":{}}`, `{"result":{"type":"worktree_removed","workspace_id":"other","path":"/repo/task","forced":true}}`, `{"result":{"type":"worktree_removed","workspace_id":"task","path":"/repo/task","forced":false}}`} {
+		t.Setenv("HERDSMAN_RESPONSE", response)
+		if err := c.RemoveWorktree(context.Background(), m, "task", "/repo/task"); err == nil {
+			t.Fatal("accepted unexpected removal", response)
+		}
+	}
+}
