@@ -2,9 +2,7 @@
 
 # Worktree Workflow
 
-Repositories under `~/work` use `~/work/{owner}/{repo}/{worktree}`. The primary clone is the default-branch worktree (`main` or `master`); linked task worktrees are usually named `a`–`f`. Task tooling selects the current worktree and branch.
-
-Before bootstrapping a repository, adding worktrees, or relying on owner/repository mappings, read `~/work/REPO-SETUP.md`. It owns the generic topology and setup procedure while keeping repository inventory host-local.
+Repositories under `~/work` use `~/work/{owner}/{repo}/{worktree}`. Preserve the default-branch worktree (`main` or `master`). Herdr/Herdsman own creation and management of new task worktrees, including worktree naming and branch selection; worktrees are created dynamically, not preallocated as static slots. Keep one task per feature worktree and use the tooling's current guidance rather than manual repository setup or legacy allocation helpers.
 
 ## Tools
 

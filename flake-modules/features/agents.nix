@@ -137,10 +137,6 @@ let
           source = ../../work/EMACS-SERVER.md;
           force = true;
         };
-        "work/REPO-SETUP.md" = {
-          source = ../../work/REPO-SETUP.md;
-          force = true;
-        };
         "work/TASKS.md" = {
           source = ../../work/TASKS.md;
           force = true;
