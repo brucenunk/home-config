@@ -134,8 +134,9 @@ Repository and machine rows have no blank spacer lines.
 ## Selection and launch
 
 - Confirmation: arrows/tab and Enter, or `y`/`n`.
-- Task selector: type immediately to fuzzy-find relative filenames; arrows move
-  through ranked matches and one Enter selects the highlighted file. All regular
+- Task selector: type immediately to fuzzy-find relative filenames; arrows or
+  Ctrl+N (down)/Ctrl+P (up) move through ranked matches and one Enter selects
+  the highlighted file. All regular
   `.md` files whose basename contains `==todo--` are indexed recursively, including
   epic directories. Historic `==done--`/`==discarded--` notes and other Markdown
   files are excluded. Paths are relative, such as
@@ -144,8 +145,8 @@ Repository and machine rows have no blank spacer lines.
   Escape offers an empty session or cancellation. Invalid task metadata stays
   in the selector with an error. Missing or unreadable directories report the
   failure and offer an empty session or cancellation.
-- Repository/machine lists: arrow navigation, `/` to filter, Enter to choose,
-  Escape to clear the filter or go back.
+- Repository/machine lists: arrows or Ctrl+N (down)/Ctrl+P (up) to navigate,
+  `/` to filter, Enter to choose, Escape to clear the filter or go back.
 - Ctrl+C cancels everywhere. Selection performs no launch mutations.
 
 Tasks must be regular files. Reading them runs outside the TUI event loop, so

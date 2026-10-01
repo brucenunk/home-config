@@ -115,6 +115,10 @@ func (m *Model) choices(title string, names []string, preselect string) {
 	d.SetSpacing(0)
 	d.Styles = m.styles.items()
 	m.list = list.New(items, choiceDelegate{d}, m.width, max(8, m.height-5))
+	m.list.KeyMap.CursorUp.SetKeys(append(m.list.KeyMap.CursorUp.Keys(), "ctrl+p")...)
+	m.list.KeyMap.CursorUp.SetHelp("↑/k/ctrl+p", "up")
+	m.list.KeyMap.CursorDown.SetKeys(append(m.list.KeyMap.CursorDown.Keys(), "ctrl+n")...)
+	m.list.KeyMap.CursorDown.SetHelp("↓/j/ctrl+n", "down")
 	m.styles.list(&m.list)
 	m.list.Title = title
 	m.list.SetShowStatusBar(false)
@@ -305,7 +309,7 @@ func (m Model) View() string {
 		}
 		body = m.styles.title.Render(question) + "\n\n" + choices + "\n\n" + m.styles.muted.Render("←/→ choose · enter confirm · y/n · esc cancel")
 	case pickTask:
-		body = m.styles.title.Render("Choose task file") + "\n" + m.selector.view(m.indexLoading, m.taskLoading) + "\n" + m.styles.muted.Render("type to find · ↑/↓ choose · enter select · esc empty-session/cancel")
+		body = m.styles.title.Render("Choose task file") + "\n" + m.selector.view(m.indexLoading, m.taskLoading) + "\n" + m.styles.muted.Render("type to find · ↑/↓ or ctrl+p/ctrl+n choose · enter select · esc empty-session/cancel")
 	case pickRepo, pickMachine:
 		body = m.list.View() + "\n" + m.styles.muted.Render("esc back")
 	}

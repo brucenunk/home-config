@@ -99,6 +99,8 @@ func newTaskSelector(width, height int) taskSelector {
 	query.Placeholder = "Type to fuzzy-find filenames"
 	query.Focus()
 	l := list.New(nil, taskDelegate{styles: list.NewDefaultItemStyles()}, width, max(3, height-10))
+	l.KeyMap.CursorUp.SetKeys(append(l.KeyMap.CursorUp.Keys(), "ctrl+p")...)
+	l.KeyMap.CursorDown.SetKeys(append(l.KeyMap.CursorDown.Keys(), "ctrl+n")...)
 	l.SetFilteringEnabled(false)
 	l.SetShowTitle(false)
 	l.SetShowHelp(false)
@@ -149,7 +151,7 @@ func (s *taskSelector) filter() {
 func (s *taskSelector) update(msg tea.Msg) tea.Cmd {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
-		case "up", "down", "pgup", "pgdown":
+		case "up", "down", "ctrl+p", "ctrl+n", "pgup", "pgdown":
 			var cmd tea.Cmd
 			s.list, cmd = s.list.Update(msg)
 			return cmd

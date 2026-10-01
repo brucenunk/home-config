@@ -64,12 +64,26 @@ func TestTaskSelectorFuzzyRankingAndTypingKeys(t *testing.T) {
 	}
 }
 
-func TestTaskSelectorArrowsDoNotChangeQuery(t *testing.T) {
-	s := newTaskSelector(100, 30)
-	s.setFiles([]taskFile{{path: "/a.md", relative: "a.md"}, {path: "/b.md", relative: "b.md"}})
-	s.update(tea.KeyMsg{Type: tea.KeyDown})
-	if s.selectedPath() != "/b.md" || s.query.Value() != "" {
-		t.Fatal(s.selectedPath(), s.query.Value())
+func TestTaskSelectorNavigationDoesNotChangeQuery(t *testing.T) {
+	for _, query := range []string{"", "md"} {
+		for _, keys := range [][2]tea.KeyType{{tea.KeyDown, tea.KeyUp}, {tea.KeyCtrlN, tea.KeyCtrlP}} {
+			t.Run(query+"/"+tea.KeyMsg{Type: keys[0]}.String(), func(t *testing.T) {
+				s := newTaskSelector(100, 30)
+				s.setFiles([]taskFile{{path: "/a.md", relative: "a.md"}, {path: "/b.md", relative: "b.md"}, {path: "/other.txt", relative: "other.txt"}})
+				s.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(query)})
+				wantItems := len(s.list.Items())
+				first := s.selectedPath()
+				second := s.list.Items()[1].(taskFile).path
+				s.update(tea.KeyMsg{Type: keys[0]})
+				if s.selectedPath() != second || s.query.Value() != query || len(s.list.Items()) != wantItems {
+					t.Fatal(s.selectedPath(), s.query.Value(), s.list.Items())
+				}
+				s.update(tea.KeyMsg{Type: keys[1]})
+				if s.selectedPath() != first || s.query.Value() != query || len(s.list.Items()) != wantItems {
+					t.Fatal(s.selectedPath(), s.query.Value(), s.list.Items())
+				}
+			})
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,14 @@ func key(m Model, s string) (Model, tea.Cmd) {
 		msg.Type = tea.KeyEsc
 	case "ctrl+c":
 		msg.Type = tea.KeyCtrlC
+	case "ctrl+n":
+		msg.Type = tea.KeyCtrlN
+	case "ctrl+p":
+		msg.Type = tea.KeyCtrlP
+	case "up":
+		msg.Type = tea.KeyUp
+	case "down":
+		msg.Type = tea.KeyDown
 	}
 	next, cmd := m.Update(msg)
 	return next.(Model), cmd
@@ -57,6 +66,36 @@ func TestEmptySelectionAndCancellation(t *testing.T) {
 		m, cmd = key(newModel(t, config(t), nil), s)
 		if m.Ready || cmd == nil {
 			t.Fatal("cancel did not exit")
+		}
+	}
+}
+
+func TestChoiceNavigationBindings(t *testing.T) {
+	for _, picker := range []stage{pickRepo, pickMachine} {
+		for _, bindings := range [][2]string{{"ctrl+n", "ctrl+p"}, {"down", "up"}, {"j", "k"}} {
+			t.Run(fmt.Sprintf("%d/%s/%s", picker, bindings[0], bindings[1]), func(t *testing.T) {
+				c := config(t)
+				c.Machines["remote"] = app.MachineConfig{Repositories: []string{"owner/one"}}
+				profiles := []herdr.Machine{{ID: "remote-profile", Label: "remote", Enabled: true}}
+				m, _ := key(newModel(t, c, profiles), "n")
+				if picker == pickMachine {
+					m, _ = key(m, "enter")
+				}
+				if m.stage != picker || m.list.Index() != 0 {
+					t.Fatal("unexpected initial selection", m.stage, m.list.Index())
+				}
+				m, _ = key(m, bindings[0])
+				if m.stage != picker || m.list.Index() != 1 || m.Ready {
+					t.Fatal("down did not move without choosing", m.stage, m.list.Index(), m.Ready)
+				}
+				m, _ = key(m, bindings[1])
+				if m.stage != picker || m.list.Index() != 0 || m.Ready {
+					t.Fatal("up did not move without choosing", m.stage, m.list.Index(), m.Ready)
+				}
+				if !strings.Contains(m.View(), "ctrl+p") || !strings.Contains(m.View(), "ctrl+n") {
+					t.Fatal("navigation help omits Emacs bindings", m.View())
+				}
+			})
 		}
 	}
 }
