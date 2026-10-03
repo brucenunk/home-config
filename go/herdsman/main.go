@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/app"
@@ -24,25 +25,32 @@ func main() {
 }
 
 func run() error {
-	if len(os.Args) < 2 || os.Args[1] == "--help" || os.Args[1] == "-h" {
-		fmt.Println("usage: herdsman start [--config PATH] [--debug]\n       herdsman finish [--config PATH] [--debug]")
+	if len(os.Args) >= 2 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
+		fmt.Println("usage: herdsman [--config PATH] [--debug]\n       herdsman start [--config PATH] [--debug]\n       herdsman finish [--config PATH] [--debug]\n\nWithout a subcommand, choose Start or Finish interactively.")
 		return nil
 	}
-	command := os.Args[1]
-	if command != "start" && command != "finish" {
-		return fmt.Errorf("unknown command %q; usage: herdsman {start|finish} [--config PATH] [--debug]", command)
+	command, args := "", os.Args[1:]
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		command, args = args[0], args[1:]
+		if command != "start" && command != "finish" {
+			return fmt.Errorf("unknown command %q; usage: herdsman [start|finish] [--config PATH] [--debug]", command)
+		}
 	}
-	fs := flag.NewFlagSet(command, flag.ContinueOnError)
+	flagName := command
+	if flagName == "" {
+		flagName = "herdsman"
+	}
+	fs := flag.NewFlagSet(flagName, flag.ContinueOnError)
 	configPath := fs.String("config", "", "configuration file (default: user config directory/herdsman/config.toml)")
 	debug := fs.Bool("debug", false, "log Herdr/SSH calls and subprocess timings to stderr")
-	if err := fs.Parse(os.Args[2:]); err != nil {
+	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
 		}
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("%s takes no positional arguments", command)
+		return fmt.Errorf("%s takes no positional arguments", flagName)
 	}
 	if *configPath == "" {
 		path, err := app.DefaultConfigPath()
@@ -57,6 +65,22 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	themeDir := filepath.Join(filepath.Dir(*configPath), "themes")
+	if command == "" {
+		initial, err := tui.NewCommand(c, themeDir)
+		if err != nil {
+			return err
+		}
+		model, err := tea.NewProgram(initial, tea.WithContext(ctx)).Run()
+		if err != nil {
+			return err
+		}
+		command = model.(tui.CommandModel).Command
+		if command == "" {
+			fmt.Println("Cancelled; nothing started or finished.")
+			return nil
+		}
+	}
 	client := herdr.New()
 	if *debug {
 		client.Debug = log.New(os.Stderr, "herdsman debug: ", log.LstdFlags|log.Lmicroseconds)
@@ -66,9 +90,9 @@ func run() error {
 		return fmt.Errorf("read Herdr machines: %w", err)
 	}
 	if command == "finish" {
-		return runFinish(ctx, c, client, profiles, filepath.Join(filepath.Dir(*configPath), "themes"))
+		return runFinish(ctx, c, client, profiles, themeDir)
 	}
-	initial, err := tui.New(c, profiles, filepath.Join(filepath.Dir(*configPath), "themes"))
+	initial, err := tui.New(c, profiles, themeDir)
 	if err != nil {
 		return err
 	}

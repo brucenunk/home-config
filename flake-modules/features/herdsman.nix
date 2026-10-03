@@ -34,7 +34,7 @@ let
       herdrPackage = pkgs.llm-agents.herdr;
       format = pkgs.formats.toml { };
       popupRunner = pkgs.writeShellScript "herdsman-popup" ''
-        if ${package}/bin/herdsman start; then
+        if ${package}/bin/herdsman; then
           exit 0
         else
           status=$?
@@ -55,14 +55,14 @@ let
         actions = [
           {
             id = "start";
-            title = "Start task";
+            title = "Herdsman";
             command = [ "./herdsman-plugin" ];
           }
         ];
         panes = [
           {
             id = "launcher";
-            title = "Start task";
+            title = "Herdsman";
             placement = "popup";
             width = "80%";
             height = "80%";
@@ -196,7 +196,7 @@ let
               key = "prefix+t";
               type = "plugin_action";
               command = "brucenunk.herdsman.start";
-              description = "Start task";
+              description = "Herdsman";
             }
           ];
         };
@@ -264,7 +264,7 @@ in
               key = "prefix+t";
               type = "plugin_action";
               command = "brucenunk.herdsman.start";
-              description = "Start task";
+              description = "Herdsman";
             }
           ];
         pkgs.runCommand "herdsman-home-manager-module" { } ''
@@ -278,12 +278,12 @@ in
           assert plugin["min_herdr_version"] == "0.9.1"
           assert plugin["platforms"] == ["linux", "macos"]
           assert plugin["actions"] == [{
-              "id": "start", "title": "Start task", "command": ["./herdsman-plugin"]
+              "id": "start", "title": "Herdsman", "command": ["./herdsman-plugin"]
           }]
           pane_command = plugin["panes"][0]["command"]
           assert len(pane_command) == 1
           assert plugin["panes"] == [{
-              "id": "launcher", "title": "Start task", "placement": "popup",
+              "id": "launcher", "title": "Herdsman", "placement": "popup",
               "width": "80%", "height": "80%", "command": pane_command
           }]
           # Exercise the runner with only its Herdsman executable mocked.
@@ -292,11 +292,11 @@ in
           import tempfile
           with open(pane_command[0]) as f:
               runner = f.read()
-          assert "${package}/bin/herdsman start" in runner
+          assert "if ${package}/bin/herdsman; then" in runner
           with tempfile.TemporaryDirectory() as directory:
               mock = os.path.join(directory, "herdsman")
               with open(mock, "w") as f:
-                  f.write('#!${pkgs.runtimeShell}\necho "launch diagnostic"\nexit "$MOCK_STATUS"\n')
+                  f.write('#!${pkgs.runtimeShell}\n[ "$#" -eq 0 ] || exit 99\necho "workflow diagnostic"\nexit "$MOCK_STATUS"\n')
               os.chmod(mock, 0o755)
               script = runner.replace("${package}/bin/herdsman", mock)
               env = dict(os.environ, MOCK_STATUS="0")
@@ -316,7 +316,7 @@ in
                   if "Press Enter" in line:
                       break
               assert failure.poll() is None
-              assert "launch diagnostic" in "".join(lines)
+              assert "workflow diagnostic" in "".join(lines)
               failure.communicate(input="\n", timeout=5)
               assert failure.returncode == 7
           assert not any(k in plugin for k in ["startup", "events", "build"])

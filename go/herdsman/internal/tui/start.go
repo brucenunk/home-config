@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 type stage int
@@ -304,18 +303,7 @@ func (m Model) View() string {
 		if m.stage == askEmpty {
 			question = "Start an empty session instead? (No cancels)"
 		}
-		choices := m.styles.text.Render("  Yes    ") + m.styles.selected.Render("[No]")
-		if m.yes {
-			choices = " " + m.styles.selected.Render("[Yes]") + m.styles.text.Render("    No")
-		}
-		if m.styles.selected.GetBackground() != (lipgloss.NoColor{}) && lipgloss.ColorProfile() != termenv.Ascii {
-			yesStyle, noStyle := m.styles.text, m.styles.selected
-			if m.yes {
-				yesStyle, noStyle = noStyle, yesStyle
-			}
-			choices = yesStyle.Padding(0, 1).Width(7).Align(lipgloss.Center).Render("Yes") + "  " +
-				noStyle.Padding(0, 1).Width(7).Align(lipgloss.Center).Render("No")
-		}
+		choices := m.styles.binaryChoices("Yes", "No", m.yes)
 		body = m.styles.title.Render(question) + "\n\n" + choices + "\n\n" + m.styles.muted.Render("←/→ choose · enter confirm · y/n · esc cancel")
 	case pickTask:
 		body = m.styles.title.Render("Choose task file") + "\n" + m.selector.view(m.indexLoading, m.taskLoading) + "\n" + m.styles.muted.Render("type to find · ↑/↓ or ctrl+p/ctrl+n choose · enter select · esc empty-session/cancel")

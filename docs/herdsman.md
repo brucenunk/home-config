@@ -1,5 +1,11 @@
 # Herdsman
 
+Run `herdsman [--config PATH] [--debug]` to choose **Start** or **Finish**.
+Start is selected by default. Use arrows, Tab, or h/l to switch, Enter to
+confirm, or s/f to choose directly. Escape, q, or Ctrl+C cancels without
+querying Herdr or starting/finishing anything. This uses the same horizontal
+prompt styling and navigation as “Start from a task file?”.
+
 `herdsman start` collects an optional local task file, a repository, and a
 destination machine, then starts a new Pi session through the Herdr CLI.
 `herdsman finish` selects and cleans up an existing session. Neither command
@@ -25,7 +31,7 @@ owned by the feature. Removing the feature does not automatically unregister
 the plugin; run `herdr plugin unlink brucenunk.herdsman` if retiring it.
 
 When Herdr is enabled in Home Manager, the feature also binds `prefix+t` to
-the **Start task** action. This repository's Herdr feature sets the prefix to
+the **Herdsman** action. This repository's Herdr feature sets the prefix to
 **Ctrl+Space**: press and release Ctrl+Space, then press **t**. Use
 **Ctrl+Space, ?** for the active keybinding help. Ctrl+Space is intercepted
 by Herdr rather than passed to terminal applications; terminal/input-method
@@ -33,13 +39,13 @@ support can vary.
 
 The action runs `herdsman-plugin`, a small shim that asks the invoking Herdr
 binary to open the plugin's `launcher` popup. The popup runs the packaged
-`herdsman start`, using the same inventory and themes as terminal launches.
+`herdsman`, offering Start/Finish with the same inventory and themes as terminal launches.
 Its width and height are 80% of **Herdr's terminal area**, not the display.
 It does not add a persistent tab or pane and closes after success or normal
 cancellation. On failure, the popup keeps the diagnostic and recovery output
-visible until you press Enter; it does not retry or clean up partial launches.
+visible until you press Enter; it does not retry or perform additional cleanup.
 Escape follows Herdsman's normal selection/back behavior; Ctrl+C cancels.
-There is no finish action or automatic launch hook.
+Both workflows are available through this popup; there is no automatic launch hook.
 
 After activation, use a newly started Herdr server to check the plugin with
 the commands below. Offline registration alone is not evidence that an
@@ -50,9 +56,8 @@ herdr plugin action list --plugin brucenunk.herdsman
 herdr plugin action invoke brucenunk.herdsman.start
 ```
 
-The pane ID and shim are independent of the `start` subcommand: a future
-in-app start/finish menu can keep them and change only the runner's command to
-bare `herdsman`. That menu is not implemented here. Build checks validate
+The existing `start` action ID is retained for compatibility, but now opens the
+Start/Finish menu. The pane ID remains `launcher`. Build checks validate
 the generated plugin, offline registration/re-registration, registered action
 routing, and the popup runner's success/failure acknowledgement behavior;
 they do not prove popup interaction or focus behavior in a live Herdr session.
