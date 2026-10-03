@@ -70,6 +70,7 @@ in
           spice-gtk
           usbutils
           vlc
+          wl-clipboard
         ];
 
         home.sessionVariables = {
