@@ -13,14 +13,16 @@ import (
 )
 
 type StartRequest struct {
-	Repo    string
-	Machine herdr.Machine
-	Task    *Task
+	Repo        string // Selected context: owner or owner/repo.
+	Description string // Required without a task file; title only, never a prompt.
+	Machine     herdr.Machine
+	Task        *Task
 }
 
 // The only interface is the launch boundary; implementations do not own policy.
 type Launcher interface {
 	Home(context.Context, herdr.Machine) (string, error)
+	OwnerHome(context.Context, herdr.Machine, string) (string, error)
 	Snapshot(context.Context, herdr.Machine) (herdr.Snapshot, error)
 	Source(context.Context, herdr.Machine, string) (herdr.Source, error)
 	CreateParent(context.Context, herdr.Machine, string, string) (herdr.Created, error)
@@ -42,7 +44,7 @@ func ChooseAgentName(names []string, occupied map[string]bool) (string, error) {
 			return names[i], nil
 		}
 	}
-	return "", fmt.Errorf("all configured agent names are in use; finish an existing session first")
+	return "", fmt.Errorf("all configured agent names are unavailable; end an existing session or inspect leftover owner workspaces first")
 }
 
 func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Machine, req StartRequest) (r StartResult, err error) {
@@ -51,14 +53,19 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 		return r, err
 	}
 	if req.Task != nil {
+		if !validRepo(req.Repo) {
+			return r, fmt.Errorf("task-file sessions require a repository context")
+		}
 		if err := req.Task.ValidateTransport(); err != nil {
 			return r, err
 		}
+	} else if err := ValidateSessionDescription(req.Description); err != nil {
+		return r, err
 	}
 	destinations := c.Destinations(req.Repo, profiles)
 	i := slices.IndexFunc(destinations, func(m herdr.Machine) bool { return m.Label == req.Machine.Label && m.ID == req.Machine.ID })
 	if i < 0 {
-		return r, fmt.Errorf("repository/machine selection is no longer available")
+		return r, fmt.Errorf("context/machine selection is no longer available")
 	}
 	m := destinations[i]
 	occupied := map[string]bool{}
@@ -79,80 +86,116 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 			occupied[a.Name] = true
 		}
 	}
+	if validOwner(req.Repo) {
+		// A normal quit or failed startup can leave an agentless workspace. Its
+		// label must not collide with the next session's discoverability label.
+		for _, w := range workspaces {
+			for _, name := range c.AgentNames {
+				if owner, ok := ownerFromSessionLabel(w.Label, name); ok && owner == req.Repo {
+					occupied[name] = true
+				}
+			}
+		}
+	}
 	r.AgentName, err = ChooseAgentName(c.AgentNames, occupied)
 	if err != nil {
 		return r, err
 	}
-	r.Title = r.AgentName
+	r.Title = strings.TrimSpace(req.Description)
 	if req.Task != nil {
 		r.Title = req.Task.Title
 	}
-	home, err := client.Home(ctx, m)
+	ownerLabel := r.Title + " · " + ownerSessionLabel(req.Repo, r.AgentName)
+	if validOwner(req.Repo) && len(ownerLabel) > maxAgentArgumentBytes {
+		return r, fmt.Errorf("owner workspace label exceeds the supported CLI argument size of %d bytes; shorten the session description", maxAgentArgumentBytes)
+	}
+	var home string
+	if validOwner(req.Repo) {
+		home, err = client.OwnerHome(ctx, m, req.Repo)
+	} else {
+		home, err = client.Home(ctx, m)
+	}
 	if err != nil {
 		return r, err
 	}
-	base := c.Base(req.Repo)
-	source := filepath.Join(home, "work", req.Repo, c.Gitdir(req.Repo))
-	stamp := time.Now().UTC().Format("20060102T150405.000000000Z")
-	r.Path = filepath.Join(home, "work", req.Repo, stamp)
-	r.Branch = "jamesl/" + stamp
-	resolved, err := client.Source(ctx, m, source)
-	if err != nil {
-		return r, fmt.Errorf("resolve parent: %w", err)
-	}
-	if filepath.Clean(resolved.CheckoutPath) != source {
-		return r, fmt.Errorf("Herdr resolved %s to a different source checkout: %s", source, resolved.CheckoutPath)
-	}
-	var parent *herdr.Workspace
-	for _, w := range workspaces {
-		matches := (resolved.WorkspaceID != "" && w.ID == resolved.WorkspaceID) || (w.Worktree != nil && !w.Worktree.Linked && filepath.Clean(w.Worktree.CheckoutPath) == source)
-		if matches {
-			if parent != nil {
-				return r, fmt.Errorf("multiple parent workspaces for %s; resolve in Herdr", source)
-			}
-			copy := w
-			parent = &copy
-		} else if w.Label == req.Repo {
-			return r, fmt.Errorf("workspace label %s is already used by a different checkout", req.Repo)
-		}
-	}
-	if resolved.WorkspaceID != "" && parent == nil {
-		return r, fmt.Errorf("source workspace is absent from the selected inventory; select again")
-	}
-	if err := ctx.Err(); err != nil {
-		return r, err
-	}
-	// From this point, failures may leave state behind. Never retry or delete it.
+	mutating := false
 	defer func() {
-		if err != nil {
+		if err != nil && mutating {
 			err = fmt.Errorf("%w\nLaunch stopped. Successful steps: %s. The failing operation may also have applied; inspect Herdr before retrying. No automatic cleanup was performed.", err, strings.Join(r.Steps, "; "))
 		}
 	}()
-	if parent == nil {
-		var created herdr.Created
-		created, err = client.CreateParent(ctx, m, source, req.Repo)
-		if err != nil {
-			return r, fmt.Errorf("create parent: %w", err)
+	if validOwner(req.Repo) {
+		r.Path = filepath.Join(home, "work", req.Repo)
+		if err := ctx.Err(); err != nil {
+			return r, err
 		}
-		r.Parent = created.Workspace.ID
-		r.Steps = append(r.Steps, "created parent "+r.Parent)
+		mutating = true
+		created, e := client.CreateParent(ctx, m, r.Path, ownerLabel)
+		if e != nil {
+			return r, fmt.Errorf("create owner session workspace: %w", e)
+		}
+		r.Workspace, r.Pane = created.Workspace.ID, created.RootPane.ID
+		r.Steps = append(r.Steps, "created owner session workspace "+r.Workspace+" at "+r.Path)
 	} else {
-		r.Parent = parent.ID
-		r.Steps = append(r.Steps, "reused parent "+r.Parent)
-		if parent.Label != req.Repo {
-			err = client.RenameParent(ctx, m, parent.ID, req.Repo)
-			if err != nil {
-				return r, fmt.Errorf("rename parent: %w", err)
-			}
-			r.Steps = append(r.Steps, "renamed parent")
+		base := c.Base(req.Repo)
+		source := filepath.Join(home, "work", req.Repo, c.Gitdir(req.Repo))
+		stamp := time.Now().UTC().Format("20060102T150405.000000000Z")
+		r.Path = filepath.Join(home, "work", req.Repo, stamp)
+		r.Branch = "jamesl/" + stamp
+		resolved, err := client.Source(ctx, m, source)
+		if err != nil {
+			return r, fmt.Errorf("resolve parent: %w", err)
 		}
+		if filepath.Clean(resolved.CheckoutPath) != source {
+			return r, fmt.Errorf("Herdr resolved %s to a different source checkout: %s", source, resolved.CheckoutPath)
+		}
+		var parent *herdr.Workspace
+		for _, w := range workspaces {
+			matches := (resolved.WorkspaceID != "" && w.ID == resolved.WorkspaceID) || (w.Worktree != nil && !w.Worktree.Linked && filepath.Clean(w.Worktree.CheckoutPath) == source)
+			if matches {
+				if parent != nil {
+					return r, fmt.Errorf("multiple parent workspaces for %s; resolve in Herdr", source)
+				}
+				copy := w
+				parent = &copy
+			} else if w.Label == req.Repo {
+				return r, fmt.Errorf("workspace label %s is already used by a different checkout", req.Repo)
+			}
+		}
+		if resolved.WorkspaceID != "" && parent == nil {
+			return r, fmt.Errorf("source workspace is absent from the selected inventory; select again")
+		}
+		if err := ctx.Err(); err != nil {
+			return r, err
+		}
+		// From this point, failures may leave state behind. Never retry or delete it.
+		mutating = true
+		if parent == nil {
+			var created herdr.Created
+			created, err = client.CreateParent(ctx, m, source, req.Repo)
+			if err != nil {
+				return r, fmt.Errorf("create parent: %w", err)
+			}
+			r.Parent = created.Workspace.ID
+			r.Steps = append(r.Steps, "created parent "+r.Parent)
+		} else {
+			r.Parent = parent.ID
+			r.Steps = append(r.Steps, "reused parent "+r.Parent)
+			if parent.Label != req.Repo {
+				err = client.RenameParent(ctx, m, parent.ID, req.Repo)
+				if err != nil {
+					return r, fmt.Errorf("rename parent: %w", err)
+				}
+				r.Steps = append(r.Steps, "renamed parent")
+			}
+		}
+		created, err := client.CreateWorktree(ctx, m, herdr.WorktreeRequest{Parent: r.Parent, Branch: r.Branch, Base: base, Path: r.Path, Label: r.Title})
+		if err != nil {
+			return r, fmt.Errorf("create worktree: %w", err)
+		}
+		r.Workspace, r.Pane = created.Workspace.ID, created.RootPane.ID
+		r.Steps = append(r.Steps, "created worktree "+r.Path+" ("+r.Workspace+", "+r.Pane+")")
 	}
-	created, err := client.CreateWorktree(ctx, m, herdr.WorktreeRequest{Parent: r.Parent, Branch: r.Branch, Base: base, Path: r.Path, Label: r.Title})
-	if err != nil {
-		return r, fmt.Errorf("create worktree: %w", err)
-	}
-	r.Workspace, r.Pane = created.Workspace.ID, created.RootPane.ID
-	r.Steps = append(r.Steps, "created worktree "+r.Path+" ("+r.Workspace+", "+r.Pane+")")
 	if err = client.StartAgent(ctx, m, r.AgentName, r.Pane, r.Title); err != nil {
 		return r, fmt.Errorf("start Pi %s: %w", r.AgentName, err)
 	}

@@ -35,9 +35,11 @@ func (m Machine) DisplayName() string {
 }
 
 type Workspace struct {
-	ID       string `json:"workspace_id"`
-	Label    string `json:"label"`
-	Worktree *struct {
+	ID        string `json:"workspace_id"`
+	Label     string `json:"label"`
+	PaneCount int    `json:"pane_count"`
+	TabCount  int    `json:"tab_count"`
+	Worktree  *struct {
 		CheckoutPath string `json:"checkout_path"`
 		Linked       bool   `json:"is_linked_worktree"`
 	} `json:"worktree"`
@@ -213,12 +215,45 @@ func (c *Client) Machines(ctx context.Context) ([]Machine, error) {
 }
 
 func (c *Client) Home(ctx context.Context, m Machine) (string, error) {
+	return c.home(ctx, m, "")
+}
+
+// Validate the owner directory inside the existing HOME lookup: Herdr's PTY
+// launcher can silently fall back to HOME for a missing or non-directory cwd.
+func (c *Client) OwnerHome(ctx context.Context, m Machine, owner string) (string, error) {
+	return c.home(ctx, m, owner)
+}
+
+func (c *Client) home(ctx context.Context, m Machine, owner string) (string, error) {
 	if m.IsLocal() {
-		return os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if owner != "" {
+			path := filepath.Join(home, "work", owner)
+			info, err := os.Stat(path)
+			if err != nil {
+				return "", fmt.Errorf("inspect owner directory %s: %w", path, err)
+			}
+			if !info.IsDir() {
+				return "", fmt.Errorf("owner path %s is not a directory", path)
+			}
+		}
+		return home, nil
 	}
-	// No dynamic shell source: OpenSSH owns authentication and host policy.
-	data, err := c.invoke(ctx, m, "ssh", c.SSH, c.Timeout, "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "--", m.Target, `printf '%s' "$HOME"`)
+	command := `printf '%s' "$HOME"`
+	if owner != "" {
+		// Quote the suffix as shell data, never executable source.
+		suffix := "'" + strings.ReplaceAll("/work/"+owner, "'", "'\\''") + "'"
+		command = `test -d "$HOME"` + suffix + ` && printf '%s' "$HOME"`
+	}
+	// OpenSSH owns authentication and host policy.
+	data, err := c.invoke(ctx, m, "ssh", c.SSH, c.Timeout, "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "--", m.Target, command)
 	if err != nil {
+		if owner != "" {
+			return "", fmt.Errorf("owner directory check/HOME lookup on %s failed (requires $HOME/work/%s to be a directory): %w", m.DisplayName(), owner, err)
+		}
 		return "", err
 	}
 	home := string(data)
@@ -300,6 +335,19 @@ func (c *Client) CreateParent(ctx context.Context, m Machine, source, label stri
 	var result Created
 	err := c.call(ctx, m, c.Timeout, &result, "workspace", "create", "--cwd", source, "--label", label, "--no-focus")
 	return validateCreated(result, err)
+}
+
+// CloseWorkspace drops runtime state only; it never removes directory contents.
+// Do not request group closure, which could close unrelated task workspaces.
+func (c *Client) CloseWorkspace(ctx context.Context, m Machine, id string) error {
+	var result struct {
+		Type string `json:"type"`
+	}
+	err := c.call(ctx, m, c.Timeout, &result, "workspace", "close", id)
+	if err == nil && result.Type != "ok" {
+		err = fmt.Errorf("unexpected workspace close result; outcome may be uncertain")
+	}
+	return err
 }
 
 // Herdr resolves ordinary source workspaces here, even without .worktree metadata.

@@ -71,6 +71,10 @@ func validRepo(s string) bool {
 	return len(p) == 2 && repoComponent.MatchString(p[0]) && repoComponent.MatchString(p[1]) && p[0] != "." && p[0] != ".." && p[1] != "." && p[1] != ".."
 }
 
+func validOwner(s string) bool {
+	return repoComponent.MatchString(s) && s != "." && s != ".."
+}
+
 func DefaultConfigPath() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir != "" {
@@ -173,10 +177,38 @@ func (c Config) RepositoryNames() []string {
 	return slices.Compact(names)
 }
 
+// ContextNames uses the declared inventory, never filesystem discovery.
+func (c Config) ContextNames(includeOwners bool) []string {
+	names := c.RepositoryNames()
+	if includeOwners {
+		for _, repo := range c.RepositoryNames() {
+			owner, _, _ := strings.Cut(repo, "/")
+			names = append(names, owner)
+		}
+		slices.Sort(names)
+		names = slices.Compact(names)
+	}
+	return names
+}
+
+func supportsContext(repositories []string, name string) bool {
+	if validRepo(name) {
+		return slices.Contains(repositories, name)
+	}
+	if validOwner(name) {
+		for _, repo := range repositories {
+			if strings.HasPrefix(repo, name+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Saved profiles remain Herdr-owned. Only enabled, unambiguous labels are destinations.
-func (c Config) Destinations(repo string, profiles []herdr.Machine) []herdr.Machine {
+func (c Config) Destinations(name string, profiles []herdr.Machine) []herdr.Machine {
 	var result []herdr.Machine
-	if slices.Contains(c.Machines["local"].Repositories, repo) {
+	if supportsContext(c.Machines["local"].Repositories, name) {
 		result = append(result, herdr.Local())
 	}
 	counts := map[string]int{}
@@ -186,7 +218,7 @@ func (c Config) Destinations(repo string, profiles []herdr.Machine) []herdr.Mach
 		}
 	}
 	for _, m := range profiles {
-		if m.Enabled && m.Label != "local" && counts[m.Label] == 1 && slices.Contains(c.Machines[m.Label].Repositories, repo) {
+		if m.Enabled && m.Label != "local" && counts[m.Label] == 1 && supportsContext(c.Machines[m.Label].Repositories, name) {
 			result = append(result, m)
 		}
 	}

@@ -66,6 +66,10 @@ func (f *fakeFinisher) RemoveWorktree(ctx context.Context, m herdr.Machine, id, 
 	return f.call(m, "remove:"+id+":"+path)
 }
 
+func (f *fakeFinisher) CloseWorkspace(ctx context.Context, m herdr.Machine, id string) error {
+	return f.call(m, "close:"+id)
+}
+
 func finishWorkspace(id, label, path string, linked bool) herdr.Workspace {
 	w := herdr.Workspace{ID: id, Label: label}
 	// Reuse the JSON-shaped workspace metadata without introducing another API.
@@ -345,7 +349,7 @@ func TestFinishInspectionErrorDuringRetry(t *testing.T) {
 		}
 	}
 	err := Finish(context.Background(), f, target)
-	if err == nil || !strings.Contains(err.Error(), "recheck checkout and agents") || reads != 2 || len(f.calls) != 4 {
+	if err == nil || !strings.Contains(err.Error(), "recheck workspace and agents") || reads != 2 || len(f.calls) != 4 {
 		t.Fatal("retried inspection error or attempted removal", err, f.calls)
 	}
 }

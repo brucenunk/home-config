@@ -24,6 +24,7 @@ type fakeLauncher struct {
 	fail                          string
 	worktree                      herdr.WorktreeRequest
 	title, prompt                 string
+	workspaceLabel                string
 }
 
 func (f *fakeLauncher) call(m herdr.Machine, op string) error {
@@ -34,10 +35,20 @@ func (f *fakeLauncher) call(m herdr.Machine, op string) error {
 	return nil
 }
 func start(ctx context.Context, c Config, f *fakeLauncher, req StartRequest) (StartResult, error) {
+	if req.Task == nil && req.Description == "" {
+		req.Description = "Investigate deploy latency"
+	}
 	return Start(ctx, c, f, f.profiles, req)
 }
 func (f *fakeLauncher) Home(_ context.Context, m herdr.Machine) (string, error) {
 	return "/home/test", f.call(m, "home")
+}
+
+func (f *fakeLauncher) OwnerHome(ctx context.Context, m herdr.Machine, owner string) (string, error) {
+	if owner != "owner" {
+		return "", errors.New("unexpected owner lookup")
+	}
+	return f.Home(ctx, m)
 }
 func (f *fakeLauncher) Snapshot(_ context.Context, m herdr.Machine) (herdr.Snapshot, error) {
 	workspaces := f.workspaces
@@ -60,7 +71,8 @@ func creation(id, pane string) herdr.Created {
 }
 func (f *fakeLauncher) CreateParent(_ context.Context, m herdr.Machine, source, label string) (herdr.Created, error) {
 	f.parentSource = source
-	if label != "owner/repo" {
+	f.workspaceLabel = label
+	if label != "owner/repo" && !strings.Contains(label, " · herdsman: ") {
 		return herdr.Created{}, errors.New("bad parent arguments")
 	}
 	return creation("parent", "parent:p1"), f.call(m, "parent")
@@ -124,7 +136,7 @@ func TestStartLocalRemoteAndEmpty(t *testing.T) {
 				if f.title != req.Task.Title || f.prompt != req.Task.Prompt() {
 					t.Fatal(f.title, f.prompt)
 				}
-			} else if f.title != r.AgentName || f.prompt != "" {
+			} else if f.title != "Investigate deploy latency" || f.worktree.Label != f.title || f.prompt != "" {
 				t.Fatal(f.title, f.prompt)
 			}
 		}
@@ -323,7 +335,7 @@ func TestLaunchUsesConfiguredName(t *testing.T) {
 	c := startConfig()
 	c.AgentNames = []string{"custom_agent"}
 	r, err := start(context.Background(), c, &fakeLauncher{}, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
-	if err != nil || r.AgentName != "custom_agent" || r.Title != "custom_agent" {
+	if err != nil || r.AgentName != "custom_agent" || r.Title != "Investigate deploy latency" {
 		t.Fatal(r, err)
 	}
 }

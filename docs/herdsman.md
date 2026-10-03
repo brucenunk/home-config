@@ -1,14 +1,15 @@
 # Herdsman
 
-Run `herdsman [--config PATH] [--debug]` to choose **Start** or **Finish**.
-Start is selected by default. Use arrows, Tab, or h/l to switch, Enter to
+Run `herdsman [--config PATH] [--debug]` to choose **Start session** or **End session**.
+Start session is selected by default. Use arrows, Tab, or h/l to switch, Enter to
 confirm, or s/f to choose directly. Escape, q, or Ctrl+C cancels without
-querying Herdr or starting/finishing anything. This uses the same horizontal
+querying Herdr or starting/ending anything. This uses the same horizontal
 prompt styling and navigation as “Start from a task file?”.
 
-`herdsman start` collects an optional local task file, a repository, and a
+`herdsman start` collects a local task file or session description, a context, and a
 destination machine, then starts a new Pi session through the Herdr CLI.
-`herdsman finish` selects and cleans up one or more existing sessions. Neither command
+`herdsman finish` ends and cleans up one or more existing sessions; it does not
+complete task notes or merge changes. The CLI command names remain unchanged. Neither command
 invokes a coordinator agent. The source lives in `go/herdsman/`.
 
 The launcher can run outside Herdr, including an ordinary terminal or Emacs
@@ -39,7 +40,7 @@ support can vary.
 
 The action runs `herdsman-plugin`, a small shim that asks the invoking Herdr
 binary to open the plugin's `launcher` popup. The popup runs the packaged
-`herdsman`, offering Start/Finish with the same inventory and themes as terminal launches.
+`herdsman`, offering Start session/End session with the same inventory and themes as terminal launches.
 Its width and height are 80% of **Herdr's terminal area**, not the display.
 It does not add a persistent tab or pane and closes after success or normal
 cancellation. On failure, the popup keeps the diagnostic and recovery output
@@ -57,7 +58,7 @@ herdr plugin action invoke brucenunk.herdsman.start
 ```
 
 The existing `start` action ID is retained for compatibility, but now opens the
-Start/Finish menu. The pane ID remains `launcher`. Build checks validate
+Start session/End session menu. The pane ID remains `launcher`. Build checks validate
 the generated plugin, offline registration/re-registration, registered action
 routing, and the popup runner's success/failure acknowledgement behavior;
 they do not prove popup interaction or focus behavior in a live Herdr session.
@@ -113,12 +114,37 @@ match Herdr's `[a-z][a-z0-9_-]{0,31}` rule. Wampa declares its twelve names;
 they are configuration, not a built-in Go pool. For managed configuration,
 declare this pool in Nix and rebuild.
 
-The repository picker shows the union of configured slugs and opens with no
-selection. Navigate to explicitly select a repository before pressing Enter;
+Choosing **No** to “Start from a task file?” opens **Session description** before
+context/machine selection. Enter a non-empty, single-line description and press
+Enter to continue. Escape returns to the task-file question; backing out of
+context returns to the description with its text preserved. The description
+names the session only: it is never submitted as an initial prompt.
+
+With a task file, the picker shows only the union of configured repository slugs.
+Without a task file, **Select context** combines those slugs with their deduplicated
+owners in one sorted, single-column list:
+
+```text
+Canva
+Canva/k8s
+brucenunk
+brucenunk/home-config
+brucenunk/other-repo
+```
+
+The slash distinguishes a repository from an owner. Selecting a repository
+always creates a fresh worktree and branch, even without a task file; selecting
+an owner starts directly at `$HOME/work/{owner}` without a worktree or branch.
+Owner directories must already exist. Owners are derived from the configured
+repository inventory, not filesystem discovery; there is no arbitrary path picker.
+
+The picker opens with no selection. Navigate to explicitly select a context before pressing Enter;
 filtering or returning from the machine picker clears the selection. Legacy
 task `repo` metadata is ignored. The machine picker shows
 only configured hosts for that repo which are Local or uniquely labelled,
 enabled saved Herdr machines. There is no availability probing while navigating.
+For an owner, it shows eligible hosts configured with any repository under that
+owner. No additional owner configuration is required.
 
 Sources are `$HOME/work/{owner}/{repo}/{gitdir}` on the destination. Despite the
 name, `gitdir` identifies a source directory for Herdr, **not** necessarily a
@@ -263,10 +289,11 @@ these styles. Ordinary filenames and terminal-native fallback are unchanged.
   files are excluded. Paths are relative, such as
   `epic/20260930T193614==todo--task.md`. Matching uses Bubbles' `list.DefaultFilter`
   entirely in memory; front matter and task bodies are not read during indexing.
-  Escape offers an empty session or cancellation. Invalid task metadata stays
+  Escape offers a session without a task file or cancellation. Invalid task metadata stays
   in the selector with an error. Missing or unreadable directories report the
-  failure and offer an empty session or cancellation.
-- Repository/machine lists: arrows or Ctrl+N (down)/Ctrl+P (up) to navigate,
+  failure and offer a session without a task file or cancellation. Continuing
+  without a task file still requires a session description.
+- Context/repository/machine lists: arrows or Ctrl+N (down)/Ctrl+P (up) to navigate,
   `/` to filter, Enter to choose, Escape to clear the filter or go back.
 - Ctrl+C cancels everywhere. Selection performs no launch mutations.
 
@@ -293,12 +320,23 @@ Task titles must not contain control characters. Filename and task-read error
 controls are displayed as escaped text, never terminal commands; original paths
 are retained for reading files.
 
-Task-based Pi sessions use the task title; empty sessions use the agent name and
-receive no initial prompt. Agent names are picked randomly from `agent_names`,
+Task-based Pi sessions use the task title. Sessions without a task file use the
+entered description as the Pi title; repository workspaces use that same label.
+Owner workspace labels put the description first, followed by the cleanup marker:
+`{description} · herdsman: {agent} · {owner}`. This keeps sessions readable and
+distinct while retaining snapshot-only cleanup discovery. All sessions without
+a task file receive no initial prompt. Descriptions must be valid UTF-8, contain
+no control characters, and fit the same 120 KiB CLI argument limit as task titles;
+owner descriptions must also leave room for the marker in the workspace label.
+Agent names are picked randomly from `agent_names`,
 excluding names on Local and **every enabled saved Herdr server**, including
 servers absent from this inventory. An unreachable server stops launch because
 global availability cannot be established. This policy is not a distributed
 lock: simultaneous launchers can race; Herdr enforces names on its own server.
+Owner launches also exclude names whose owner-session marker remains
+in the destination's workspace inventory, even if that workspace has no agent.
+If those leftovers exhaust the pool, inspect and close them manually; Herdsman
+does not automatically remove abandoned workspaces.
 
 Start reuses the machine profiles loaded for the picker. One `herdr api snapshot`
 per enabled server supplies agent inventory and, on the destination, parent
@@ -306,7 +344,7 @@ workspace inventory; it does not separately list workspaces or reload profiles
 after selection. Changes while the picker is open are handled by operation
 errors rather than a second machine-profile read.
 
-Herdsman uses Herdr's source resolver to select an existing non-linked source
+For repository contexts, Herdsman uses Herdr's source resolver to select an existing non-linked source
 workspace, renaming it to `owner/repo`, or creates that parent at the configured
 `gitdir`. The resolved source path must match the configured source directory;
 an unrelated source or a linked checkout resolving to a different backing
@@ -335,16 +373,48 @@ remote connection. **Inspect Herdr before retrying.** Herdsman never automatical
 retries, sends a second prompt, closes workspaces, or deletes worktrees.
 Each deliberate invocation is a fresh launch, not task resumption.
 
-## Finishing a session
+### Owner-directory sessions
+
+Each owner launch creates a new, session-scoped ordinary Herdr workspace at
+`$HOME/work/{owner}`. A workspace is runtime pane/process state, not the directory
+itself. Existing owner workspaces are not reused: two sessions at the same owner
+have different agents, workspaces, and conversations, but share filesystem contents.
+Concurrent edits can conflict; use repository worktrees for implementation work.
+Owner launch skips source resolution and worktree creation, reusing the same global
+agent-inventory snapshots. It validates that the owner path is a directory before
+creating the workspace: locally with a filesystem check, remotely within the
+existing SSH `$HOME` lookup, without an extra request. Herdr can otherwise silently
+fall back to `$HOME` for an invalid working directory. This check is not a lock;
+do not remove or replace the directory during launch.
+
+Starting in the owner directory loads applicable ancestor/owner guidance, not
+every descendant repository's `AGENTS.md`. Read repository-specific guidance
+when entering a repository during research.
+
+## Ending a session
 
 Run `herdsman finish [--config PATH]` from an ordinary terminal or a Herdr
 pane. It uses the same configuration and themes as `start`. The sorted picker
-lists workspace labels (the task title, or agent name for an empty session)
+lists workspace labels (the task title, or description for sessions without task files,
+with owner sessions retaining their cleanup marker)
 across Local and every enabled saved Herdr machine, including machines absent
 from the configured repository inventory. Duplicate labels gain an agent/machine
 prefix. An unreachable server stops discovery without changing anything.
 
-Only idle/done Pi agents in linked-worktree workspaces are eligible. One
+Only idle/done Pi agents in eligible linked-worktree workspaces or recognizable
+Herdsman owner-session workspaces are offered. Owner workspaces must retain the
+intact `herdsman: {agent} · {owner}` marker after the description, have no Git worktree metadata, contain
+one pane in one tab, and have exactly one agent. Duplicate workspace IDs/labels
+are excluded for owner sessions. Changing the agent name, removing/changing the
+marker, or adding panes/tabs makes the owner session ineligible; close it manually
+instead. Existing sessions with the older marker-only workspace label remain eligible.
+Changing any selected owner's workspace label after selection stops cleanup.
+The label is a discoverability convention, not a security or ownership token;
+do not assign this pattern to unrelated workspaces. The pinned snapshot exposes
+no stable ordinary-workspace root path, so owner classification does not rely
+on current shell directories or additional remote lookups.
+
+One
 `herdr api snapshot` per server supplies agents and workspaces together. The status
 check uses this inventory, with no extra calls or
 waiting. Checkouts reported as shared by multiple agents are excluded; the
@@ -352,7 +422,7 @@ current session is not excluded. There is no special default selection or filter
 Use arrows or Ctrl+N/Ctrl+P to navigate. Space toggles a row's selection mark
 and advances to the next row, whether selecting or deselecting. At the final
 row, it stays put without wrapping. The header shows the selected count.
-Enter finishes all marked sessions
+Enter ends all marked sessions
 in displayed order; if none are marked, it finishes only the highlighted row.
 Escape or Ctrl+C cancels without cleanup, including when rows are marked.
 
@@ -392,11 +462,23 @@ and removal are each sent at most once. Wait transport errors, timeouts, and
 unexpected responses also stop cleanup. Removal has a separate timeout.
 The common path uses four calls after selection; an early wakeup adds snapshot
 reads until the original session disappears or confirmation stops.
-After the final safety checks, Herdsman calls
+For worktree sessions, after the final safety checks, Herdsman calls
 `herdr worktree remove --workspace ID --force`. Forced removal intentionally
 discards uncommitted checkout contents and removes the task workspace. The
 parent repository workspace, Git branch, and saved Pi transcript remain.
 Finish runs no direct SSH commands; saved-machine routing belongs to Herdr.
+
+For owner sessions, the same final snapshot must confirm the workspace still
+has its original label, no worktree metadata, and one pane in one tab, and that
+no agent uses the selected workspace, agent name, or pane. Original/draining
+agent records permit the same bounded read retries. Other owner sessions in
+separate workspaces do not block cleanup, even when rooted in the same directory.
+Herdsman then calls `herdr workspace close ID`, never group closure or worktree
+removal. This drops workspace/pane runtime state while retaining all directory
+contents and the saved Pi transcript. Closure is sent at most once, with a
+separate timeout; uncertainty requires manual inspection before retrying.
+The normal owner end path also uses four calls after selection: quit, wait,
+snapshot, close. No extra discovery or pre-quit inspections are added.
 
 Herdr submits `/quit` through Pi's editor without clearing it. An existing draft
 can therefore be submitted instead of quitting. Check that the target session's
@@ -470,6 +552,6 @@ Repository verification additionally requires the staged Wampa Home Manager
 build; see `AGENTS.md`. These checks do not activate configuration or demonstrate
 a running Pi/remote server has loaded it.
 
-The bare-command entry menu, model comparisons, finish plugin integration, branch
-deletion, and cleanup of workspaces without a live agent are deferred. Use
-`herdsman start` and `herdsman finish` for task launch and cleanup.
+Model comparisons, branch deletion, repository-parent pruning, and cleanup of
+workspaces without a live agent are deferred. Use `herdsman start` and
+`herdsman finish` for session launch and cleanup.

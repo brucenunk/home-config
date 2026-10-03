@@ -99,7 +99,7 @@ func TestCommandPromptStyles(t *testing.T) {
 		for _, first := range []bool{true, false} {
 			m.start = first
 			view := ansi.Strip(m.View())
-			for _, text := range []string{"herdsman", "Start or finish a task?", "Start", "Finish", "s/f", "esc cancel"} {
+			for _, text := range []string{"herdsman", "Start or end a session?", "Start session", "End session", "s/f", "esc cancel"} {
 				if !strings.Contains(view, text) {
 					t.Fatalf("%s prompt missing %q: %q", mode, text, view)
 				}

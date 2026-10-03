@@ -53,6 +53,16 @@ func TestMain(m *testing.M) {
 			fmt.Fprint(os.Stderr, e)
 			os.Exit(1)
 		}
+		if os.Getenv("HERDSMAN_SSH_SHELL") == "1" {
+			// Exercise the real remote shell precondition through a fake SSH
+			// transport, without a server or a real SSH connection.
+			cmd := exec.Command("sh", "-c", os.Args[len(os.Args)-1])
+			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+			if err := cmd.Run(); err != nil {
+				os.Exit(1)
+			}
+			os.Exit(0)
+		}
 		fmt.Print(os.Getenv("HERDSMAN_RESPONSE"))
 		os.Exit(0)
 	}
@@ -104,6 +114,89 @@ func TestInventorySchemas(t *testing.T) {
 	ws, err := c.Workspaces(context.Background(), Local())
 	if err != nil || ws[0].Worktree.CheckoutPath != "/home/james/work/owner/repo/main" {
 		t.Fatal(ws, err)
+	}
+}
+
+func TestOwnerSnapshotAndWorkspaceClose(t *testing.T) {
+	c, path := fakeCLI(t, `{"result":{"snapshot":{"agents":[],"workspaces":[{"workspace_id":"owner-session","label":"herdsman: possum · owner","pane_count":1,"tab_count":1}]}}}`)
+	machine := Machine{ID: "remote-id", Label: "remote"}
+	snapshot, err := c.Snapshot(context.Background(), machine)
+	if err != nil || len(snapshot.Workspaces) != 1 || snapshot.Workspaces[0].PaneCount != 1 || snapshot.Workspaces[0].TabCount != 1 || snapshot.Workspaces[0].Worktree != nil {
+		t.Fatal(snapshot, err)
+	}
+	checkArgs(t, path, []string{"--machine", "remote-id", "api", "snapshot"})
+	for _, m := range []Machine{Local(), machine} {
+		t.Setenv("HERDSMAN_RESPONSE", `{"result":{"type":"ok"}}`)
+		if err := c.CloseWorkspace(context.Background(), m, "owner-session"); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"workspace", "close", "owner-session"}
+		if !m.IsLocal() {
+			want = append([]string{"--machine", m.ID}, want...)
+		}
+		checkArgs(t, path, want)
+	}
+	for _, response := range []string{`{"result":{}}`, `{"result":{"type":"workspace_closed"}}`, `{"error":{"code":"workspace_group_close_required","message":"inspect group"}}`} {
+		t.Setenv("HERDSMAN_RESPONSE", response)
+		if err := c.CloseWorkspace(context.Background(), machine, "owner-session"); err == nil {
+			t.Fatal("accepted uncertain close", response)
+		}
+	}
+}
+
+func TestOwnerDirectoryValidationLocalAndRemote(t *testing.T) {
+	for _, remote := range []bool{false, true} {
+		for _, kind := range []string{"directory", "missing", "file"} {
+			t.Run(fmt.Sprintf("remote=%t/%s", remote, kind), func(t *testing.T) {
+				c, argsPath := fakeCLI(t, "")
+				home := t.TempDir()
+				t.Setenv("HOME", home)
+				if err := os.Mkdir(filepath.Join(home, "work"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				owner := "owner"
+				path := filepath.Join(home, "work", owner)
+				switch kind {
+				case "directory":
+					if err := os.Mkdir(path, 0700); err != nil {
+						t.Fatal(err)
+					}
+				case "file":
+					if err := os.WriteFile(path, nil, 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				m := Local()
+				if remote {
+					m = Machine{ID: "remote", Label: "remote", Target: "ssh-alias", Enabled: true}
+					t.Setenv("HERDSMAN_SSH_SHELL", "1")
+				}
+				got, err := c.OwnerHome(context.Background(), m, owner)
+				if (err == nil) != (kind == "directory") || (err == nil && got != home) {
+					t.Fatal(got, err)
+				}
+				if remote {
+					checkArgs(t, argsPath, []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "--", "ssh-alias", `test -d "$HOME"'/work/owner' && printf '%s' "$HOME"`})
+				} else if _, err := os.Stat(argsPath); !os.IsNotExist(err) {
+					t.Fatal("local validation invoked a CLI", err)
+				}
+			})
+		}
+	}
+}
+
+func TestRemoteOwnerDirectoryShellQuoting(t *testing.T) {
+	c, _ := fakeCLI(t, "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("HERDSMAN_SSH_SHELL", "1")
+	owner := "owner'$(touch injected)"
+	if err := os.MkdirAll(filepath.Join(home, "work", owner), 0700); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.OwnerHome(context.Background(), Machine{ID: "remote", Label: "remote", Target: "ssh-alias"}, owner)
+	if err != nil || got != home {
+		t.Fatal(got, err)
 	}
 }
 

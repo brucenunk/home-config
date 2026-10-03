@@ -27,7 +27,7 @@ func main() {
 
 func run() error {
 	if len(os.Args) >= 2 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
-		fmt.Println("usage: herdsman [--config PATH] [--debug]\n       herdsman start [--config PATH] [--debug]\n       herdsman finish [--config PATH] [--debug]\n\nWithout a subcommand, choose Start or Finish interactively.")
+		fmt.Println("usage: herdsman [--config PATH] [--debug]\n       herdsman start [--config PATH] [--debug]\n       herdsman finish [--config PATH] [--debug]\n\nWithout a subcommand, choose Start session or End session interactively.")
 		return nil
 	}
 	command, args := "", os.Args[1:]
@@ -78,7 +78,7 @@ func run() error {
 		}
 		command = model.(tui.CommandModel).Command
 		if command == "" {
-			fmt.Println("Cancelled; nothing started or finished.")
+			fmt.Println("Cancelled; no session started or ended.")
 			return nil
 		}
 	}
@@ -110,11 +110,17 @@ func run() error {
 	r, err := app.Start(ctx, c, client, profiles, m.Request)
 	if err != nil {
 		if r.Path != "" {
-			fmt.Fprintf(os.Stderr, "Launch selection: %s · %s · %s\nPath: %s\nBranch: %s\n", r.Machine, r.Repo, r.AgentName, r.Path, r.Branch)
+			fmt.Fprintf(os.Stderr, "Launch selection: %s · %s · %s\nPath: %s\n", r.Machine, r.Repo, r.AgentName, r.Path)
+			if r.Branch != "" {
+				fmt.Fprintf(os.Stderr, "Branch: %s\n", r.Branch)
+			}
 		}
 		return err
 	}
-	fmt.Printf("Started %s: %s\nMachine: %s\nRepository: %s\nPath: %s\nBranch: %s\n", r.AgentName, r.Title, r.Machine, r.Repo, r.Path, r.Branch)
+	fmt.Printf("Started %s: %s\nMachine: %s\nContext: %s\nPath: %s\n", r.AgentName, r.Title, r.Machine, r.Repo, r.Path)
+	if r.Branch != "" {
+		fmt.Printf("Branch: %s\n", r.Branch)
+	}
 	if !m.Request.Machine.IsLocal() {
 		fmt.Printf("If the client did not switch, select %s → %s in Herdr.\n", r.Machine, r.Title)
 	}
@@ -127,7 +133,7 @@ func runFinish(ctx context.Context, c app.Config, client *herdr.Client, profiles
 		return err
 	}
 	if len(targets) == 0 {
-		fmt.Println("No eligible sessions to finish (requires idle/done Pi in a linked-worktree workspace).")
+		fmt.Println("No eligible sessions to end (requires idle/done Pi in a linked worktree or an unchanged, single-pane Herdsman owner workspace).")
 		return nil
 	}
 	initial, err := tui.NewFinish(c, targets, themeDir)
@@ -140,7 +146,7 @@ func runFinish(ctx context.Context, c app.Config, client *herdr.Client, profiles
 	}
 	m := model.(tui.FinishModel)
 	if !m.Ready {
-		fmt.Println("Cancelled; nothing finished.")
+		fmt.Println("Cancelled; no session ended.")
 		return nil
 	}
 	return finishSelected(ctx, client, m.Targets, os.Stdout)
@@ -175,5 +181,8 @@ func unattemptedSummary(targets []app.FinishTarget) string {
 }
 
 func finishSummary(target app.FinishTarget) string {
-	return fmt.Sprintf("Finished %q on %q; removed %q at %q\nBranch and saved Pi transcript retained.\n", target.Agent.Name, target.Machine.DisplayName(), target.Workspace.Label, target.Workspace.Worktree.CheckoutPath)
+	if target.OwnerSession() {
+		return fmt.Sprintf("Ended %q on %q; closed workspace %q\nDirectory contents and saved Pi transcript retained.\n", target.Agent.Name, target.Machine.DisplayName(), target.Workspace.Label)
+	}
+	return fmt.Sprintf("Ended %q on %q; removed %q at %q\nBranch and saved Pi transcript retained.\n", target.Agent.Name, target.Machine.DisplayName(), target.Workspace.Label, target.Workspace.Worktree.CheckoutPath)
 }

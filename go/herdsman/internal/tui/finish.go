@@ -67,7 +67,7 @@ func NewFinish(c app.Config, targets []app.FinishTarget, themeDir string) (Finis
 			items[i] = row
 		}
 	}
-	picker.choices("Choose sessions to finish", labels)
+	picker.choices("Choose sessions to end", labels)
 	picker.list.SetFilteringEnabled(false)
 	picker.list.SetItems(items)
 	return FinishModel{picker: picker}, nil
@@ -128,5 +128,5 @@ func (m FinishModel) View() string {
 	if m.Ready {
 		return ""
 	}
-	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n", m.picker.styles.title.Render(fmt.Sprintf("herdsman finish · %d selected", m.marked)), m.picker.list.View(), m.picker.styles.muted.Render("space toggles · enter finishes marked or highlighted · esc/ctrl+c cancels"))
+	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n", m.picker.styles.title.Render(fmt.Sprintf("herdsman · end session · %d selected", m.marked)), m.picker.list.View(), m.picker.styles.muted.Render("space toggles · enter ends marked or highlighted · esc/ctrl+c cancels"))
 }

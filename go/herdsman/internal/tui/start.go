@@ -10,6 +10,7 @@ import (
 	"github.com/brucenunk/home-config/go/herdsman/internal/tui/themes"
 	listkey "github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -20,6 +21,7 @@ const (
 	askTask stage = iota
 	pickTask
 	askEmpty
+	askDescription
 	pickRepo
 	pickMachine
 )
@@ -43,6 +45,7 @@ type Model struct {
 	stage         stage
 	yes           bool
 	selector      taskSelector
+	description   textinput.Model
 	indexLoading  bool
 	taskLoading   bool
 	readID        int
@@ -68,7 +71,12 @@ func New(c app.Config, profiles []herdr.Machine, themeDir string) (Model, error)
 	if err != nil {
 		return Model{}, err
 	}
-	return Model{config: c, profiles: profiles, styles: newStyles(colors), yes: true, width: 80, height: 22}, nil
+	styles := newStyles(colors)
+	description := textinput.New()
+	description.Prompt = "> "
+	description.Width = 76
+	styles.input(&description)
+	return Model{config: c, profiles: profiles, styles: styles, description: description, yes: true, width: 80, height: 22}, nil
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -126,8 +134,18 @@ func (m *Model) choices(title string, names []string) {
 func (m *Model) repositories() {
 	m.stage, m.message = pickRepo, ""
 	m.Request.Repo = ""
-	m.choices("Choose repository", m.config.RepositoryNames())
+	title := "Select context"
+	if m.Request.Task != nil {
+		title = "Choose repository"
+	}
+	m.choices(title, m.config.ContextNames(m.Request.Task == nil))
 	m.setRepositorySelection(false)
+}
+
+func (m *Model) beginDescription() tea.Cmd {
+	m.stage, m.message = askDescription, ""
+	m.Request.Task, m.Request.Repo = nil, ""
+	return m.description.Focus()
 }
 
 func (m Model) choiceDelegate(unselected bool) choiceDelegate {
@@ -200,6 +218,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width, m.height = size.Width, size.Height
+		m.description.Width = max(1, size.Width-4)
 		if m.stage == pickTask {
 			m.selector.resize(size.Width, size.Height)
 		}
@@ -210,6 +229,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		if key.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.stage == askDescription {
+			switch key.String() {
+			case "esc":
+				m.description.Blur()
+				m.stage, m.yes, m.message = askTask, true, ""
+				return m, nil
+			case "enter":
+				description := strings.TrimSpace(m.description.Value())
+				if err := app.ValidateSessionDescription(description); err != nil {
+					m.message = err.Error()
+					return m, nil
+				}
+				m.Request.Description = description
+				m.description.Blur()
+				m.repositories()
+				return m, nil
+			default:
+				m.message = ""
+			}
 		}
 		if m.stage == askTask || m.stage == askEmpty {
 			submit := false
@@ -231,13 +270,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, tea.Quit
 					}
 					m.Request.Task = nil
-					m.repositories()
+					cmd := m.beginDescription()
+					return m, cmd
 				} else if m.yes {
 					m.stage, m.message = pickTask, ""
 					cmd := m.beginTasks()
 					return m, cmd
 				} else {
-					m.repositories()
+					cmd := m.beginDescription()
+					return m, cmd
 				}
 			}
 			return m, nil
@@ -249,6 +290,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case pickRepo:
 				if m.list.FilterState() != list.Unfiltered {
 					break
+				}
+				if m.Request.Task == nil {
+					cmd := m.beginDescription()
+					return m, cmd
 				}
 				m.stage, m.yes, m.message = askTask, true, ""
 				m.Request.Task = nil
@@ -292,7 +337,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Request.Repo = name
 				m.destinations = m.config.Destinations(name, m.profiles)
 				if len(m.destinations) == 0 {
-					m.message = "No enabled Herdr machines configured for this repository."
+					m.message = "No enabled Herdr machines configured for this context."
 					return m, nil
 				}
 				names := make([]string, len(m.destinations))
@@ -319,6 +364,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	switch m.stage {
+	case askDescription:
+		m.description, cmd = m.description.Update(msg)
 	case pickTask:
 		cmd = m.selector.update(msg)
 	case pickRepo:
@@ -338,16 +385,18 @@ func (m Model) View() string {
 	case askTask, askEmpty:
 		question := "Start from a task file?"
 		if m.stage == askEmpty {
-			question = "Start an empty session instead? (No cancels)"
+			question = "Start without a task file instead? (No cancels)"
 		}
 		choices := m.styles.binaryChoices("Yes", "No", m.yes)
 		body = m.styles.title.Render(question) + "\n\n" + choices + "\n\n" + m.styles.muted.Render("←/→ choose · enter confirm · y/n · esc cancel")
+	case askDescription:
+		body = m.styles.title.Render("Session description") + "\n\n" + m.description.View() + "\n\n" + m.styles.muted.Render("enter continue · esc back")
 	case pickTask:
 		body = m.styles.title.Render("Choose task file") + "\n" + m.selector.view(m.indexLoading, m.taskLoading) + "\n" + m.styles.muted.Render("type to find · ↑/↓ or ctrl+p/ctrl+n choose · enter select · esc empty-session/cancel")
 	case pickRepo, pickMachine:
 		body = m.list.View() + "\n" + m.styles.muted.Render("esc back")
 		if m.stage == pickRepo {
-			body += "\n" + m.styles.muted.Render("Navigate to select a repository before pressing Enter.")
+			body += "\n" + m.styles.muted.Render("Navigate to select a context before pressing Enter.")
 		}
 	}
 	if m.message != "" {

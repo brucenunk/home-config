@@ -15,12 +15,17 @@ type Finisher interface {
 	Prompt(context.Context, herdr.Machine, string, string) error
 	WaitForQuit(context.Context, herdr.Machine, string) error
 	RemoveWorktree(context.Context, herdr.Machine, string, string) error
+	CloseWorkspace(context.Context, herdr.Machine, string) error
 }
 
 type FinishTarget struct {
 	Machine   herdr.Machine
 	Agent     herdr.Agent
 	Workspace herdr.Workspace
+}
+
+func (t FinishTarget) OwnerSession() bool {
+	return ownerSessionWorkspace(t.Workspace, t.Agent.Name)
 }
 
 // FinishTargets is a read-only snapshot. Checkouts used by multiple agents are
@@ -51,18 +56,26 @@ func finishTargetsOn(ctx context.Context, client Finisher, m herdr.Machine) ([]F
 	}
 	agents, workspaces := snapshot.Agents, snapshot.Workspaces
 	paths := workspacePaths(workspaces)
-	names, occupants := map[string]int{}, map[string]int{}
+	names, occupants, workspaceOccupants := map[string]int{}, map[string]int{}, map[string]int{}
+	labels, ids := map[string]int{}, map[string]int{}
+	for _, w := range workspaces {
+		labels[w.Label]++
+		ids[w.ID]++
+	}
 	for _, a := range agents {
 		names[a.Name]++
 		occupants[paths[a.WorkspaceID]]++
+		workspaceOccupants[a.WorkspaceID]++
 	}
 	var targets []FinishTarget
 	for _, w := range workspaces {
-		if w.ID == "" || w.Label == "" || w.Worktree == nil || !w.Worktree.Linked || w.Worktree.CheckoutPath == "" {
+		if w.ID == "" || w.Label == "" {
 			continue
 		}
 		for _, a := range agents {
-			if a.WorkspaceID == w.ID && a.Name != "" && a.PaneID != "" && a.Session != nil && a.Session.Kind != "" && a.Session.Value != "" && names[a.Name] == 1 && occupants[w.Worktree.CheckoutPath] == 1 && a.Kind == "pi" && (a.Status == "idle" || a.Status == "done") {
+			worktree := w.Worktree != nil && w.Worktree.Linked && w.Worktree.CheckoutPath != "" && occupants[w.Worktree.CheckoutPath] == 1
+			owner := ownerSessionWorkspace(w, a.Name) && workspaceOccupants[w.ID] == 1 && labels[w.Label] == 1 && ids[w.ID] == 1
+			if (worktree || owner) && a.WorkspaceID == w.ID && a.Name != "" && a.PaneID != "" && a.Session != nil && a.Session.Kind != "" && a.Session.Value != "" && names[a.Name] == 1 && a.Kind == "pi" && (a.Status == "idle" || a.Status == "done") {
 				targets = append(targets, FinishTarget{m, a, w})
 			}
 		}
@@ -84,6 +97,9 @@ func workspacePaths(workspaces []herdr.Workspace) map[string]string {
 // mutation. Exit confirmation (wait plus snapshots) has one deadline, separate
 // from removal, so a slow shutdown cannot consume the removal timeout.
 func Finish(ctx context.Context, client Finisher, target FinishTarget) error {
+	if !target.OwnerSession() && (target.Workspace.Worktree == nil || !target.Workspace.Worktree.Linked || target.Workspace.Worktree.CheckoutPath == "") {
+		return fmt.Errorf("ineligible session; no changes made")
+	}
 	if err := client.Prompt(ctx, target.Machine, target.Agent.Name, "/quit"); err != nil {
 		return fmt.Errorf("could not confirm /quit; state is uncertain, no removal attempted; inspect Herdr before retrying: %w", err)
 	}
@@ -92,6 +108,12 @@ func Finish(ctx context.Context, client Finisher, target FinishTarget) error {
 	cancel()
 	if err != nil {
 		return fmt.Errorf("after /quit; state is uncertain, no removal attempted; inspect Herdr before retrying: %w", err)
+	}
+	if target.OwnerSession() {
+		if err := client.CloseWorkspace(ctx, target.Machine, target.Workspace.ID); err != nil {
+			return fmt.Errorf("could not confirm workspace closure; state is uncertain, closure was not retried; directory contents retained; inspect Herdr: %w", err)
+		}
+		return nil
 	}
 	if err := client.RemoveWorktree(ctx, target.Machine, target.Workspace.ID, target.Workspace.Worktree.CheckoutPath); err != nil {
 		return fmt.Errorf("could not confirm removal; state is uncertain, removal was not retried; inspect Herdr: %w", err)
@@ -109,7 +131,7 @@ func confirmQuit(ctx context.Context, client Finisher, target FinishTarget) erro
 		}
 		snapshot, err := finishSnapshot(ctx, client, target.Machine)
 		if err != nil {
-			return fmt.Errorf("recheck checkout and agents: %w", err)
+			return fmt.Errorf("recheck workspace and agents: %w", err)
 		}
 		present, err := originalStillPresent(snapshot, target)
 		if err != nil {
@@ -132,19 +154,30 @@ func confirmQuit(ctx context.Context, client Finisher, target FinishTarget) erro
 
 func originalStillPresent(snapshot herdr.Snapshot, target FinishTarget) (bool, error) {
 	workspaces, agents := snapshot.Workspaces, snapshot.Agents
+	owner := target.OwnerSession()
 	valid := false
+	matches := 0
 	for _, w := range workspaces {
-		if w.ID == target.Workspace.ID && w.Worktree != nil && w.Worktree.Linked && w.Worktree.CheckoutPath == target.Workspace.Worktree.CheckoutPath {
-			valid = true
+		if w.ID == target.Workspace.ID {
+			matches++
+			if matches > 1 {
+				return false, fmt.Errorf("ambiguous workspace after /quit")
+			}
+			if owner {
+				valid = w.Label == target.Workspace.Label && ownerSessionWorkspace(w, target.Agent.Name)
+			} else {
+				valid = w.Worktree != nil && w.Worktree.Linked && w.Worktree.CheckoutPath == target.Workspace.Worktree.CheckoutPath
+			}
 		}
 	}
 	if !valid {
-		return false, fmt.Errorf("checkout changed after /quit")
+		return false, fmt.Errorf("workspace or checkout changed after /quit")
 	}
 	paths := workspacePaths(workspaces)
 	present := false
 	for _, a := range agents {
-		if a.WorkspaceID == target.Workspace.ID || paths[a.WorkspaceID] == target.Workspace.Worktree.CheckoutPath || a.Name == target.Agent.Name || a.PaneID == target.Agent.PaneID {
+		sameCheckout := !owner && paths[a.WorkspaceID] == target.Workspace.Worktree.CheckoutPath
+		if a.WorkspaceID == target.Workspace.ID || sameCheckout || a.Name == target.Agent.Name || a.PaneID == target.Agent.PaneID {
 			if present {
 				return false, fmt.Errorf("additional checkout occupant after /quit")
 			}

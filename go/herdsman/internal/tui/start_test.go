@@ -48,9 +48,18 @@ func key(m Model, s string) (Model, tea.Cmd) {
 	return next.(Model), cmd
 }
 
+// Existing picker tests enter through the description screen, rather than
+// bypassing the new promptless launch flow.
+func describeSession(m Model) Model {
+	m, _ = key(m, "Investigate deploy latency")
+	m, _ = key(m, "enter")
+	return m
+}
+
 func TestEmptySelectionAndCancellation(t *testing.T) {
 	m := newModel(t, config(t), nil)
 	m, _ = key(m, "n")
+	m = describeSession(m)
 	if m.stage != pickRepo || m.Ready {
 		t.Fatal(m.stage, m.Ready)
 	}
@@ -64,13 +73,47 @@ func TestEmptySelectionAndCancellation(t *testing.T) {
 		t.Fatal(m.stage)
 	}
 	m, cmd := key(m, "enter")
-	if !m.Ready || m.Request.Task != nil || m.Request.Repo != "owner/one" || !m.Request.Machine.IsLocal() || cmd == nil {
+	if !m.Ready || m.Request.Task != nil || m.Request.Repo != "owner" || !m.Request.Machine.IsLocal() || cmd == nil {
 		t.Fatal(m.Request, m.Ready)
 	}
 	for _, s := range []string{"esc", "ctrl+c", "q"} {
 		m, cmd = key(newModel(t, config(t), nil), s)
 		if m.Ready || cmd == nil {
 			t.Fatal("cancel did not exit")
+		}
+	}
+}
+
+func TestSingleColumnContextsAndTaskRepositories(t *testing.T) {
+	for _, withTask := range []bool{false, true} {
+		m := newModel(t, config(t), nil)
+		if withTask {
+			m.Request.Task = &app.Task{Title: "Task"}
+			m.repositories()
+		} else {
+			m, _ = key(m, "n")
+			m = describeSession(m)
+		}
+		want := []string{"owner", "owner/one", "owner/two"}
+		if withTask {
+			want = want[1:]
+		}
+		if len(m.list.Items()) != len(want) || m.repoSelected {
+			t.Fatal(m.list.Items(), m.repoSelected)
+		}
+		for i, row := range m.list.Items() {
+			if row.(item).Title() != want[i] || row.(item).Description() != "" {
+				t.Fatal("unexpected columns or ordering", row)
+			}
+		}
+		m, _ = key(m, "down")
+		if !withTask {
+			m, _ = key(m, "down") // Choose a repository despite having no task file.
+		}
+		m, _ = key(m, "enter")
+		m, _ = key(m, "enter")
+		if !m.Ready || m.Request.Repo != "owner/one" || (m.Request.Task != nil) != withTask {
+			t.Fatal(m.Request)
 		}
 	}
 }
@@ -83,6 +126,7 @@ func TestChoiceNavigationBindings(t *testing.T) {
 				c.Machines["remote"] = app.MachineConfig{Repositories: []string{"owner/one"}}
 				profiles := []herdr.Machine{{ID: "remote-profile", Label: "remote", Enabled: true}}
 				m, _ := key(newModel(t, c, profiles), "n")
+				m = describeSession(m)
 				m, _ = key(m, bindings[0]) // Explicitly select the first repository.
 				if picker == pickMachine {
 					m, _ = key(m, "enter")
@@ -106,11 +150,77 @@ func TestChoiceNavigationBindings(t *testing.T) {
 	}
 }
 
+func TestDescriptionFormRequiredBeforeContextAndPreservedOnBack(t *testing.T) {
+	m, _ := key(newModel(t, config(t), nil), "n")
+	if m.stage != askDescription || !m.description.Focused() || m.description.Value() != "" || !strings.Contains(m.View(), "Session description") || !strings.Contains(m.View(), "enter continue · esc back") {
+		t.Fatal(m.stage, m.View())
+	}
+	m, _ = key(m, "enter")
+	if m.stage != askDescription || m.message == "" || m.Ready {
+		t.Fatal("empty description advanced", m.stage, m.message)
+	}
+	m, _ = key(m, "   ")
+	m, _ = key(m, "enter")
+	if m.stage != askDescription || m.Ready {
+		t.Fatal("whitespace advanced")
+	}
+	m.description.SetValue("")
+	m, _ = key(m, "Investigate déploiement 🐾")
+	m, _ = key(m, "enter")
+	if m.stage != pickRepo || m.description.Focused() || m.Request.Description != "Investigate déploiement 🐾" || m.repoSelected {
+		t.Fatal(m.stage, m.Request)
+	}
+	m, _ = key(m, "esc")
+	if m.stage != askDescription || !m.description.Focused() || m.description.Value() != "Investigate déploiement 🐾" {
+		t.Fatal("context back lost description", m.stage, m.description.Value())
+	}
+	m, _ = key(m, "esc")
+	if m.stage != askTask || m.description.Focused() {
+		t.Fatal("description escape did not go back")
+	}
+	m, _ = key(m, "n")
+	m, _ = key(m, "enter")
+	if m.stage != pickRepo || m.Request.Description != "Investigate déploiement 🐾" {
+		t.Fatal(m.Request)
+	}
+	m, _ = key(m, "down")
+	m, _ = key(m, "enter")
+	if m.stage != pickMachine {
+		t.Fatal(m.stage)
+	}
+	m, _ = key(m, "esc")
+	m, _ = key(m, "esc")
+	if m.stage != askDescription || m.description.Value() != "Investigate déploiement 🐾" {
+		t.Fatal("machine back lost description")
+	}
+}
+
+func TestDescriptionInputResizeAndCancellation(t *testing.T) {
+	m, _ := key(newModel(t, config(t), nil), "n")
+	for _, width := range []int{1, 20, 100} {
+		next, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 20})
+		m = next.(Model)
+		if m.description.Width != max(1, width-4) {
+			t.Fatal(m.description.Width)
+		}
+		_ = m.View()
+	}
+	m, _ = key(m, "q") // q is description text, not a quit shortcut here.
+	if m.description.Value() != "q" {
+		t.Fatal(m.description.Value())
+	}
+	m, cmd := key(m, "ctrl+c")
+	if cmd == nil || m.Ready {
+		t.Fatal("description cancellation did not exit")
+	}
+}
+
 func TestLocalDisplayDoesNotChangeMachineIdentity(t *testing.T) {
 	c := config(t)
 	c.Machines["Local"] = app.MachineConfig{Repositories: []string{"owner/one"}}
 	profiles := []herdr.Machine{{ID: "remote-profile", Label: "Local", Target: "ssh-alias", Enabled: true}}
 	m, _ := key(newModel(t, c, profiles), "n")
+	m = describeSession(m)
 	m, _ = key(m, "down")
 	m, _ = key(m, "enter")
 	if selected := m.list.SelectedItem().(machineItem); selected.Title() != "Local" || !selected.machine.IsLocal() {
@@ -142,7 +252,7 @@ func TestLeavingTaskPickerOffersEmptyOrCancel(t *testing.T) {
 		}
 		m, cmd := key(m, answer)
 		if answer == "y" {
-			if m.stage != pickRepo || m.Request.Task != nil {
+			if m.stage != askDescription || m.Request.Task != nil {
 				t.Fatal(m.stage)
 			}
 		} else if cmd == nil || m.Ready {
@@ -188,6 +298,7 @@ func TestUnavailableMachineAndBackNavigation(t *testing.T) {
 	c.Machines = map[string]app.MachineConfig{"missing": {Repositories: []string{"owner/one"}}}
 	m := newModel(t, c, nil)
 	m, _ = key(m, "n")
+	m = describeSession(m)
 	m, _ = key(m, "down")
 	m, _ = key(m, "enter")
 	if m.stage != pickRepo || m.message == "" || m.Ready {
@@ -195,6 +306,7 @@ func TestUnavailableMachineAndBackNavigation(t *testing.T) {
 	}
 	m = newModel(t, config(t), nil)
 	m, _ = key(m, "n")
+	m = describeSession(m)
 	m, _ = key(m, "down")
 	m, _ = key(m, "enter")
 	m, _ = key(m, "esc")
@@ -206,7 +318,7 @@ func TestUnavailableMachineAndBackNavigation(t *testing.T) {
 		t.Fatal("back navigation retained repository selection")
 	}
 	m, _ = key(m, "esc")
-	if m.stage != askTask {
+	if m.stage != askDescription {
 		t.Fatal(m.stage)
 	}
 }
@@ -214,6 +326,7 @@ func TestUnavailableMachineAndBackNavigation(t *testing.T) {
 func TestFilteringEnterDoesNotChoosePrematurely(t *testing.T) {
 	m := newModel(t, config(t), nil)
 	m, _ = key(m, "n")
+	m = describeSession(m)
 	m, _ = key(m, "/")
 	if m.list.FilterState() != list.Filtering {
 		t.Fatal(m.list.FilterState())
@@ -226,6 +339,7 @@ func TestFilteringEnterDoesNotChoosePrematurely(t *testing.T) {
 
 func TestRepositorySelectionSurvivesResizeButNotFiltering(t *testing.T) {
 	m, _ := key(newModel(t, config(t), nil), "n")
+	m = describeSession(m)
 	resize := func() {
 		next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 		m = next.(Model)
@@ -236,7 +350,7 @@ func TestRepositorySelectionSurvivesResizeButNotFiltering(t *testing.T) {
 	}
 	m, _ = key(m, "down")
 	resize()
-	if !m.repoSelected || m.list.SelectedItem().(item) != "owner/one" {
+	if !m.repoSelected || m.list.SelectedItem().(item) != "owner" {
 		t.Fatal("resize lost explicit selection")
 	}
 	m, _ = key(m, "/")
@@ -276,7 +390,7 @@ func TestRepositorySelectionSurvivesResizeButNotFiltering(t *testing.T) {
 	}
 	m, _ = key(m, "down")
 	m, _ = key(m, "enter")
-	if m.stage != pickMachine || m.Request.Repo != "owner/one" {
+	if m.stage != pickMachine || m.Request.Repo != "owner" {
 		t.Fatal("explicit selection did not advance", m.Request)
 	}
 }
@@ -285,6 +399,7 @@ func TestSingleRepositoryStillRequiresSelection(t *testing.T) {
 	c := config(t)
 	c.Machines["local"] = app.MachineConfig{Repositories: []string{"owner/one"}}
 	m, _ := key(newModel(t, c, nil), "n")
+	m = describeSession(m)
 	for i := 0; i < 2; i++ {
 		m, _ = key(m, "enter")
 		if m.stage != pickRepo || m.repoSelected || m.Ready {
@@ -293,13 +408,14 @@ func TestSingleRepositoryStillRequiresSelection(t *testing.T) {
 	}
 	m, _ = key(m, "up")
 	m, _ = key(m, "enter")
-	if m.stage != pickMachine || m.Request.Repo != "owner/one" {
+	if m.stage != pickMachine || m.Request.Repo != "owner" {
 		t.Fatal("explicit selection did not advance")
 	}
 }
 
 func TestRepositorySelectionKeepsFrameHeightStable(t *testing.T) {
 	m, _ := key(newModel(t, config(t), nil), "n")
+	m = describeSession(m)
 	initialHeight := strings.Count(m.View(), "\n")
 	for _, navigation := range []string{"down", "down", "up"} {
 		m, _ = key(m, navigation)
@@ -335,6 +451,7 @@ func TestInitialAndLaterWindowSizes(t *testing.T) {
 
 func TestUnselectedRepositoryRendersWithOneRowPagination(t *testing.T) {
 	m, _ := key(newModel(t, config(t), nil), "n")
+	m = describeSession(m)
 	for _, size := range []tea.WindowSizeMsg{
 		{Width: 20, Height: 1}, {Width: 80, Height: 8}, {Width: 100, Height: 30},
 	} {
@@ -357,7 +474,7 @@ func TestUnselectedRepositoryRendersWithOneRowPagination(t *testing.T) {
 	m, _ = key(m, "down")
 	_ = m.View()
 	m, _ = key(m, "enter")
-	if m.stage != pickMachine || m.Request.Repo != "owner/one" {
+	if m.stage != pickMachine || m.Request.Repo != "owner" {
 		t.Fatal("small-terminal selection did not advance")
 	}
 }

@@ -137,6 +137,10 @@ func batchFixture() *batchFinisher {
 	return f
 }
 
+func (f *batchFinisher) CloseWorkspace(_ context.Context, _ herdr.Machine, id string) error {
+	return f.call("close:" + id)
+}
+
 func TestFinishSelectedSharesDiscoveryAndFinishesSequentially(t *testing.T) {
 	f := batchFixture()
 	targets, err := app.FinishTargets(context.Background(), f, nil)
@@ -152,7 +156,7 @@ func TestFinishSelectedSharesDiscoveryAndFinishesSequentially(t *testing.T) {
 		name := target.Agent.Name
 		want = append(want, "prompt:"+name+":/quit", "wait:pane-"+name, "snapshot:"+name, "remove:"+name+":/repo/"+name)
 	}
-	if !reflect.DeepEqual(f.calls, want) || strings.Count(out.String(), "Finished ") != 3 {
+	if !reflect.DeepEqual(f.calls, want) || strings.Count(out.String(), "Ended ") != 3 {
 		t.Fatalf("calls=%v, output=%s", f.calls, out.String())
 	}
 }
@@ -172,7 +176,7 @@ func TestFinishSelectedStopsAtFirstFailure(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), `finish "three" on "Local" failed`) || !strings.Contains(err.Error(), "1 completed") || !strings.Contains(err.Error(), `Not attempted: "two" on "Local"`) {
 				t.Fatalf("wrong failure report: %v", err)
 			}
-			if strings.Count(out.String(), "Finished ") != 1 || !strings.Contains(out.String(), `Finished "one"`) || f.calls[len(f.calls)-1] != failure {
+			if strings.Count(out.String(), "Ended ") != 1 || !strings.Contains(out.String(), `Ended "one"`) || f.calls[len(f.calls)-1] != failure {
 				t.Fatalf("continued after failure: %v, %s", f.calls, out.String())
 			}
 		})
@@ -199,7 +203,7 @@ func TestFinishSelectedCancellation(t *testing.T) {
 		if before {
 			completed, calls = 0, 1
 		}
-		if !errors.Is(err, context.Canceled) || len(f.calls) != calls || strings.Count(out.String(), "Finished ") != completed || !strings.Contains(err.Error(), `"two" on "Local"`) {
+		if !errors.Is(err, context.Canceled) || len(f.calls) != calls || strings.Count(out.String(), "Ended ") != completed || !strings.Contains(err.Error(), `"two" on "Local"`) {
 			t.Fatalf("before=%v calls=%v output=%s err=%v", before, f.calls, out.String(), err)
 		}
 	}
@@ -218,5 +222,24 @@ func TestFinishSummaryEscapesControls(t *testing.T) {
 	summary := finishSummary(target)
 	if strings.ContainsAny(summary, "\x1b\x07\r") || strings.Count(summary, "\n") != 2 || !strings.Contains(summary, `Task\x1b[2J`) || !strings.Contains(summary, `/repo/task\r\n`) {
 		t.Fatal("unsafe finish output", summary)
+	}
+}
+
+func TestFinishMixedOwnerAndWorktreeSessions(t *testing.T) {
+	f := batchFixture()
+	f.snapshot.Workspaces[0].Worktree = nil
+	f.snapshot.Workspaces[0].PaneCount, f.snapshot.Workspaces[0].TabCount = 1, 1
+	f.snapshot.Workspaces[0].Label = "herdsman: one · owner"
+	targets, err := app.FinishTargets(context.Background(), f, nil)
+	if err != nil || len(targets) != 3 || !targets[0].OwnerSession() {
+		t.Fatal(targets, err)
+	}
+	var out bytes.Buffer
+	if err := finishSelected(context.Background(), f, targets, &out); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"snapshot:", "prompt:one:/quit", "wait:pane-one", "snapshot:one", "close:one", "prompt:three:/quit", "wait:pane-three", "snapshot:three", "remove:three:/repo/three", "prompt:two:/quit", "wait:pane-two", "snapshot:two", "remove:two:/repo/two"}
+	if !reflect.DeepEqual(f.calls, want) || !strings.Contains(out.String(), "Directory contents and saved Pi transcript retained.") || strings.Count(out.String(), "Ended ") != 3 {
+		t.Fatal(f.calls, out.String())
 	}
 }

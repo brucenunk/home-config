@@ -160,6 +160,7 @@ func TestUnicodeFilenameMatchesUseActualFilterOffsets(t *testing.T) {
 func TestUnselectedRepositoryHasNoHighlightedRow(t *testing.T) {
 	freshRenderer(t)
 	m, _ := key(newModel(t, config(t), nil), "n")
+	m = describeSession(m)
 	d := m.choiceDelegate(true)
 	var first, other bytes.Buffer
 	d.Render(&first, m.list, 0, item("owner/repo"))

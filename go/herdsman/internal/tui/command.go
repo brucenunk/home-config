@@ -55,8 +55,8 @@ func (m CommandModel) View() string {
 	}
 	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n",
 		m.styles.title.Render("herdsman"),
-		m.styles.title.Render("Start or finish a task?"),
-		m.styles.binaryChoices("Start", "Finish", m.start),
+		m.styles.title.Render("Start or end a session?"),
+		m.styles.binaryChoices("Start session", "End session", m.start),
 		m.styles.muted.Render("←/→ choose · enter confirm · s/f · esc cancel"),
 		m.styles.muted.Render("ctrl+c cancels"))
 }
