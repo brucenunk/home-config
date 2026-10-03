@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
 )
 
 type Finisher interface {
-	Agents(context.Context, herdr.Machine) ([]herdr.Agent, error)
-	Workspaces(context.Context, herdr.Machine) ([]herdr.Workspace, error)
+	Snapshot(context.Context, herdr.Machine) (herdr.Snapshot, error)
 	Prompt(context.Context, herdr.Machine, string, string) error
+	WaitForQuit(context.Context, herdr.Machine, string) error
 	RemoveWorktree(context.Context, herdr.Machine, string, string) error
 }
 
@@ -44,14 +45,11 @@ func FinishTargets(ctx context.Context, client Finisher, profiles []herdr.Machin
 }
 
 func finishTargetsOn(ctx context.Context, client Finisher, m herdr.Machine) ([]FinishTarget, error) {
-	agents, err := finishAgents(ctx, client, m)
+	snapshot, err := finishSnapshot(ctx, client, m)
 	if err != nil {
 		return nil, err
 	}
-	workspaces, err := client.Workspaces(ctx, m)
-	if err != nil {
-		return nil, err
-	}
+	agents, workspaces := snapshot.Agents, snapshot.Workspaces
 	paths := workspacePaths(workspaces)
 	names, occupants := map[string]int{}, map[string]int{}
 	for _, a := range agents {
@@ -82,55 +80,18 @@ func workspacePaths(workspaces []herdr.Workspace) map[string]string {
 	return paths
 }
 
-func sameTarget(a, b FinishTarget) bool {
-	return a.Agent.Name == b.Agent.Name && a.Agent.PaneID == b.Agent.PaneID && a.Agent.Session != nil && b.Agent.Session != nil && *a.Agent.Session == *b.Agent.Session && a.Workspace.ID == b.Workspace.ID && a.Workspace.Worktree != nil && b.Workspace.Worktree != nil && a.Workspace.Worktree.CheckoutPath == b.Workspace.Worktree.CheckoutPath
-}
-
-// Finish never retries a mutation. Polling after /quit is bounded separately
-// from the final removal, so a slow quit cannot consume the removal timeout.
+// Selection authorizes /quit without a pre-quit recheck. Finish never retries a
+// mutation. Exit confirmation (wait plus snapshots) has one deadline, separate
+// from removal, so a slow shutdown cannot consume the removal timeout.
 func Finish(ctx context.Context, client Finisher, target FinishTarget) error {
-	fresh, err := finishTargetsOn(ctx, client, target.Machine)
-	if err != nil {
-		return fmt.Errorf("recheck session; no changes made: %w", err)
-	}
-	matched := false
-	for _, t := range fresh {
-		if sameTarget(t, target) {
-			matched = true
-		}
-	}
-	if !matched {
-		return fmt.Errorf("selected session changed or is no longer eligible; no changes made")
-	}
 	if err := client.Prompt(ctx, target.Machine, target.Agent.Name, "/quit"); err != nil {
 		return fmt.Errorf("could not confirm /quit; state is uncertain, no removal attempted; inspect Herdr before retrying: %w", err)
 	}
-	if err := waitForQuit(ctx, client, target); err != nil {
+	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	err := confirmQuit(waitCtx, client, target)
+	cancel()
+	if err != nil {
 		return fmt.Errorf("after /quit; state is uncertain, no removal attempted; inspect Herdr before retrying: %w", err)
-	}
-	// Recheck the checkout after quitting: never remove a replacement workspace.
-	workspaces, err := client.Workspaces(ctx, target.Machine)
-	if err != nil {
-		return fmt.Errorf("recheck checkout after /quit; no removal attempted: %w", err)
-	}
-	valid := false
-	for _, w := range workspaces {
-		if w.ID == target.Workspace.ID && w.Worktree != nil && w.Worktree.Linked && w.Worktree.CheckoutPath == target.Workspace.Worktree.CheckoutPath {
-			valid = true
-		}
-	}
-	if !valid {
-		return fmt.Errorf("checkout changed after /quit; no removal attempted")
-	}
-	agents, err := finishAgents(ctx, client, target.Machine)
-	if err != nil {
-		return fmt.Errorf("recheck agents after /quit; no removal attempted: %w", err)
-	}
-	paths := workspacePaths(workspaces)
-	for _, a := range agents {
-		if a.WorkspaceID == target.Workspace.ID || paths[a.WorkspaceID] == target.Workspace.Worktree.CheckoutPath || a.Name == target.Agent.Name {
-			return fmt.Errorf("agent appeared after /quit; no removal attempted")
-		}
 	}
 	if err := client.RemoveWorktree(ctx, target.Machine, target.Workspace.ID, target.Workspace.Worktree.CheckoutPath); err != nil {
 		return fmt.Errorf("could not confirm removal; state is uncertain, removal was not retried; inspect Herdr: %w", err)
@@ -138,44 +99,100 @@ func Finish(ctx context.Context, client Finisher, target FinishTarget) error {
 	return nil
 }
 
-func finishAgents(ctx context.Context, client Finisher, m herdr.Machine) ([]herdr.Agent, error) {
-	agents, err := client.Agents(ctx, m)
-	if err != nil {
-		return nil, err
+func confirmQuit(ctx context.Context, client Finisher, target FinishTarget) error {
+	if err := client.WaitForQuit(ctx, target.Machine, target.Agent.PaneID); err != nil {
+		return err
 	}
-	for _, a := range agents {
-		if a.WorkspaceID == "" || a.PaneID == "" || a.Status == "" {
-			return nil, fmt.Errorf("incomplete agent inventory")
-		}
-	}
-	return agents, nil
-}
-
-func waitForQuit(ctx context.Context, client Finisher, target FinishTarget) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 	for {
-		agents, err := finishAgents(ctx, client, target.Machine)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		snapshot, err := finishSnapshot(ctx, client, target.Machine)
+		if err != nil {
+			return fmt.Errorf("recheck checkout and agents: %w", err)
+		}
+		present, err := originalStillPresent(snapshot, target)
 		if err != nil {
 			return err
 		}
-		present := false
-		for _, a := range agents {
-			if a.Name == target.Agent.Name {
-				present = true
-			} else if a.WorkspaceID == target.Workspace.ID {
-				return fmt.Errorf("another agent appeared in the selected workspace")
-			}
-		}
 		if !present {
-			return nil
+			return ctx.Err()
 		}
-		timer := time.NewTimer(time.Second)
+		// Lifecycle release can precede process/inventory disappearance. Retry
+		// reads for the original session or its identity-drained record only.
+		timer := time.NewTimer(100 * time.Millisecond)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return ctx.Err()
+			return fmt.Errorf("selected agent still present after /quit: %w", ctx.Err())
 		case <-timer.C:
 		}
 	}
+}
+
+func originalStillPresent(snapshot herdr.Snapshot, target FinishTarget) (bool, error) {
+	workspaces, agents := snapshot.Workspaces, snapshot.Agents
+	valid := false
+	for _, w := range workspaces {
+		if w.ID == target.Workspace.ID && w.Worktree != nil && w.Worktree.Linked && w.Worktree.CheckoutPath == target.Workspace.Worktree.CheckoutPath {
+			valid = true
+		}
+	}
+	if !valid {
+		return false, fmt.Errorf("checkout changed after /quit")
+	}
+	paths := workspacePaths(workspaces)
+	present := false
+	for _, a := range agents {
+		if a.WorkspaceID == target.Workspace.ID || paths[a.WorkspaceID] == target.Workspace.Worktree.CheckoutPath || a.Name == target.Agent.Name || a.PaneID == target.Agent.PaneID {
+			if present {
+				return false, fmt.Errorf("additional checkout occupant after /quit")
+			}
+			// Herdr can clear the kind/session before dropping the named agent
+			// record. This permits another read, never removal of an occupant.
+			draining := a.Name == target.Agent.Name && a.PaneID == target.Agent.PaneID && a.WorkspaceID == target.Agent.WorkspaceID && a.Kind == "" && a.Session == nil
+			if !draining {
+				if changed := agentIdentityChanges(a, target.Agent); len(changed) > 0 {
+					return false, fmt.Errorf("agent identity changed after /quit: %s", strings.Join(changed, ", "))
+				}
+			}
+			present = true
+		}
+	}
+	return present, nil
+}
+
+func agentIdentityChanges(a, selected herdr.Agent) []string {
+	var changed []string
+	if a.Name != selected.Name {
+		changed = append(changed, "name")
+	}
+	if a.Kind != selected.Kind {
+		changed = append(changed, "kind")
+	}
+	if a.PaneID != selected.PaneID {
+		changed = append(changed, "pane")
+	}
+	if a.WorkspaceID != selected.WorkspaceID {
+		changed = append(changed, "workspace")
+	}
+	if a.Session == nil || selected.Session == nil {
+		changed = append(changed, "missing session reference")
+	} else if *a.Session != *selected.Session {
+		changed = append(changed, "session reference")
+	}
+	return changed
+}
+
+func finishSnapshot(ctx context.Context, client Finisher, m herdr.Machine) (herdr.Snapshot, error) {
+	snapshot, err := client.Snapshot(ctx, m)
+	if err != nil {
+		return snapshot, err
+	}
+	for _, a := range snapshot.Agents {
+		if a.WorkspaceID == "" || a.PaneID == "" || a.Status == "" {
+			return snapshot, fmt.Errorf("incomplete agent inventory")
+		}
+	}
+	return snapshot, nil
 }

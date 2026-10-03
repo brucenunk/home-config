@@ -16,6 +16,7 @@ type fakeLauncher struct {
 	profiles                      []herdr.Machine
 	agents                        map[string][]herdr.Agent
 	workspaces                    []herdr.Workspace
+	workspacesByMachine           map[string][]herdr.Workspace
 	sourceID                      string
 	sourcePath                    string
 	requestedSource, parentSource string
@@ -32,15 +33,18 @@ func (f *fakeLauncher) call(m herdr.Machine, op string) error {
 	}
 	return nil
 }
-func (f *fakeLauncher) Machines(context.Context) ([]herdr.Machine, error) { return f.profiles, nil }
+func start(ctx context.Context, c Config, f *fakeLauncher, req StartRequest) (StartResult, error) {
+	return Start(ctx, c, f, f.profiles, req)
+}
 func (f *fakeLauncher) Home(_ context.Context, m herdr.Machine) (string, error) {
 	return "/home/test", f.call(m, "home")
 }
-func (f *fakeLauncher) Agents(_ context.Context, m herdr.Machine) ([]herdr.Agent, error) {
-	return f.agents[m.Label], f.call(m, "agents")
-}
-func (f *fakeLauncher) Workspaces(_ context.Context, m herdr.Machine) ([]herdr.Workspace, error) {
-	return f.workspaces, f.call(m, "workspaces")
+func (f *fakeLauncher) Snapshot(_ context.Context, m herdr.Machine) (herdr.Snapshot, error) {
+	workspaces := f.workspaces
+	if f.workspacesByMachine != nil {
+		workspaces = f.workspacesByMachine[m.Label]
+	}
+	return herdr.Snapshot{Agents: f.agents[m.Label], Workspaces: workspaces}, f.call(m, "snapshot")
 }
 func (f *fakeLauncher) Source(_ context.Context, m herdr.Machine, path string) (herdr.Source, error) {
 	f.requestedSource = path
@@ -98,14 +102,14 @@ func TestStartLocalRemoteAndEmpty(t *testing.T) {
 			if withTask {
 				req.Task = &Task{Title: "Task title", Skill: "review", Body: "Task body"}
 			}
-			r, err := Start(context.Background(), startConfig(), f, req)
+			r, err := start(context.Background(), startConfig(), f, req)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if r.Machine != m.DisplayName() {
 				t.Fatal(r.Machine, m.DisplayName())
 			}
-			want := []string{"local:agents", "remote:agents", m.Label + ":home", m.Label + ":workspaces", m.Label + ":source", m.Label + ":parent", m.Label + ":worktree", m.Label + ":start"}
+			want := []string{"local:snapshot", "remote:snapshot", m.Label + ":home", m.Label + ":source", m.Label + ":parent", m.Label + ":worktree", m.Label + ":start"}
 			if withTask {
 				want = append(want, m.Label+":prompt")
 			}
@@ -153,10 +157,10 @@ func TestAgentNameAvailabilityAndExhaustion(t *testing.T) {
 }
 
 func TestLaunchFailureStopsWithoutRetry(t *testing.T) {
-	for _, failure := range []string{"agents", "home", "workspaces", "source", "parent", "worktree", "start", "prompt", "focus"} {
+	for _, failure := range []string{"snapshot", "home", "source", "parent", "worktree", "start", "prompt", "focus"} {
 		t.Run(failure, func(t *testing.T) {
 			f := &fakeLauncher{fail: failure}
-			r, err := Start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local(), Task: &Task{Title: "Title", Skill: "review"}})
+			r, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local(), Task: &Task{Title: "Title", Skill: "review"}})
 			if err == nil || f.calls[len(f.calls)-1] != "local:"+failure {
 				t.Fatal(err, f.calls)
 			}
@@ -171,8 +175,8 @@ func TestLaunchFailureStopsWithoutRetry(t *testing.T) {
 }
 
 func TestUnknownGlobalOccupancyStopsBeforeMutation(t *testing.T) {
-	f := &fakeLauncher{profiles: []herdr.Machine{{ID: "other", Label: "unconfigured", Enabled: true}}, fail: "unconfigured:agents"}
-	_, err := Start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+	f := &fakeLauncher{profiles: []herdr.Machine{{ID: "other", Label: "unconfigured", Enabled: true}}, fail: "unconfigured:snapshot"}
+	_, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 	if err == nil || len(f.calls) != 2 {
 		t.Fatal(err, f.calls)
 	}
@@ -187,12 +191,12 @@ func TestParentReuseRenameAndAmbiguity(t *testing.T) {
 		Linked       bool   `json:"is_linked_worktree"`
 	}{CheckoutPath: "/home/test/work/owner/repo/main"}
 	f := &fakeLauncher{workspaces: []herdr.Workspace{w}}
-	r, err := Start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+	r, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 	if err != nil || r.Parent != "existing" || !slicesContain(f.calls, "local:rename") || slicesContain(f.calls, "local:parent") {
 		t.Fatal(r, err, f.calls)
 	}
 	f = &fakeLauncher{workspaces: []herdr.Workspace{w, w}}
-	_, err = Start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+	_, err = start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 	if err == nil || slicesContain(f.calls, "local:worktree") {
 		t.Fatal(err, f.calls)
 	}
@@ -210,7 +214,7 @@ func slicesContain(values []string, s string) bool {
 func TestOrdinaryParentResolution(t *testing.T) {
 	for _, label := range []string{"main shell", "owner/repo"} {
 		f := &fakeLauncher{sourceID: "ordinary", workspaces: []herdr.Workspace{{ID: "ordinary", Label: label}}}
-		r, err := Start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+		r, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 		if err != nil || r.Parent != "ordinary" || slicesContain(f.calls, "local:parent") {
 			t.Fatal(r, err, f.calls)
 		}
@@ -220,7 +224,7 @@ func TestOrdinaryParentResolution(t *testing.T) {
 	}
 	// An ordinary source must not be confused with another workspace claiming its label.
 	f := &fakeLauncher{sourceID: "ordinary", workspaces: []herdr.Workspace{{ID: "ordinary", Label: "source"}, {ID: "other", Label: "owner/repo"}}}
-	_, err := Start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+	_, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 	if err == nil || slicesContain(f.calls, "local:rename") || slicesContain(f.calls, "local:worktree") {
 		t.Fatal(err, f.calls)
 	}
@@ -234,7 +238,7 @@ func TestGlobalAgentNamesAreExcluded(t *testing.T) {
 		}
 	}
 	f := &fakeLauncher{profiles: []herdr.Machine{{ID: "other", Label: "other", Enabled: true}}, agents: map[string][]herdr.Agent{"other": occupied}}
-	r, err := Start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+	r, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 	if err != nil || r.AgentName != "platypus" {
 		t.Fatal(r.AgentName, err)
 	}
@@ -244,7 +248,7 @@ func TestLaunchUsesBaseOverride(t *testing.T) {
 	c := startConfig()
 	c.Repositories = map[string]RepositoryConfig{"owner/repo": {Base: "origin/train/first-pr"}}
 	f := &fakeLauncher{sourceID: "ordinary", workspaces: []herdr.Workspace{{ID: "ordinary", Label: "owner/repo"}}}
-	_, err := Start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+	_, err := start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 	if err != nil || f.worktree.Base != "origin/train/first-pr" || f.requestedSource != "/home/test/work/owner/repo/main" {
 		t.Fatal(err, f.worktree)
 	}
@@ -263,7 +267,7 @@ func TestLaunchIndependentSourceAndBase(t *testing.T) {
 						f.workspaces = []herdr.Workspace{{ID: "existing", Label: "owner/repo"}}
 					}
 					// In particular, master.git needs no inventory entry or probe for master.
-					r, err := Start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: m})
+					r, err := start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: m})
 					path := "/home/test/work/owner/repo/" + dir
 					if err != nil || f.requestedSource != path || f.worktree.Base != "origin/master" {
 						t.Fatal(r, err, f)
@@ -287,7 +291,7 @@ func TestLaunchRejectsDifferentSourceBeforeMutation(t *testing.T) {
 			c := startConfig()
 			c.Repositories = map[string]RepositoryConfig{"owner/repo": {Gitdir: dir, Base: "origin/master"}}
 			f := &fakeLauncher{sourcePath: resolved, sourceID: "existing", workspaces: []herdr.Workspace{{ID: "existing", Label: "owner/repo"}}}
-			r, err := Start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+			r, err := start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 			if err == nil || !strings.Contains(err.Error(), "different source checkout") || len(r.Steps) != 0 || f.calls[len(f.calls)-1] != "local:source" {
 				t.Fatal(r, err, f.calls)
 			}
@@ -298,7 +302,7 @@ func TestLaunchRejectsDifferentSourceBeforeMutation(t *testing.T) {
 func TestInvalidPromptStopsBeforeLaunchReadsOrWrites(t *testing.T) {
 	for _, body := range []string{"body\x00suffix", "body\xffsuffix", strings.Repeat("x", maxAgentArgumentBytes)} {
 		f := &fakeLauncher{}
-		_, err := Start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local(), Task: &Task{Title: "Task", Skill: "review", Body: body}})
+		_, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local(), Task: &Task{Title: "Task", Skill: "review", Body: body}})
 		if err == nil || len(f.calls) != 0 {
 			t.Fatal(err, f.calls)
 		}
@@ -309,7 +313,7 @@ func TestUsesHerdrSelectedOrdinaryParent(t *testing.T) {
 	// Herdr resolves the first source workspace. Do not scan each ordinary pane
 	// to enforce uniqueness: either workspace at this checkout can anchor the group.
 	f := &fakeLauncher{sourceID: "chosen", workspaces: []herdr.Workspace{{ID: "chosen", Label: "source one"}, {ID: "other", Label: "source two"}}}
-	r, err := Start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+	r, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 	if err != nil || r.Parent != "chosen" || slicesContain(f.calls, "local:parent") {
 		t.Fatal(r, err, f.calls)
 	}
@@ -318,7 +322,7 @@ func TestUsesHerdrSelectedOrdinaryParent(t *testing.T) {
 func TestLaunchUsesConfiguredName(t *testing.T) {
 	c := startConfig()
 	c.AgentNames = []string{"custom_agent"}
-	r, err := Start(context.Background(), c, &fakeLauncher{}, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+	r, err := start(context.Background(), c, &fakeLauncher{}, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 	if err != nil || r.AgentName != "custom_agent" || r.Title != "custom_agent" {
 		t.Fatal(r, err)
 	}
@@ -327,8 +331,28 @@ func TestLaunchUsesConfiguredName(t *testing.T) {
 func TestLaunchTaskWithoutSkillSendsOnlyBody(t *testing.T) {
 	f := &fakeLauncher{}
 	task := &Task{Title: "Task", Body: "\nTask body\n"}
-	_, err := Start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local(), Task: task})
+	_, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local(), Task: task})
 	if err != nil || f.prompt != task.Body || !slicesContain(f.calls, "local:prompt") {
 		t.Fatal(err, f.prompt, f.calls)
+	}
+}
+
+func TestStartReusesDestinationSnapshot(t *testing.T) {
+	m := herdr.Machine{ID: "profile", Label: "remote", Enabled: true}
+	f := &fakeLauncher{
+		profiles: []herdr.Machine{m, {ID: "disabled", Label: "disabled"}},
+		sourceID: "remote-parent",
+		workspacesByMachine: map[string][]herdr.Workspace{
+			"local":  {{ID: "local-parent", Label: "owner/repo"}},
+			"remote": {{ID: "remote-parent", Label: "owner/repo"}},
+		},
+	}
+	r, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: m})
+	if err != nil || r.Parent != "remote-parent" {
+		t.Fatal("did not reuse destination inventory", r, err)
+	}
+	want := []string{"local:snapshot", "remote:snapshot", "remote:home", "remote:source", "remote:worktree", "remote:start", "remote:focus"}
+	if !reflect.DeepEqual(f.calls, want) {
+		t.Fatal("extra inventory calls or inspected disabled server", f.calls, want)
 	}
 }

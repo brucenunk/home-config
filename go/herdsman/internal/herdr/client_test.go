@@ -1,9 +1,11 @@
 package herdr
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -232,5 +234,176 @@ func TestFinishOperations(t *testing.T) {
 		if err := c.RemoveWorktree(context.Background(), m, "task", "/repo/task"); err == nil {
 			t.Fatal("accepted unexpected removal", response)
 		}
+	}
+}
+
+func TestDebugCallCoverage(t *testing.T) {
+	ctx := context.Background()
+	for _, machine := range []Machine{Local(), {ID: "profile", Label: "remote\x1b", Target: "ssh-alias"}} {
+		t.Run(machine.DisplayName(), func(t *testing.T) {
+			cases := []struct {
+				name, response, operation string
+				call                      func(*Client) error
+			}{
+				{"machines", `[]`, `"machine" "list" "--json"`, func(c *Client) error { _, err := c.Machines(ctx); return err }},
+				{"agents", `{"result":{"agents":[]}}`, `"agent" "list"`, func(c *Client) error { _, err := c.Agents(ctx, machine); return err }},
+				{"snapshot", `{"result":{"snapshot":{"agents":[],"workspaces":[]}}}`, `"api" "snapshot"`, func(c *Client) error { _, err := c.Snapshot(ctx, machine); return err }},
+				{"wait", `{"result":{"agent":{"pane_id":"p","agent_status":"unknown"}}}`, `"agent" "wait" "p"`, func(c *Client) error { return c.WaitForQuit(ctx, machine, "p") }},
+				{"workspaces", `{"result":{"workspaces":[]}}`, `"workspace" "list"`, func(c *Client) error { _, err := c.Workspaces(ctx, machine); return err }},
+				{"parent", `{"result":{"workspace":{"workspace_id":"w"},"root_pane":{"pane_id":"p"}}}`, `"workspace" "create"`, func(c *Client) error { _, err := c.CreateParent(ctx, machine, "/repo/main", "repo"); return err }},
+				{"source", `{"result":{"source":{"source_checkout_path":"/repo/main"}}}`, `"worktree" "list"`, func(c *Client) error { _, err := c.Source(ctx, machine, "/repo/main"); return err }},
+				{"rename", `{"result":{}}`, `"workspace" "rename"`, func(c *Client) error { return c.RenameParent(ctx, machine, "w", "repo") }},
+				{"worktree", `{"result":{"workspace":{"workspace_id":"w"},"root_pane":{"pane_id":"p"}}}`, `"worktree" "create"`, func(c *Client) error {
+					_, err := c.CreateWorktree(ctx, machine, WorktreeRequest{Parent: "w", Branch: "task", Base: "main", Path: "/repo/task", Label: "task"})
+					return err
+				}},
+				{"start", `{"result":{}}`, `"agent" "start"`, func(c *Client) error { return c.StartAgent(ctx, machine, "possum", "p", "title") }},
+				{"prompt", `{"result":{}}`, `"agent" "prompt" "possum" "<redacted>"`, func(c *Client) error { return c.Prompt(ctx, machine, "possum", "secret task\nbody") }},
+				{"quit", `{"result":{}}`, `"agent" "prompt" "possum" "/quit"`, func(c *Client) error { return c.Prompt(ctx, machine, "possum", "/quit") }},
+				{"focus", `{"result":{}}`, `"agent" "focus"`, func(c *Client) error { return c.Focus(ctx, machine, "possum") }},
+				{"remove", `{"result":{"type":"worktree_removed","workspace_id":"w","path":"/repo/task","forced":true}}`, `"worktree" "remove"`, func(c *Client) error { return c.RemoveWorktree(ctx, machine, "w", "/repo/task") }},
+			}
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					c, _ := fakeCLI(t, tc.response)
+					var output bytes.Buffer
+					c.Debug = log.New(&output, "debug: ", 0)
+					if err := tc.call(c); err != nil {
+						t.Fatal(err)
+					}
+					text := output.String()
+					lines := strings.Split(strings.TrimSpace(text), "\n")
+					if len(lines) != 1 || !strings.Contains(lines[0], "machine=") || !strings.Contains(lines[0], "status=ok") || !strings.Contains(text, tc.operation) {
+						t.Fatal("expected one completion entry", text)
+					}
+					elapsed := strings.Split(strings.Split(lines[0], "elapsed=")[1], " ")[0]
+					if d, err := time.ParseDuration(elapsed); err != nil || d <= 0 {
+						t.Fatal("invalid duration", elapsed, err)
+					}
+					if strings.Contains(text, "secret task") || strings.Contains(text, tc.response) || strings.ContainsRune(text, '\x1b') {
+						t.Fatal("leaked payload or controls", text)
+					}
+					if !machine.IsLocal() && tc.name != "machines" && (!strings.Contains(text, `"--machine" "profile"`) || !strings.Contains(text, `machine="remote\x1b"`)) {
+						t.Fatal("missing routing", text)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestDebugSSH(t *testing.T) {
+	c, _ := fakeCLI(t, "/home/secret-home")
+	var output bytes.Buffer
+	c.Debug = log.New(&output, "", 0)
+	if _, err := c.Home(context.Background(), Machine{ID: "profile", Label: "remote", Target: "ssh-alias"}); err != nil {
+		t.Fatal(err)
+	}
+	if text := output.String(); strings.Count(text, "tool=ssh") != 1 || strings.Count(text, "\n") != 1 || !strings.Contains(text, `"ssh-alias"`) || strings.Contains(text, "secret-home") {
+		t.Fatal(text)
+	}
+	output.Reset()
+	if _, err := c.Home(context.Background(), Local()); err != nil {
+		t.Fatal(err)
+	}
+	if output.Len() != 0 {
+		t.Fatal("local HOME should not invoke a subprocess", output.String())
+	}
+}
+
+func TestDebugFailureAndDisabled(t *testing.T) {
+	for _, mode := range []string{"exit", "timeout", "cancel"} {
+		t.Run(mode, func(t *testing.T) {
+			c, path := fakeCLI(t, "")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			switch mode {
+			case "exit":
+				t.Setenv("HERDSMAN_STDERR", "secret task and response")
+			case "timeout":
+				t.Setenv("HERDSMAN_SLEEP", "1")
+				c.Timeout = 30 * time.Millisecond
+			case "cancel":
+				cancel()
+			}
+			var output bytes.Buffer
+			c.Debug = log.New(&output, "", 0)
+			if err := c.Prompt(ctx, Local(), "possum", "secret task"); err == nil {
+				t.Fatal("expected failure")
+			}
+			if text := output.String(); strings.Count(text, "\n") != 1 || !strings.Contains(text, "status=error") || !strings.Contains(text, "elapsed=") || strings.Contains(text, "secret task") || strings.Contains(text, "response") {
+				t.Fatal(text)
+			}
+			if mode == "exit" {
+				checkArgs(t, path, []string{"agent", "prompt", "possum", "secret task"})
+			}
+			output.Reset()
+			c.Debug = nil
+			_ = c.Prompt(ctx, Local(), "possum", "secret task")
+			if output.Len() != 0 {
+				t.Fatal("debug disabled", output.String())
+			}
+		})
+	}
+}
+
+func TestSnapshotSchema(t *testing.T) {
+	for _, response := range []string{`{}`, `{"snapshot":null}`, `{"snapshot":{}}`, `{"snapshot":{"agents":[],"workspaces":null}}`, `{"snapshot":{"agents":null,"workspaces":[]}}`} {
+		c, _ := fakeCLI(t, `{"result":`+response+`}`)
+		if _, err := c.Snapshot(context.Background(), Local()); err == nil {
+			t.Fatal("accepted incomplete snapshot", response)
+		}
+	}
+	c, path := fakeCLI(t, `{"result":{"snapshot":{"agents":[{"name":"possum","pane_id":"p","agent_status":"idle"}],"workspaces":[{"workspace_id":"w","worktree":{"checkout_path":"/repo/task","is_linked_worktree":true}}]}}}`)
+	snapshot, err := c.Snapshot(context.Background(), Machine{ID: "profile", Label: "remote"})
+	if err != nil || len(snapshot.Agents) != 1 || len(snapshot.Workspaces) != 1 || snapshot.Workspaces[0].Worktree.CheckoutPath != "/repo/task" {
+		t.Fatal(snapshot, err)
+	}
+	checkArgs(t, path, []string{"--machine", "profile", "api", "snapshot"})
+}
+
+func TestWaitForQuitResults(t *testing.T) {
+	for _, machine := range []Machine{Local(), {ID: "profile", Label: "remote"}} {
+		for _, tc := range []struct {
+			name, response, stderr string
+			wantError              bool
+		}{
+			{"unknown", `{"result":{"agent":{"pane_id":"pane","agent_status":"unknown"}}}`, "", false},
+			{"already-gone", "", `{"error":{"code":"agent_not_found","message":"gone"}}`, false},
+			{"released", "", `{"error":{"code":"agent_not_running","message":"gone"}}`, false},
+			{"stdout-error", `{"error":{"code":"agent_not_running","message":"gone"}}`, "", false},
+			{"wrong-pane", `{"result":{"agent":{"pane_id":"replacement","agent_status":"unknown"}}}`, "", true},
+			{"wrong-status", `{"result":{"agent":{"pane_id":"pane","agent_status":"done"}}}`, "", true},
+			{"empty-result", `{"result":{}}`, "", true},
+			{"malformed", "bad json", "", true},
+			{"timeout", "", `{"error":{"code":"timeout","message":"timeout"}}`, true},
+			{"transport", "", "SSH failure: agent_not_found", true},
+			{"ambiguous", "", `{"error":{"code":"agent_target_ambiguous","message":"ambiguous"}}`, true},
+			{"malformed-stderr", "", `not-json {"error":{"code":"agent_not_found"}}`, true},
+		} {
+			t.Run(machine.DisplayName()+"/"+tc.name, func(t *testing.T) {
+				c, path := fakeCLI(t, tc.response)
+				t.Setenv("HERDSMAN_STDERR", tc.stderr)
+				err := c.WaitForQuit(context.Background(), machine, "pane")
+				if (err != nil) != tc.wantError {
+					t.Fatal("unexpected wait outcome", err)
+				}
+				args := []string{"agent", "wait", "pane", "--until", "unknown", "--timeout", "30000"}
+				if !machine.IsLocal() {
+					args = append([]string{"--machine", machine.ID}, args...)
+				}
+				checkArgs(t, path, args)
+			})
+		}
+	}
+}
+
+func TestWaitForQuitCancellation(t *testing.T) {
+	c, _ := fakeCLI(t, "")
+	t.Setenv("HERDSMAN_SLEEP", "1")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if err := c.WaitForQuit(ctx, Local(), "pane"); err == nil || !strings.Contains(err.Error(), "deadline exceeded") {
+		t.Fatal("wait ignored caller deadline", err)
 	}
 }

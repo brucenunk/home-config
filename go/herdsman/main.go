@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -24,15 +25,16 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 || os.Args[1] == "--help" || os.Args[1] == "-h" {
-		fmt.Println("usage: herdsman start [--config PATH]\n       herdsman finish [--config PATH]")
+		fmt.Println("usage: herdsman start [--config PATH] [--debug]\n       herdsman finish [--config PATH] [--debug]")
 		return nil
 	}
 	command := os.Args[1]
 	if command != "start" && command != "finish" {
-		return fmt.Errorf("unknown command %q; usage: herdsman {start|finish} [--config PATH]", command)
+		return fmt.Errorf("unknown command %q; usage: herdsman {start|finish} [--config PATH] [--debug]", command)
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	configPath := fs.String("config", "", "configuration file (default: user config directory/herdsman/config.toml)")
+	debug := fs.Bool("debug", false, "log Herdr/SSH calls and subprocess timings to stderr")
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -56,6 +58,9 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	client := herdr.New()
+	if *debug {
+		client.Debug = log.New(os.Stderr, "herdsman debug: ", log.LstdFlags|log.Lmicroseconds)
+	}
 	profiles, err := client.Machines(ctx)
 	if err != nil {
 		return fmt.Errorf("read Herdr machines: %w", err)
@@ -77,7 +82,7 @@ func run() error {
 		return nil
 	}
 	fmt.Printf("Launching on %s in %s…\n", m.Request.Machine.DisplayName(), m.Request.Repo)
-	r, err := app.Start(ctx, c, client, m.Request)
+	r, err := app.Start(ctx, c, client, profiles, m.Request)
 	if err != nil {
 		if r.Path != "" {
 			fmt.Fprintf(os.Stderr, "Launch selection: %s · %s · %s\nPath: %s\nBranch: %s\n", r.Machine, r.Repo, r.AgentName, r.Path, r.Branch)

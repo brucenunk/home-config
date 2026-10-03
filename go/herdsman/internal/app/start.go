@@ -20,10 +20,8 @@ type StartRequest struct {
 
 // The only interface is the launch boundary; implementations do not own policy.
 type Launcher interface {
-	Machines(context.Context) ([]herdr.Machine, error)
 	Home(context.Context, herdr.Machine) (string, error)
-	Agents(context.Context, herdr.Machine) ([]herdr.Agent, error)
-	Workspaces(context.Context, herdr.Machine) ([]herdr.Workspace, error)
+	Snapshot(context.Context, herdr.Machine) (herdr.Snapshot, error)
 	Source(context.Context, herdr.Machine, string) (herdr.Source, error)
 	CreateParent(context.Context, herdr.Machine, string, string) (herdr.Created, error)
 	RenameParent(context.Context, herdr.Machine, string, string) error
@@ -47,7 +45,7 @@ func ChooseAgentName(names []string, occupied map[string]bool) (string, error) {
 	return "", fmt.Errorf("all configured agent names are in use; finish an existing session first")
 }
 
-func Start(ctx context.Context, c Config, client Launcher, req StartRequest) (r StartResult, err error) {
+func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Machine, req StartRequest) (r StartResult, err error) {
 	r.Machine, r.Repo = req.Machine.DisplayName(), req.Repo
 	if err := validateAgentNames(c.AgentNames); err != nil {
 		return r, err
@@ -57,10 +55,6 @@ func Start(ctx context.Context, c Config, client Launcher, req StartRequest) (r 
 			return r, err
 		}
 	}
-	profiles, err := client.Machines(ctx)
-	if err != nil {
-		return r, err
-	}
 	destinations := c.Destinations(req.Repo, profiles)
 	i := slices.IndexFunc(destinations, func(m herdr.Machine) bool { return m.Label == req.Machine.Label && m.ID == req.Machine.ID })
 	if i < 0 {
@@ -68,16 +62,20 @@ func Start(ctx context.Context, c Config, client Launcher, req StartRequest) (r 
 	}
 	m := destinations[i]
 	occupied := map[string]bool{}
+	var workspaces []herdr.Workspace
 	// Names are globally unique client policy, including saved servers outside our config.
 	for _, host := range append([]herdr.Machine{herdr.Local()}, profiles...) {
 		if !host.Enabled {
 			continue
 		}
-		agents, e := client.Agents(ctx, host)
+		snapshot, e := client.Snapshot(ctx, host)
 		if e != nil {
 			return r, fmt.Errorf("cannot establish agent name availability on %s: %w", host.DisplayName(), e)
 		}
-		for _, a := range agents {
+		if host.ID == m.ID && host.Label == m.Label {
+			workspaces = snapshot.Workspaces
+		}
+		for _, a := range snapshot.Agents {
 			occupied[a.Name] = true
 		}
 	}
@@ -98,10 +96,6 @@ func Start(ctx context.Context, c Config, client Launcher, req StartRequest) (r 
 	stamp := time.Now().UTC().Format("20060102T150405.000000000Z")
 	r.Path = filepath.Join(home, "work", req.Repo, stamp)
 	r.Branch = "jamesl/" + stamp
-	workspaces, err := client.Workspaces(ctx, m)
-	if err != nil {
-		return r, err
-	}
 	resolved, err := client.Source(ctx, m, source)
 	if err != nil {
 		return r, fmt.Errorf("resolve parent: %w", err)
@@ -123,7 +117,7 @@ func Start(ctx context.Context, c Config, client Launcher, req StartRequest) (r 
 		}
 	}
 	if resolved.WorkspaceID != "" && parent == nil {
-		return r, fmt.Errorf("source workspace disappeared; select again")
+		return r, fmt.Errorf("source workspace is absent from the selected inventory; select again")
 	}
 	if err := ctx.Err(); err != nil {
 		return r, err

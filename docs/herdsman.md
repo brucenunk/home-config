@@ -293,6 +293,12 @@ servers absent from this inventory. An unreachable server stops launch because
 global availability cannot be established. This policy is not a distributed
 lock: simultaneous launchers can race; Herdr enforces names on its own server.
 
+Start reuses the machine profiles loaded for the picker. One `herdr api snapshot`
+per enabled server supplies agent inventory and, on the destination, parent
+workspace inventory; it does not separately list workspaces or reload profiles
+after selection. Changes while the picker is open are handled by operation
+errors rather than a second machine-profile read.
+
 Herdsman uses Herdr's source resolver to select an existing non-linked source
 workspace, renaming it to `owner/repo`, or creates that parent at the configured
 `gitdir`. The resolved source path must match the configured source directory;
@@ -331,16 +337,41 @@ across Local and every enabled saved Herdr machine, including machines absent
 from the configured repository inventory. Duplicate labels gain an agent/machine
 prefix. An unreachable server stops discovery without changing anything.
 
-Only idle/done Pi agents in linked-worktree workspaces are eligible. This status
-check uses the inventory already returned by Herdr, with no extra calls or
+Only idle/done Pi agents in linked-worktree workspaces are eligible. One
+`herdr api snapshot` per server supplies agents and workspaces together. The status
+check uses this inventory, with no extra calls or
 waiting. Checkouts reported as shared by multiple agents are excluded; the
 current session is not excluded. There is no special default selection or filtering.
 Use arrows or Ctrl+N/Ctrl+P to navigate and Enter to select.
 Escape or Ctrl+C cancels.
 
 **Enter immediately starts cleanup, without a confirmation dialog.** Herdsman
-rechecks the selected session, sends `/quit` once, and waits up to 30 seconds
-for the agent to disappear. It then rechecks the checkout and agents and calls
+sends `/quit` once to the selected agent name without a pre-quit recheck.
+Selection authorizes quitting even if the session's status changed while the
+picker was open. If the name has been reused, `/quit` can reach a replacement
+session; do not leave the picker open across session changes.
+
+Herdsman uses `herdr agent wait PANE --until unknown --timeout 30000` on the
+selected pane as the initial notification. Herdr reporting unknown
+status or an absent/stopped agent is only a wakeup, not proof of safe cleanup.
+A final snapshot must confirm the selected checkout still exists at the same
+path and that no agent uses its workspace, checkout, or selected agent name.
+Lifecycle release can precede process/inventory disappearance. If the exact
+original session is still the sole occupant, Herdsman retries the safety snapshot
+with a 100 ms delay between reads. Session identity includes the name, kind,
+pane, workspace, and complete session reference; changed status alone is allowed.
+Herdr can also briefly retain a draining record with the original name, pane,
+and workspace but an empty kind and no session reference. This specific shape
+permits read retries only; removal still requires complete absence. Other
+identity changes, an additional occupant, a changed checkout, or an inspection
+error stop cleanup immediately. Identity errors name the mismatched fields
+without printing payloads. The Herdr wait and snapshot retries
+share one 30-second exit-confirmation deadline. Only reads are retried: `/quit`
+and removal are each sent at most once. Wait transport errors, timeouts, and
+unexpected responses also stop cleanup. Removal has a separate timeout.
+The common path uses four calls after selection; an early wakeup adds snapshot
+reads until the original session disappears or confirmation stops.
+After the final safety checks, Herdsman calls
 `herdr worktree remove --workspace ID --force`. Forced removal intentionally
 discards uncommitted checkout contents and removes the task workspace. The
 parent repository workspace, Git branch, and saved Pi transcript remain.
@@ -359,6 +390,35 @@ Timeouts, lost contact, changed targets, and unexpected removal responses stop
 cleanup without retrying mutations. Pi may already have quit, or removal may
 already have applied: inspect Herdr before retrying. Rechecks are not a lock;
 avoid concurrent changes to the selected workspace while finishing it.
+
+## Debug timings
+
+Use `herdsman start --debug` or `herdsman finish --debug` to log every local
+and remote Herdr CLI invocation to stderr. The direct SSH `$HOME` lookup used
+by `start` is also logged. Debugging is off by default and does not change
+normal stdout, timeouts, safety checks, or retry behavior.
+
+Each invocation produces one timestamped line when it finishes, with the
+machine, tool, quoted arguments, `elapsed`, and `status=ok` or `status=error`,
+indicating subprocess success or failure. A hung call is not logged until it
+finishes or times out. JSON parsing,
+Herdr response errors, and application validation are still reported through
+the normal command error path; `status=ok` alone does not prove an operation
+succeeded. Timings include CLI startup and remote transport, not individual
+network/server phases. Finish's `agent wait` entry includes time spent waiting
+inside Herdr, and repeated snapshots expose any exit-confirmation retries.
+An expected agent-disappearance response may have `status=error`
+because the CLI reports it with a nonzero exit code.
+
+Prompt bodies are replaced with `<redacted>` (the fixed `/quit` command is
+shown). Debug entries never include response payloads or subprocess stderr.
+Machine names, paths, labels, and other command metadata remain visible, so
+inspect logs before sharing them. Normal error diagnostics are unchanged.
+No log file is created automatically. To capture diagnostics:
+
+```sh
+herdsman finish --debug 2>herdsman-debug.log
+```
 
 ## Task-directory snapshots
 

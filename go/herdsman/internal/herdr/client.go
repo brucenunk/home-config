@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,6 +59,25 @@ type AgentSession struct {
 	Value  string `json:"value"`
 }
 
+type Snapshot struct {
+	Agents     []Agent     `json:"agents"`
+	Workspaces []Workspace `json:"workspaces"`
+}
+
+type apiError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *apiError) Error() string { return fmt.Sprintf("Herdr: %s: %s", e.Code, e.Message) }
+
+type processError struct {
+	error
+	stderr string
+}
+
+func (e *processError) Unwrap() error { return e.error }
+
 type Source struct {
 	CheckoutPath string `json:"source_checkout_path"`
 	WorkspaceID  string `json:"source_workspace_id"`
@@ -75,9 +96,34 @@ type Client struct {
 	Binary  string
 	SSH     string
 	Timeout time.Duration
+	Debug   *log.Logger
 }
 
 func New() *Client { return &Client{Binary: "herdr", SSH: "ssh", Timeout: 30 * time.Second} }
+
+// invoke logs subprocess timing, not response contents or server-side phases.
+// Do not log errors verbatim: CLI stderr may echo prompts or response payloads.
+func (c *Client) invoke(ctx context.Context, m Machine, tool, binary string, timeout time.Duration, args ...string) ([]byte, error) {
+	if c.Debug == nil {
+		return run(ctx, timeout, binary, args...)
+	}
+	visible := append([]string(nil), args...)
+	offset := 0
+	if tool == "herdr" && len(visible) >= 2 && visible[0] == "--machine" {
+		offset = 2
+	}
+	if tool == "herdr" && len(visible) >= offset+4 && visible[offset] == "agent" && visible[offset+1] == "prompt" && visible[offset+3] != "/quit" {
+		visible[offset+3] = "<redacted>"
+	}
+	start := time.Now()
+	data, err := run(ctx, timeout, binary, args...)
+	status := "ok"
+	if err != nil {
+		status = "error"
+	}
+	c.Debug.Printf("machine=%q tool=%s args=%q elapsed=%s status=%s", m.DisplayName(), tool, visible, time.Since(start), status)
+	return data, err
+}
 
 // Every subprocess is bounded. Keep stderr out of the JSON stream.
 func run(ctx context.Context, timeout time.Duration, binary string, args ...string) ([]byte, error) {
@@ -106,7 +152,7 @@ func run(ctx context.Context, timeout time.Duration, binary string, args ...stri
 		return nil, fmt.Errorf("%s: %w (outcome may be uncertain)", binary, ctx.Err())
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w: %s", binary, err, strings.TrimSpace(stderr.String()))
+		return nil, &processError{fmt.Errorf("%s: %w: %s", binary, err, strings.TrimSpace(stderr.String())), stderr.String()}
 	}
 	return output, nil
 }
@@ -119,7 +165,7 @@ func (c *Client) call(ctx context.Context, m Machine, timeout time.Duration, res
 		}
 		args = append([]string{"--machine", m.ID}, args...)
 	}
-	data, err := run(ctx, timeout, c.Binary, args...)
+	data, err := c.invoke(ctx, m, "herdr", c.Binary, timeout, args...)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", m.DisplayName(), operation, err)
 	}
@@ -131,7 +177,11 @@ func (c *Client) call(ctx context.Context, m Machine, timeout time.Duration, res
 		return fmt.Errorf("Herdr response: %w", err)
 	}
 	if len(envelope.Error) > 0 && string(envelope.Error) != "null" {
-		return fmt.Errorf("Herdr: %s", envelope.Error)
+		var apiErr apiError
+		if err := json.Unmarshal(envelope.Error, &apiErr); err != nil {
+			return fmt.Errorf("Herdr response error: %w", err)
+		}
+		return &apiErr
 	}
 	if len(envelope.Result) == 0 || string(envelope.Result) == "null" {
 		return fmt.Errorf("Herdr response has no result")
@@ -143,7 +193,7 @@ func (c *Client) call(ctx context.Context, m Machine, timeout time.Duration, res
 }
 
 func (c *Client) Machines(ctx context.Context) ([]Machine, error) {
-	data, err := run(ctx, c.Timeout, c.Binary, "machine", "list", "--json")
+	data, err := c.invoke(ctx, Local(), "herdr", c.Binary, c.Timeout, "machine", "list", "--json")
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +217,7 @@ func (c *Client) Home(ctx context.Context, m Machine) (string, error) {
 		return os.UserHomeDir()
 	}
 	// No dynamic shell source: OpenSSH owns authentication and host policy.
-	data, err := run(ctx, c.Timeout, c.SSH, "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "--", m.Target, `printf '%s' "$HOME"`)
+	data, err := c.invoke(ctx, m, "ssh", c.SSH, c.Timeout, "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "--", m.Target, `printf '%s' "$HOME"`)
 	if err != nil {
 		return "", err
 	}
@@ -187,6 +237,52 @@ func (c *Client) Agents(ctx context.Context, m Machine) ([]Agent, error) {
 		err = fmt.Errorf("Herdr response has no agent inventory")
 	}
 	return result.Agents, err
+}
+
+func (c *Client) Snapshot(ctx context.Context, m Machine) (Snapshot, error) {
+	var result struct {
+		Snapshot Snapshot `json:"snapshot"`
+	}
+	err := c.call(ctx, m, c.Timeout, &result, "api", "snapshot")
+	if err == nil && (result.Snapshot.Agents == nil || result.Snapshot.Workspaces == nil) {
+		err = fmt.Errorf("Herdr response has incomplete snapshot inventory")
+	}
+	return result.Snapshot, err
+}
+
+// WaitForQuit waits inside Herdr rather than repeatedly invoking the CLI.
+// An unknown status or a disappeared agent is only a wakeup: the caller must
+// still confirm absence and checkout safety in a fresh snapshot before removal.
+func (c *Client) WaitForQuit(ctx context.Context, m Machine, pane string) error {
+	var result struct {
+		Agent Agent `json:"agent"`
+	}
+	err := c.call(ctx, m, 35*time.Second, &result, "agent", "wait", pane, "--until", "unknown", "--timeout", "30000")
+	if err == nil {
+		if result.Agent.PaneID != pane || result.Agent.Status != "unknown" {
+			return fmt.Errorf("unexpected agent wait result")
+		}
+		return nil
+	}
+	// The CLI writes structured API errors to stderr and exits with code 1.
+	// Do not mistake transport failures, timeouts, or error text for disappearance.
+	var apiErr *apiError
+	var procErr *processError
+	var exitErr *exec.ExitError
+	if errors.As(err, &procErr) && errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		var envelope struct {
+			Error *apiError `json:"error"`
+		}
+		if json.Unmarshal([]byte(procErr.stderr), &envelope) == nil {
+			apiErr = envelope.Error
+		}
+	} else {
+		_ = errors.As(err, &apiErr)
+	}
+	if apiErr != nil && (apiErr.Code == "agent_not_found" || apiErr.Code == "agent_not_running") {
+		return nil
+	}
+	return err
 }
 
 func (c *Client) Workspaces(ctx context.Context, m Machine) ([]Workspace, error) {
