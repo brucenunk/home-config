@@ -324,6 +324,13 @@ animations {
     // slowdown 3.0
 }
 
+// Let clients such as Emacs activate an existing window when invoked from
+// a terminal (for example, Pi's external editor), without a valid input serial.
+// This relaxation applies to activation requests from all applications.
+debug {
+    honor-xdg-activation-with-invalid-serial
+}
+
 // Window rules let you adjust behavior for individual windows.
 // Find more information on the wiki:
 // https://niri-wm.github.io/niri/Configuration:-Window-Rules
