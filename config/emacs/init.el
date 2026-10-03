@@ -7,8 +7,7 @@
 ;; This configuration follows the structure from protesilaos/dotfiles:
 ;;
 ;; - my-lisp/        Custom Elisp libraries (pure functions)
-;;                   my-repo.el, my-git.el, my-worktree.el, my-task.el,
-;;                   my-agent.el
+;;                   my-task.el, my-task-list.el
 ;;
 ;; - my-emacs-modules/  Package configuration (use-package, keybindings)
 ;;                      my-emacs-ui.el, my-emacs-completion.el, my-emacs-editing.el,
@@ -23,7 +22,6 @@
 
 (declare-function eglot-format-buffer "eglot" ())
 (declare-function eglot-managed-p "eglot" ())
-(declare-function my/task-list-maybe-refresh-overlays "my-task-list" ())
 (declare-function server-running-p "server" (&optional name))
 
 (defvar eshell-scroll-to-bottom-on-input)
@@ -42,7 +40,6 @@
 ;; Core Modules
 ;; ============================================================================
 
-(require 'my-repo)
 (require 'my-emacs-ui)
 (require 'my-emacs-completion)
 (require 'my-emacs-editing)

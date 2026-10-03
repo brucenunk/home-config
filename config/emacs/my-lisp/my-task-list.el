@@ -7,11 +7,14 @@
 
 ;;; Commentary:
 
-;; Dired-based task list UI with filtering and overlays.
+;; Dired-based task list UI with filtering and sorting.
 ;;
 ;; Public commands:
 ;;   - my/task-list — open task list
-;;   - my/task-list-pickup — start or resume the task at point without leaving the list
+;;   - my/task-list-show — display the current filtered view
+;;   - my/task-list-setup — install task-prefix bindings
+;;   - my/task-list-buffer — return a task-list buffer
+;;   - my/task-list-revert-buffers — refresh task-list buffers
 ;;   - my/task-list-filter-epic — filter by epic
 ;;   - my/task-list-filter-regex — filter by regex
 ;;   - my/task-list-filter-sort — toggle sort direction
@@ -23,14 +26,9 @@
 (require 'denote)
 (require 'seq)
 
-(defvar my/task-state-change-functions nil
-  "Hook run after task-visible state changes.")
+(defvar my/task-note-created-hook nil
+  "Hook run after a new task note has been saved.")
 
-(declare-function my/task-pickup-start-async "my-task"
-                  (task-id &rest args))
-(declare-function my/task-session-restore "my-task" (task))
-(declare-function my/task-state-entries "my-task" ())
-(declare-function my/task-note-title "my-task-note" (task))
 (declare-function denote-sort-dired-revert "denote" (&rest args))
 
 ;;; Filter state
@@ -42,7 +40,7 @@ When set, restricts to tasks within that epic subdirectory.")
 
 (defvar my/task-list-regex "==todo--"
   "Current regex filter for task list.
-Matches signature=todo (WIP tasks are todo with branch set).")
+Matches signature=todo.")
 
 (defvar my/task-list-reverse nil
   "Sort direction for task list.
@@ -131,16 +129,12 @@ Uses temp file + rename for atomicity."
 
 (put 'my/task-list--denote-scope 'permanent-local t)
 
-(defvar my/task-list--notifications-installed nil
-  "Non-nil once task-list UI has subscribed to task-state changes.")
-
 ;;; Buffer setup
 
 ;;;###autoload
 (defun my/task-list-setup ()
   "Set up task list buffer with task-prefix bindings."
   (setq-local my/task-list--managed-p t)
-  (add-hook 'dired-after-readin-hook #'my/task-list--after-readin nil t)
   (local-set-key (kbd "C-c t") (my/task-list--task-prefix-map)))
 
 (defun my/task-list--task-prefix-map ()
@@ -148,7 +142,6 @@ Uses temp file + rename for atomicity."
   (let ((map (make-sparse-keymap)))
     (when-let* ((global-task-map (lookup-key (current-global-map) (kbd "C-c t"))))
       (set-keymap-parent map global-task-map))
-    (define-key map (kbd "p") #'my/task-list-pickup)
     (define-key map (kbd "f") (symbol-value 'my/task-list-filter-map))
     map))
 
@@ -222,8 +215,7 @@ fails."
     (setq-local default-directory scope)
     (setq-local revert-buffer-function #'my/task-list--revert-buffer)
     (when (derived-mode-p 'dired-mode)
-      (my/task-list-setup)
-      (my/task-list--after-readin))))
+      (my/task-list-setup))))
 
 (defun my/task-list--prepare-buffer (buffer denote-scope)
   "Prepare task-list BUFFER for display within DENOTE-SCOPE."
@@ -233,10 +225,7 @@ fails."
     (setq-local denote-directory denote-scope)
     (setq-local default-directory denote-scope)
     (setq-local revert-buffer-function #'my/task-list--revert-buffer)
-    (my/task-list-setup)
-    ;; The initial Dired read has already completed by the time setup runs,
-    ;; so refresh overlays explicitly on first show.
-    (my/task-list--after-readin))
+    (my/task-list-setup))
   buffer)
 
 ;;;###autoload
@@ -276,101 +265,6 @@ Uses `my/task-list-regex', `my/task-list-epic', and
     (switch-to-buffer (my/task-list--prepare-buffer task-list-buffer denote-scope))))
 
 ;;; Filter commands
-
-(defun my/task-list--task-id-at-point ()
-  "Return the denote task id at point, or nil when point is not on a task file."
-  (when-let* ((file (ignore-errors (dired-get-filename nil t))))
-    (when (and (denote-file-is-in-denote-directory-p file)
-               (denote-file-has-denoted-filename-p file))
-      (denote-retrieve-filename-identifier file))))
-
-(defun my/task-list--pickup-worktree-label (path)
-  "Return compact user-facing label for worktree PATH."
-  (let* ((expanded (directory-file-name (expand-file-name path)))
-         (parts (split-string expanded "/" t))
-         (len (length parts)))
-    (if (>= len 2)
-        (mapconcat #'identity (last parts 2) "/")
-      expanded)))
-
-(defun my/task-list--pickup-unusable-summary (entries)
-  "Return user-facing suffix for unusable worktree ENTRIES."
-  (when entries
-    (format " [unusable worktrees: %s]"
-            (mapconcat #'my/task-list--pickup-worktree-label
-                       (delete-dups
-                        (delq nil
-                              (mapcar (lambda (entry)
-                                        (plist-get entry :path))
-                                      entries)))
-                       ", "))))
-
-(defun my/task-list--pickup-result-message (result)
-  "Return user-facing pickup message for RESULT."
-  (let ((suffix (my/task-list--pickup-unusable-summary
-                 (plist-get result :unusable-worktrees))))
-    (pcase (plist-get result :outcome)
-      ('started
-       (format "Task pickup: started%s" (or suffix "")))
-      ('live
-       (format "Task pickup: already live%s" (or suffix "")))
-      (_
-       (format "Task pickup: unexpected outcome %S%s"
-               (plist-get result :outcome)
-               (or suffix ""))))))
-
-(defun my/task-list--pickup-error-message (err)
-  "Return user-facing pickup error message for ERR."
-  (let* ((message (if (stringp err)
-                      err
-                    (or (plist-get err :message)
-                        (format "%s" err))))
-         (suffix (my/task-list--pickup-unusable-summary
-                  (and (listp err)
-                       (plist-get err :unusable-worktrees)))))
-    (format "Task pickup failed: %s%s" message (or suffix ""))))
-
-(defun my/task-list--task-state-table ()
-  "Return repaired task state entries keyed by task id."
-  (require 'my-task)
-  (let ((table (make-hash-table :test 'equal)))
-    (dolist (entry (my/task-state-entries))
-      (when-let* ((task-id (plist-get entry :task-id)))
-        (puthash task-id entry table)))
-    table))
-
-;;;###autoload
-(defun my/task-list-pickup (&optional advanced-options)
-  "Start or resume the task at point and display it in this window.
-With prefix argument, prompt for advanced startup options first."
-  (interactive "P")
-  (require 'my-task)
-  (let* ((task-id (my/task-list--task-id-at-point))
-         (origin-window (selected-window))
-         (origin-buffer (window-buffer (selected-window))))
-    (unless task-id
-      (user-error "No task at point"))
-    (my/task-pickup-start-async
-     task-id
-     :advanced-options advanced-options
-     :restore-session nil
-     :interactive-p t
-     :on-success (lambda (result)
-                   (condition-case err
-                       (progn
-                         (when (and (window-live-p origin-window)
-                                    (eq (window-buffer origin-window)
-                                        origin-buffer))
-                           (with-selected-window origin-window
-                             (my/task-session-restore task-id)))
-                         (message "%s"
-                                  (my/task-list--pickup-result-message result)))
-                     (error
-                      (message "Task pickup started but could not display session: %s"
-                               (error-message-string err)))))
-     :on-error (lambda (err)
-                 (message "%s"
-                          (my/task-list--pickup-error-message err))))))
 
 ;;;###autoload
 (defun my/task-list-filter-epic (epic)
@@ -424,7 +318,6 @@ Switches between oldest-first and newest-first, then refreshes the list."
 (put 'my/task-list-filter-map 'variable-documentation
      "Keymap for task filter commands.
 \\<my/task-list-filter-map>
-\\[my/task-list-pickup] - Pick up the task at point in place
 \\[my/task-list-filter-epic] - Filter by epic
 \\[my/task-list-filter-regex] - Filter by regex
 \\[my/task-list-filter-sort] - Toggle sort direction")
@@ -453,83 +346,6 @@ or subdirectory."
                                    (my/task-list--tasks-directory-p dir)))))))
                 (buffer-list))))
 
-(defun my/task-list--after-readin ()
-  "Refresh overlays after the current task list Dired buffer is rebuilt."
-  (when my/task-list--managed-p
-    (my/task-list--refresh-overlays-in-buffer)))
-
-(defun my/task-list--refresh-overlays-in-buffer ()
-  "Reapply active and WIP overlays in the current task list buffer."
-  (let ((state-table (my/task-list--task-state-table)))
-    (remove-overlays (point-min) (point-max) 'my-task-state 'active)
-    (remove-overlays (point-min) (point-max) 'my-task-state 'wip)
-    (save-excursion
-      (goto-char (point-min))
-      (while (not (eobp))
-        (when-let* ((file (ignore-errors (dired-get-filename nil t)))
-                    ((string-match-p "==todo--" file))
-                    (id (denote-retrieve-filename-identifier file)))
-          (let ((bol (line-beginning-position))
-                (eol (1+ (line-end-position)))
-                (entry (gethash id state-table)))
-            (cond
-             ((and entry (plist-get entry :active))
-              (let ((ov (make-overlay bol eol)))
-                (overlay-put ov 'my-task-state 'active)
-                (overlay-put ov 'face 'pulsar-green)))
-             ((and entry (plist-get entry :worktree))
-              (let ((ov (make-overlay bol eol)))
-                (overlay-put ov 'my-task-state 'wip)
-                (overlay-put ov 'face 'pulsar-generic))))))
-        (forward-line 1)))))
-
-(defun my/task-list--handle-task-state-change (event)
-  "Refresh task-list UI in response to task-state change EVENT."
-  (let ((changes (plist-get event :changes)))
-    (cond
-     ((plist-get event :revert-buffers)
-      (my/task-list-revert-buffers))
-     ((or (memq :active changes)
-          (memq :worktree changes))
-      (my/task-list-maybe-refresh-overlays)))))
-
-(defun my/task-list--install-notifications ()
-  "Subscribe task-list UI to task-state change notifications."
-  (unless my/task-list--notifications-installed
-    (add-hook 'my/task-state-change-functions #'my/task-list--handle-task-state-change)
-    (setq my/task-list--notifications-installed t)))
-
-;;; Overlays
-
-;;;###autoload
-(defun my/task-list-refresh-overlays ()
-  "Reapply active and WIP overlays for all todo tasks.
-Active sessions use `pulsar-green', WIP (non-active) uses `pulsar-generic'.
-Only applies to tasks with `==todo--' in filename.
-No-op if no task list buffers exist."
-  (dolist (task-list-buf (my/task-list--buffers))
-    (with-current-buffer task-list-buf
-      (my/task-list--refresh-overlays-in-buffer))))
-
-;;;###autoload
-(defun my/task-list-maybe-refresh-overlays ()
-  "Refresh overlays if task list buffer exists.
-Safe to call frequently; no-op when buffer doesn't exist."
-  (when (my/task-list-buffer)
-    (my/task-list-refresh-overlays)))
-
-;;;###autoload
-(defun my/task-list-refresh-active ()
-  "Reapply active session overlays for all tasks in active sessions.
-Wrapper for backward compatibility; calls `my/task-list-refresh-overlays'."
-  (my/task-list-refresh-overlays))
-
-;;;###autoload
-(defun my/task-list-maybe-refresh-active ()
-  "Refresh active session overlays if this is the task list buffer.
-Wrapper for backward compatibility; calls `my/task-list-maybe-refresh-overlays'."
-  (my/task-list-maybe-refresh-overlays))
-
 ;;;###autoload
 (defun my/task-list-revert-buffers ()
   "Revert visible task-list Dired buffers."
@@ -547,7 +363,7 @@ Wrapper for backward compatibility; calls `my/task-list-maybe-refresh-overlays'.
     (make-directory dir t))
   (my/task-list-show))
 
-(my/task-list--install-notifications)
+(add-hook 'my/task-note-created-hook #'my/task-list-revert-buffers)
 (add-hook 'denote-dired-empty-mode-hook #'my/task-list--empty-mode-setup)
 (my/task-list--filter-load)
 

@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; Task list display and pickup coverage.
+;; Task list filtering, display, and standard Dired coverage.
 
 ;;; Code:
 
@@ -47,48 +47,6 @@
                        (reverse . t)))))
     (delete-directory temp-dir t)))
 
-(ert-deftest my/task-list-show-applies-wip-overlay-on-first-open ()
-  (my/task-index-test--with-isolated-index
-    (let* ((temp-dir (make-temp-file "my-task-list-tests" t))
-           (task-id "20260324T103418")
-           (task-file (expand-file-name
-                       (format "%s==todo--overlay-regression.md" task-id)
-                       temp-dir))
-           (entry (my/task-index-test--entry
-                   task-id
-                   :worktree "/tmp/a/"))
-           (denote-directory temp-dir)
-           (my/task-list-epic nil)
-           (my/task-list-regex "==todo--")
-           (my/task-list-reverse nil)
-           (my/task-list-filter-file (expand-file-name "task-list-filter.el" temp-dir))
-           task-list-buffer)
-      (unwind-protect
-          (progn
-            (with-temp-file task-file
-              (insert "---\n---\n"))
-            (cl-letf (((symbol-function 'my/task-state-entries)
-                       (lambda ()
-                         (list entry)))
-                      ((symbol-function 'denote-directories)
-                       (lambda () (list (file-name-as-directory temp-dir)))))
-              (save-window-excursion
-                (my/task-list-show)
-                (setq task-list-buffer (current-buffer))
-                (with-current-buffer task-list-buffer
-                  (goto-char (point-min))
-                  (re-search-forward task-id nil t)
-                  (should
-                   (seq-some
-                    (lambda (ov)
-                      (eq (overlay-get ov 'my-task-state) 'wip))
-                    (overlays-at (line-beginning-position))))))))
-        (when (buffer-live-p task-list-buffer)
-          (kill-buffer task-list-buffer))
-        (when-let* ((buf (get-file-buffer task-file)))
-          (kill-buffer buf))
-        (delete-directory temp-dir t)))))
-
 (ert-deftest my/task-list-show-uses-denote-sort-dired-42-side-effect ()
   (let* ((temp-dir (make-temp-file "my-task-list-tests" t))
          (task-id "20260526T111128")
@@ -105,8 +63,7 @@
         (progn
           (with-temp-file task-file
             (insert "---\n---\n"))
-          (cl-letf (((symbol-function 'my/task-state-entries) #'ignore)
-                    ((symbol-function 'denote-directories)
+          (cl-letf (((symbol-function 'denote-directories)
                      (lambda () (list (file-name-as-directory temp-dir))))
                     ((symbol-function 'denote-sort-dired)
                      (lambda (regex sort-component reverse exclude-regexp)
@@ -145,8 +102,7 @@
         (progn
           (with-temp-file done-file
             (insert "---\n---\n"))
-          (cl-letf (((symbol-function 'my/task-state-entries) #'ignore)
-                    ((symbol-function 'denote-directories)
+          (cl-letf (((symbol-function 'denote-directories)
                      (lambda () (list (file-name-as-directory temp-dir))))
                     ((symbol-function 'denote-sort-dired)
                      (lambda (&rest _)
@@ -186,8 +142,7 @@
             (insert "---\n---\n"))
           (with-temp-file done-file
             (insert "---\n---\n"))
-          (cl-letf (((symbol-function 'my/task-state-entries) #'ignore)
-                    ((symbol-function 'denote-directories)
+          (cl-letf (((symbol-function 'denote-directories)
                      (lambda () (list (file-name-as-directory temp-dir)))))
             (save-window-excursion
               (my/task-list-show)
@@ -203,46 +158,6 @@
         (when-let* ((buf (get-file-buffer file)))
           (kill-buffer buf)))
       (delete-directory temp-dir t))))
-
-(ert-deftest my/task-list-show-skips-wip-overlay-for-entry-without-worktree ()
-  (my/task-index-test--with-isolated-index
-    (let* ((temp-dir (make-temp-file "my-task-list-tests" t))
-           (task-id "20260324T103418")
-           (task-file (expand-file-name
-                       (format "%s==todo--overlay-regression.md" task-id)
-                       temp-dir))
-           (entry (my/task-index-test--entry task-id))
-           (denote-directory temp-dir)
-           (my/task-list-epic nil)
-           (my/task-list-regex "==todo--")
-           (my/task-list-reverse nil)
-           (my/task-list-filter-file (expand-file-name "task-list-filter.el" temp-dir))
-           task-list-buffer)
-      (unwind-protect
-          (progn
-            (with-temp-file task-file
-              (insert "---\n---\n"))
-            (cl-letf (((symbol-function 'my/task-state-entries)
-                       (lambda ()
-                         (list entry)))
-                      ((symbol-function 'denote-directories)
-                       (lambda () (list (file-name-as-directory temp-dir)))))
-              (save-window-excursion
-                (my/task-list-show)
-                (setq task-list-buffer (current-buffer))
-                (with-current-buffer task-list-buffer
-                  (goto-char (point-min))
-                  (re-search-forward task-id nil t)
-                  (should-not
-                   (seq-some
-                    (lambda (ov)
-                      (memq (overlay-get ov 'my-task-state) '(wip active)))
-                    (overlays-at (line-beginning-position))))))))
-        (when (buffer-live-p task-list-buffer)
-          (kill-buffer task-list-buffer))
-        (when-let* ((buf (get-file-buffer task-file)))
-          (kill-buffer buf))
-        (delete-directory temp-dir t)))))
 
 (ert-deftest my/task-list-show-preserves-existing-window-layout ()
   (let* ((temp-dir (make-temp-file "my-task-list-layout" t))
@@ -317,57 +232,6 @@
         (kill-buffer buf))
       (delete-directory temp-dir t))))
 
-(ert-deftest my/task-list-refresh-and-revert-target-all-open-buffers ()
-  (let* ((temp-dir (make-temp-file "my-task-list-layout" t))
-         (task-file (expand-file-name "20260324T103418==todo--refresh.md" temp-dir))
-         (my/task-list-epic nil)
-         (my/task-list-regex "==todo--")
-         (my/task-list-reverse nil)
-         left-window right-window first-buffer second-buffer refreshed reverted)
-    (unwind-protect
-        (progn
-          (with-temp-file task-file
-            (insert "---\n---\n"))
-          (cl-letf (((symbol-function 'denote-directories)
-                     (lambda () (list (file-name-as-directory temp-dir)))))
-            (save-window-excursion
-              (delete-other-windows)
-              (switch-to-buffer (get-buffer-create " *task-list-left*"))
-              (setq left-window (selected-window))
-              (split-window-right)
-              (other-window 1)
-              (switch-to-buffer (get-buffer-create " *task-list-right*"))
-              (setq right-window (selected-window))
-              (select-window left-window)
-              (my/task-list-show)
-              (setq first-buffer (current-buffer))
-              (select-window right-window)
-              (my/task-list-show)
-              (setq second-buffer (current-buffer))
-              (cl-letf (((symbol-function 'my/task-list--refresh-overlays-in-buffer)
-                         (lambda ()
-                           (push (buffer-name (current-buffer)) refreshed)))
-                        ((symbol-function 'revert-buffer)
-                         (lambda (&rest _args)
-                           (push (buffer-name (current-buffer)) reverted))))
-                (my/task-list-refresh-overlays)
-                (my/task-list-revert-buffers))
-              (should (equal (sort (delete-dups refreshed) #'string<)
-                             (sort (list (buffer-name first-buffer)
-                                         (buffer-name second-buffer))
-                                   #'string<)))
-              (should (equal (sort (delete-dups reverted) #'string<)
-                             (sort (list (buffer-name first-buffer)
-                                         (buffer-name second-buffer))
-                                   #'string<))))))
-      (when (buffer-live-p first-buffer)
-        (kill-buffer first-buffer))
-      (when (buffer-live-p second-buffer)
-        (kill-buffer second-buffer))
-      (when-let* ((buf (get-file-buffer task-file)))
-        (kill-buffer buf))
-      (delete-directory temp-dir t))))
-
 (ert-deftest my/task-list-empty-buffer-keeps-filter-bindings ()
   (let* ((temp-root (make-temp-file "my-task-list-root" t))
          (temp-dir (expand-file-name "demo/" temp-root))
@@ -397,11 +261,10 @@
                 (my/task-list--empty-mode-setup)
                 (should (eq major-mode 'denote-dired-empty-mode))
                 (should (eq (lookup-key (current-local-map) (kbd "C-c t a"))
-                            #'my/task-todo-add))
+                            #'my/task-add))
                 (should (eq (lookup-key (current-local-map) (kbd "C-c t p"))
-                            #'my/task-list-pickup))
-                (should (eq (lookup-key (current-local-map) (kbd "C-c t D"))
-                            #'my/task-discard))
+                            nil))
+                (should-not (lookup-key (current-local-map) (kbd "C-c t D")))
                 (should (eq (lookup-key (current-local-map) (kbd "C-c t f e"))
                             #'my/task-list-filter-epic))
                 (should (memq task-list-buffer (my/task-list--buffers)))))))
@@ -440,9 +303,8 @@
           (should (eq (lookup-key (current-local-map) (kbd "D"))
                       #'dired-do-delete))
           (should (eq (lookup-key (current-local-map) (kbd "C-c t p"))
-                      #'my/task-list-pickup))
-          (should (eq (lookup-key (current-local-map) (kbd "C-c t D"))
-                      #'my/task-discard))
+                      nil))
+          (should-not (lookup-key (current-local-map) (kbd "C-c t D")))
           (should-not (local-variable-p 'my/task-list-preview-window)))
       (keymap-global-set "C-c t" original-task-prefix))))
 
@@ -477,8 +339,7 @@
                              captured-args args)))
                     ((symbol-function 'my/task-list-setup)
                      (lambda () nil))
-                    ((symbol-function 'my/task-list--after-readin)
-                     (lambda () nil)))
+)
             (my/task-list--revert-buffer 'ignore-auto 'noconfirm)
             (should (equal captured-default temp-root))
             (should (equal captured-denote temp-root))
@@ -513,169 +374,34 @@
             (should (string-match-p "task list revert failed" message-text))))
       (delete-directory temp-root t))))
 
-(ert-deftest my/task-dired-discard-discards-selected-tasks ()
-  (let (discarded)
-    (cl-letf (((symbol-function 'dired-get-marked-files)
-               (lambda (&rest _args)
-                 '("/tmp/20260324T103418==todo--a.md"
-                   "/tmp/20260324T103419==todo--b.md")))
-              ((symbol-function 'denote-file-is-in-denote-directory-p)
-               (lambda (_file) t))
-              ((symbol-function 'denote-file-has-denoted-filename-p)
-               (lambda (_file) t))
-              ((symbol-function 'denote-retrieve-filename-identifier)
-               (lambda (file)
-                 (pcase file
-                   ("/tmp/20260324T103418==todo--a.md" "20260324T103418")
-                   ("/tmp/20260324T103419==todo--b.md" "20260324T103419"))))
-              ((symbol-function 'my/task-status)
-               (lambda (_task)
-                 "todo"))
-              ((symbol-function 'my/task-index-entry)
-               (lambda (_task-id)
-                 nil))
-              ((symbol-function 'yes-or-no-p)
-               (lambda (_prompt) t))
-              ((symbol-function 'dired-unmark-all-marks)
-               (lambda () nil))
-              ((symbol-function 'message)
-               (lambda (&rest _args) nil))
-              ((symbol-function 'my/task-discard-run)
-               (lambda (task-id)
-                 (push task-id discarded))))
-      (my/task-dired-discard)
-      (should (equal (nreverse discarded)
-                     '("20260324T103418" "20260324T103419"))))))
 
-(ert-deftest my/task-list-pickup-uses-public-pickup-apis ()
-  (let (captured-call message-text restored-task restored-window)
-    (save-window-excursion
-      (delete-other-windows)
-      (switch-to-buffer (get-buffer-create " *task-list-origin*"))
-      (let ((origin-window (selected-window)))
-        (cl-letf (((symbol-function 'my/task-list--task-id-at-point)
-                   (lambda ()
-                     "20260324T103418"))
-                  ((symbol-function 'my/task-pickup-start-async)
-                   (lambda (task-id &rest args)
-                     (setq captured-call (cons task-id args))
-                     (funcall (plist-get args :on-success)
-                              '(:outcome started
-                                :unusable-worktrees
-                                ((:path "/tmp/brucenunk/home-config/e/"
-                                  :reason dirty))))))
-                  ((symbol-function 'my/task-session-restore)
-                   (lambda (task)
-                     (setq restored-task task
-                           restored-window (selected-window))))
-                  ((symbol-function 'message)
-                   (lambda (format-string &rest args)
-                     (setq message-text (apply #'format format-string args)))))
-          (my/task-list-pickup t)
-          (should (equal (car captured-call) "20260324T103418"))
-          (let ((args (cdr captured-call)))
-            (should (equal (plist-get args :advanced-options) t))
-            (should-not (plist-get args :launch-config))
-            (should-not (plist-get args :restore-session))
-            (should (plist-get args :interactive-p))
-            (should (functionp (plist-get args :on-success)))
-            (should (functionp (plist-get args :on-error))))
-          (should (equal restored-task "20260324T103418"))
-          (should (eq restored-window origin-window))
-          (should (equal message-text
-                         "Task pickup: started [unusable worktrees: home-config/e]")))))))
+(ert-deftest my/task-list-filter-save-roundtrips-current-state ()
+  (let* ((root (make-temp-file "task-filter-" t))
+         (my/task-list-filter-file (expand-file-name "filter.el" root))
+         (my/task-list-epic root)
+         (my/task-list-regex "==done--")
+         (my/task-list-reverse t))
+    (unwind-protect
+        (progn
+          (my/task-list--filter-save)
+          (setq my/task-list-epic nil my/task-list-regex "==todo--" my/task-list-reverse nil)
+          (my/task-list--filter-load)
+          (should (equal my/task-list-epic root))
+          (should (equal my/task-list-regex "==done--"))
+          (should my/task-list-reverse))
+      (delete-directory root t))))
 
-(ert-deftest my/task-list-pickup-reports-errors ()
-  (let (message-text)
-    (cl-letf (((symbol-function 'my/task-list--task-id-at-point)
-               (lambda ()
-                 "20260324T103418"))
-              ((symbol-function 'my/task-pickup-start-async)
-               (lambda (_task-id &rest args)
-                 (funcall (plist-get args :on-error)
-                          '(:message "No usable worktrees for repo home-config (dirty: /tmp/g/)"
-                            :unusable-worktrees ((:path "/tmp/brucenunk/home-config/g/" :reason dirty))))))
-              ((symbol-function 'message)
-               (lambda (format-string &rest args)
-                 (setq message-text (apply #'format format-string args)))))
-      (my/task-list-pickup nil)
-      (should (equal message-text
-                     "Task pickup failed: No usable worktrees for repo home-config (dirty: /tmp/g/) [unusable worktrees: home-config/g]")))))
-
-(ert-deftest my/task-list-pickup-reports-display-failures ()
-  (let (message-text)
-    (cl-letf (((symbol-function 'my/task-list--task-id-at-point)
-               (lambda ()
-                 "20260324T103418"))
-              ((symbol-function 'my/task-pickup-start-async)
-               (lambda (_task-id &rest args)
-                 (funcall (plist-get args :on-success)
-                          '(:outcome started))))
-              ((symbol-function 'my/task-session-restore)
-               (lambda (_task)
-                 (error "display boom")))
-              ((symbol-function 'message)
-               (lambda (format-string &rest args)
-                 (setq message-text (apply #'format format-string args)))))
-      (my/task-list-pickup nil)
-      (should (equal message-text
-                     "Task pickup started but could not display session: display boom")))))
-
-(ert-deftest my/task-list-pickup-does-not-hijack-reused-window ()
-  (let (message-text restore-called)
-    (save-window-excursion
-      (delete-other-windows)
-      (switch-to-buffer (get-buffer-create " *task-list-origin*"))
-      (cl-letf (((symbol-function 'my/task-list--task-id-at-point)
-                 (lambda ()
-                   "20260324T103418"))
-                ((symbol-function 'my/task-pickup-start-async)
-                 (lambda (_task-id &rest args)
-                   (switch-to-buffer (get-buffer-create " *task-list-reused*"))
-                   (funcall (plist-get args :on-success)
-                            '(:outcome started))))
-                ((symbol-function 'my/task-session-restore)
-                 (lambda (_task)
-                   (setq restore-called t)))
-                ((symbol-function 'message)
-                 (lambda (format-string &rest args)
-                   (setq message-text (apply #'format format-string args)))))
-        (my/task-list-pickup nil)
-        (should-not restore-called)
-        (should (equal message-text "Task pickup: started"))))))
-
-(ert-deftest my/task-list-pickup-errors-when-no-task-at-point ()
-  (cl-letf (((symbol-function 'my/task-list--task-id-at-point)
-             (lambda () nil)))
-    (should-error (my/task-list-pickup t)
-                  :type 'user-error)))
-
-(ert-deftest my/task-list-pickup-result-message-handles-live-outcome ()
-  (should (equal (my/task-list--pickup-result-message
-                  '(:outcome live
-                    :unusable-worktrees ((:path "/tmp/brucenunk/home-config/e/" :reason dirty)
-                                         (:path "/tmp/brucenunk/home-config/e/" :reason dirty))))
-                 "Task pickup: already live [unusable worktrees: home-config/e]")))
-
-(ert-deftest my/task-list-state-change-handler-targets-relevant-refreshes ()
-  (let (overlay-refreshes buffer-reverts)
-    (cl-letf (((symbol-function 'my/task-list-maybe-refresh-overlays)
-               (lambda ()
-                 (setq overlay-refreshes (1+ (or overlay-refreshes 0)))))
-              ((symbol-function 'my/task-list-revert-buffers)
-               (lambda ()
-                 (setq buffer-reverts (1+ (or buffer-reverts 0))))))
-      (my/task-list--handle-task-state-change
-       (list :task-id "20260324T103418"
-             :source 'session
-             :changes '(:active)))
-      (my/task-list--handle-task-state-change
-       (list :task-id "20260324T103418"
-             :source 'task-note
-             :changes '(:status)
-             :revert-buffers t))
-      (should (= overlay-refreshes 1))
-      (should (= buffer-reverts 1)))))
+(ert-deftest my/task-list-note-change-refreshes-all-managed-buffers ()
+  (let ((buffers (list (generate-new-buffer " *task-list-one*")
+                       (generate-new-buffer " *task-list-two*")))
+        reverted)
+    (unwind-protect
+        (cl-letf (((symbol-function 'my/task-list--buffers) (lambda () buffers))
+                  ((symbol-function 'revert-buffer)
+                   (lambda (&rest _) (push (current-buffer) reverted))))
+          (run-hooks 'my/task-note-created-hook)
+          (should (equal (nreverse reverted) buffers)))
+      (mapc #'kill-buffer buffers))))
 
 (provide 'my-task-list-tests)
 ;;; my-task-list-tests.el ends here

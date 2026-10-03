@@ -79,5 +79,19 @@
     (should-not (search-forward "-->" nil t))
     (should-not (search-forward "subgraph " nil t))))
 
+(ert-deftest my/denote-task-template-is-content-only ()
+  (let ((template (alist-get 'task-workflow-v3 denote-templates)))
+    (should (stringp template))
+    (dolist (heading '("## Context" "## Goals" "## Non-Goals" "## Constraints"))
+      (should (string-match-p (regexp-quote heading) template)))
+    (should-not (string-match-p "## Dependencies" template))
+    (should-not (string-match-p "repo:" template))))
+
+(ert-deftest my/denote-task-prefix-only-binds-capture-and-list ()
+  (should (eq (keymap-lookup (current-global-map) "C-c t a") #'my/task-add))
+  (should (eq (keymap-lookup (current-global-map) "C-c t l") #'my/task-list))
+  (should-not (keymap-lookup (current-global-map) "C-c t F"))
+  (should-not (keymap-lookup (current-global-map) "C-c t D")))
+
 (provide 'my-emacs-denote-tests)
 ;;; my-emacs-denote-tests.el ends here

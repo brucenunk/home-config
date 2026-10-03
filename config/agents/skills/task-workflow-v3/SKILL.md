@@ -16,14 +16,14 @@ The task note is a bootstrap artifact, not the main collaboration surface. Use c
 - **Waiting:** waiting means a blocking message has been sent and the agent is paused for user input. Do not use task waiting-marker commands or backend waiting hooks.
 - **Task note:** read it as durable bootstrap context. Verbatim task-note content supplied in the initial conversation satisfies this requirement when the canonical file is on another machine. Do not turn it into a running work log or add phase markers, status history, or dense verification transcripts.
 - **Remote bootstrap:** keep the supplied note, its canonical local file, the current worktree, and Pi session state distinct. If the canonical note is inaccessible, do not claim to edit, maintain, or finish it; ask for that local mutation separately when it is required.
-- Edit the canonical task note only when it is accessible and explicitly requested, dependencies need maintenance, a durable task-level constraint must survive later sessions, or repo guidance requires it. When only verbatim bootstrap content is available, report any needed note change for the local owner instead of editing a substitute.
+- Edit the canonical task note only when it is accessible and explicitly requested, a durable task-level constraint must survive later sessions, or repo guidance requires it. When only verbatim bootstrap content is available, report any needed note change for the local owner instead of editing a substitute.
 
 ## On Entry
 
-1. Read the canonical task note or its verbatim launcher-supplied content and extract its identifier and `repo` slug when present.
+1. Read the canonical task note or its verbatim launcher-supplied content and extract its identifier when present. Repository selection comes from the launcher/current worktree, not required task-note front matter.
 2. Read the applicable `AGENTS.md` hierarchy and load this skill before implementation.
 3. Recenter from current chat, the task note, `git status --short`, and relevant diffs or recent commits.
-4. When the canonical local task store is accessible, if `## Dependencies` contains unchecked `denote:` targets that still resolve, stop and report the unresolved prerequisites. Mention and ignore unchecked targets only when the canonical store confirms that they no longer resolve. For a launcher-supplied remote note, preserve dependency text but do not parse, resolve, enforce, or describe it as missing; dependency policy remains with the canonical local task system.
+4. Task notes are ordinary files; legacy Dependencies sections and links are context, not an enforced lifecycle. Do not parse/check off dependency checkboxes or infer status from filename signatures. Surface any explicit user-stated prerequisites during scope alignment.
 5. If prior approved scope is unclear, reconstruct the likely contract from the note and worktree, then ask the smallest necessary clarification.
 
 ## Phase 1 — Scope Conversation
@@ -123,4 +123,4 @@ The default handoff remains staged and uncommitted. When the user explicitly app
 
 If the reviewed result is already committed, do not create an empty commit. Commit approval does not authorize a push, merge, PR creation, or other finish mutation. Once committed, load the applicable finish guidance.
 
-Unless explicitly requested, do not maintain phase state in the note, write PR or Jira text, merge, raise a PR, run `my/task-finish`, or close the worktree. Treat later landing or finish requests as follow-up work and load the relevant workflow guidance then. In a repository whose applicable policy declares `finish-mode: pull-request`, load the `pull-request` skill when the user asks to prepare or deliver the PR.
+Unless explicitly requested, do not maintain phase state in the note, write PR or Jira text, merge, raise a PR, mutate the task note as a completion action, or close the worktree. Treat later landing or finish requests as follow-up work and load the relevant workflow guidance then. In a repository whose applicable policy declares `finish-mode: pull-request`, load the `pull-request` skill when the user asks to prepare or deliver the PR.

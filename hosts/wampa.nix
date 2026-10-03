@@ -114,37 +114,7 @@ in
           "brucenunk/zsa-voyager-keymap"
         ];
 
-        programs.emacs = {
-          package = pkgs.emacs-pgtk;
-
-          extraConfig = ''
-            (with-eval-after-load 'my-agent-pi
-              (setq my/agent-pi-model-routes
-                    '(("gpt-6-astra" . "openai-proxy/gpt-6-astra")
-                      ("gpt-6.1-sol" . "openai-proxy/gpt-6.1-sol")
-                      ("gpt-6-sol" . "openai-proxy/gpt-6-sol")
-                      ("gpt-6-luna" . "openai-proxy/gpt-6-luna")
-                      ("gpt-5.6-sol" . "openai-proxy/gpt-5.6-sol")
-                      ("gpt-5.6-terra" . "openai-proxy/gpt-5.6-terra")
-                      ("gpt-5.6-luna" . "openai-proxy/gpt-5.6-luna")
-                      ("grok-4.7" . "bedrock-proxy/global.xai.grok-4.7")
-                      ("grok-4.6" . "bedrock-proxy/global.xai.grok-4.6")
-                      ("fable-5" . "bedrock-proxy/global.anthropic.claude-fable-5")
-                      ("opus-5" . "bedrock-proxy/global.anthropic.claude-opus-5")
-                      ("sonnet-5.5" . "bedrock-proxy/global.anthropic.claude-sonnet-5-5")
-                      ("sonnet-5" . "bedrock-proxy/global.anthropic.claude-sonnet-5"))
-                    my/agent-pi-valid-models
-                    '("gpt-6-astra" "gpt-6.1-sol" "gpt-6-sol" "gpt-6-luna"
-                      "gpt-5.6-sol" "gpt-5.6-terra" "gpt-5.6-luna"
-                      "grok-4.7" "grok-4.6" "fable-5" "opus-5" "sonnet-5.5" "sonnet-5")
-                    my/agent-pi-valid-thinking-levels
-                    '("off" "minimal" "low" "medium" "high" "xhigh" "max")
-                    my/agent-pi-minimal-thinking-unsupported-models
-                    '("gpt-6-astra" "gpt-6.1-sol" "gpt-6-sol" "gpt-6-luna"
-                      "gpt-5.6-sol" "gpt-5.6-terra" "gpt-5.6-luna")
-                    my/agent-pi-default-model "gpt-6.1-sol"))
-          '';
-        };
+        programs.emacs.package = pkgs.emacs-pgtk;
 
         programs.git.settings.user.email = "bruce.nunk@gmail.com";
       }

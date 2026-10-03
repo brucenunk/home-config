@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; Denote configuration for task management (Mission Control Task Queue).
+;; Denote configuration for task files, templates, links, and auto-refresh.
 
 ;;; Code:
 
@@ -46,7 +46,7 @@ with avoiding redundant reverts during rapid agent edits."
   :config
   (require 'my-task)
   (let ((task-workflow-v3-template
-         "## Dependencies\n\n-\n\n## Context\n\nInitial thoughts, background, and links for future pickup.\n\n## Goals\n\n- \n\n## Non-Goals\n\n- \n\n## Constraints\n\n- Durable constraints, locked details, or invariants that should survive session handoff.\n"))
+         "## Context\n\nInitial thoughts, background, and links for future pickup.\n\n## Goals\n\n- \n\n## Non-Goals\n\n- \n\n## Constraints\n\n- Durable constraints, locked details, or invariants that should survive session handoff.\n"))
     (setq denote-templates
           `((task-workflow-v3 . ,task-workflow-v3-template)
             (task . ,task-workflow-v3-template)
