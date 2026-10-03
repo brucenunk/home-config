@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -142,11 +143,35 @@ func runFinish(ctx context.Context, c app.Config, client *herdr.Client, profiles
 		fmt.Println("Cancelled; nothing finished.")
 		return nil
 	}
-	if err := app.Finish(ctx, client, m.Target); err != nil {
-		return fmt.Errorf("finish %q on %q: %w", m.Target.Agent.Name, m.Target.Machine.DisplayName(), err)
+	return finishSelected(ctx, client, m.Targets, os.Stdout)
+}
+
+// Discovery is shared, but each selected session retains its own safety checks.
+// Stop at the first error: mutations may have applied despite an error response.
+func finishSelected(ctx context.Context, client app.Finisher, targets []app.FinishTarget, out io.Writer) error {
+	for i, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("finish cancelled; %d completed. %s: %w", i, unattemptedSummary(targets[i:]), err)
+		}
+		if err := app.Finish(ctx, client, target); err != nil {
+			return fmt.Errorf("finish %q on %q failed; state may be uncertain; %d completed. %s: %w", target.Agent.Name, target.Machine.DisplayName(), i, unattemptedSummary(targets[i+1:]), err)
+		}
+		if _, err := io.WriteString(out, finishSummary(target)); err != nil {
+			return fmt.Errorf("%d completed, but could not write finish summary. %s: %w", i+1, unattemptedSummary(targets[i+1:]), err)
+		}
 	}
-	fmt.Print(finishSummary(m.Target))
 	return nil
+}
+
+func unattemptedSummary(targets []app.FinishTarget) string {
+	if len(targets) == 0 {
+		return "No sessions left unattempted"
+	}
+	labels := make([]string, len(targets))
+	for i, target := range targets {
+		labels[i] = fmt.Sprintf("%q on %q", target.Agent.Name, target.Machine.DisplayName())
+	}
+	return "Not attempted: " + strings.Join(labels, ", ")
 }
 
 func finishSummary(target app.FinishTarget) string {

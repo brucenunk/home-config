@@ -12,9 +12,15 @@ import (
 type finishItem struct {
 	label  string
 	target app.FinishTarget
+	marked bool
 }
 
-func (i finishItem) Title() string       { return i.label }
+func (i finishItem) Title() string {
+	if i.marked {
+		return "[✓] " + i.label
+	}
+	return "[ ] " + i.label
+}
 func (i finishItem) Description() string { return "" }
 func (i finishItem) FilterValue() string { return i.label }
 
@@ -24,9 +30,10 @@ func displayLabel(s string) string {
 }
 
 type FinishModel struct {
-	picker Model
-	Target app.FinishTarget
-	Ready  bool
+	picker  Model
+	Targets []app.FinishTarget
+	marked  int
+	Ready   bool
 }
 
 func NewFinish(c app.Config, targets []app.FinishTarget, themeDir string) (FinishModel, error) {
@@ -46,7 +53,7 @@ func NewFinish(c app.Config, targets []app.FinishTarget, themeDir string) (Finis
 			label = fmt.Sprintf("%s · %s — %s", displayLabel(t.Agent.Name), displayLabel(t.Machine.DisplayName()), label)
 		}
 		labels[i] = label
-		items[i] = finishItem{label, t}
+		items[i] = finishItem{label: label, target: t}
 	}
 	// Profile labels can also collide; keep every final row distinguishable.
 	counts = map[string]int{}
@@ -60,7 +67,7 @@ func NewFinish(c app.Config, targets []app.FinishTarget, themeDir string) (Finis
 			items[i] = row
 		}
 	}
-	picker.choices("Choose session to finish", labels, "")
+	picker.choices("Choose sessions to finish", labels, "")
 	picker.list.SetFilteringEnabled(false)
 	picker.list.SetItems(items)
 	return FinishModel{picker: picker}, nil
@@ -69,6 +76,9 @@ func NewFinish(c app.Config, targets []app.FinishTarget, themeDir string) (Finis
 func (m FinishModel) Init() tea.Cmd { return nil }
 
 func (m FinishModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.Ready {
+		return m, nil
+	}
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
 		m.picker.list.SetSize(size.Width, max(8, size.Height-5))
 	}
@@ -76,9 +86,34 @@ func (m FinishModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch key.String() {
 		case "ctrl+c", "esc":
 			return m, tea.Quit
-		case "enter":
+		case " ":
 			if selected, ok := m.picker.list.SelectedItem().(finishItem); ok {
-				m.Target, m.Ready = selected.target, true
+				selected.marked = !selected.marked
+				if selected.marked {
+					m.marked++
+				} else {
+					m.marked--
+				}
+				index := m.picker.list.Index()
+				cmd := m.picker.list.SetItem(index, selected)
+				if index+1 < len(m.picker.list.Items()) {
+					m.picker.list.Select(index + 1)
+				}
+				return m, cmd
+			}
+			return m, nil
+		case "enter":
+			for _, item := range m.picker.list.Items() {
+				if row := item.(finishItem); row.marked {
+					m.Targets = append(m.Targets, row.target)
+				}
+			}
+			if len(m.Targets) > 0 {
+				m.Ready = true
+				return m, tea.Quit
+			}
+			if selected, ok := m.picker.list.SelectedItem().(finishItem); ok {
+				m.Targets, m.Ready = []app.FinishTarget{selected.target}, true
 				return m, tea.Quit
 			}
 			return m, nil
@@ -93,5 +128,5 @@ func (m FinishModel) View() string {
 	if m.Ready {
 		return ""
 	}
-	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n", m.picker.styles.title.Render("herdsman finish"), m.picker.list.View(), m.picker.styles.muted.Render("enter finishes · esc/ctrl+c cancels"))
+	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n", m.picker.styles.title.Render(fmt.Sprintf("herdsman finish · %d selected", m.marked)), m.picker.list.View(), m.picker.styles.muted.Render("space toggles · enter finishes marked or highlighted · esc/ctrl+c cancels"))
 }

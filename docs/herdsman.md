@@ -8,7 +8,7 @@ prompt styling and navigation as “Start from a task file?”.
 
 `herdsman start` collects an optional local task file, a repository, and a
 destination machine, then starts a new Pi session through the Herdr CLI.
-`herdsman finish` selects and cleans up an existing session. Neither command
+`herdsman finish` selects and cleans up one or more existing sessions. Neither command
 invokes a coordinator agent. The source lives in `go/herdsman/`.
 
 The launcher can run outside Herdr, including an ordinary terminal or Emacs
@@ -347,14 +347,28 @@ Only idle/done Pi agents in linked-worktree workspaces are eligible. One
 check uses this inventory, with no extra calls or
 waiting. Checkouts reported as shared by multiple agents are excluded; the
 current session is not excluded. There is no special default selection or filtering.
-Use arrows or Ctrl+N/Ctrl+P to navigate and Enter to select.
-Escape or Ctrl+C cancels.
+Use arrows or Ctrl+N/Ctrl+P to navigate. Space toggles a row's selection mark
+and advances to the next row, whether selecting or deselecting. At the final
+row, it stays put without wrapping. The header shows the selected count.
+Enter finishes all marked sessions
+in displayed order; if none are marked, it finishes only the highlighted row.
+Escape or Ctrl+C cancels without cleanup, including when rows are marked.
+
+Discovery is shared across the selection, but cleanup is sequential. Each
+session retains its own quit, wait, safety snapshots, and removal; final safety
+snapshots are not shared. Successful sessions are reported as they finish.
+The first error stops the batch and identifies the failed/possibly uncertain
+session, the number completed, and those not attempted. Cancellation between
+sessions leaves the remaining sessions unattempted. There is no daemon,
+background execution, or parallel cleanup.
 
 **Enter immediately starts cleanup, without a confirmation dialog.** Herdsman
-sends `/quit` once to the selected agent name without a pre-quit recheck.
+sends `/quit` once to each selected agent name when its turn arrives, without
+a pre-quit recheck.
 Selection authorizes quitting even if the session's status changed while the
 picker was open. If the name has been reused, `/quit` can reach a replacement
-session; do not leave the picker open across session changes.
+session; do not leave the picker open across session changes, and avoid changes
+to later selected sessions while earlier ones are finishing.
 
 Herdsman uses `herdr agent wait PANE --until unknown --timeout 30000` on the
 selected pane as the initial notification. Herdr reporting unknown
