@@ -52,13 +52,7 @@
         { pkgs, lib, ... }:
         {
           formatter = pkgs.nixfmt-tree;
-          packages = {
-            hephaestus = import ./pkgs/hephaestus.nix {
-              inherit pkgs;
-              lib = pkgs.lib;
-            };
-          }
-          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+          packages = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             josip = import ./pkgs/josip.nix { inherit pkgs; };
           };
         };

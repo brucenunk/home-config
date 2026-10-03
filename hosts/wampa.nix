@@ -46,7 +46,6 @@ in
           config.flake.modules.homeManager.git
           config.flake.modules.homeManager.git-maintenance
           config.flake.modules.homeManager.golang
-          config.flake.modules.homeManager.hephaestus
           config.flake.modules.homeManager.herdr
           config.flake.modules.homeManager.herdsman
           config.flake.modules.homeManager.kube

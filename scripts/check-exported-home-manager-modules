@@ -49,7 +49,6 @@ nix eval --impure --raw --expr '
       "git"
       "git-maintenance"
       "golang"
-      "hephaestus"
       "herdr"
       "herdsman"
       "kube"

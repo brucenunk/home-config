@@ -121,7 +121,7 @@
   (dolist (key '("D" "F" "p" "X"))
     (should-not (lookup-key my/tasks-map key)))
   (dolist (feature '(my-task-finish my-task-session my-task-index my-agent
-                    my-agent-pi my-hephaestus my-worktree-repair my-git my-repo my-worktree))
+                    my-agent-pi my-worktree-repair my-git my-repo my-worktree))
     (should-not (featurep feature))))
 
 (provide 'my-task-tests)
