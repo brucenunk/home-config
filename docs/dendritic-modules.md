@@ -119,8 +119,8 @@ and platform boundaries.
   `doric-obsidian` Waybar theme pair. Consumers with a different bar layout or
   launcher can import it without the `waybar` module's Wampa policy. The full
   `waybar` module imports these assets itself.
-- `agents` already separates shared file deployment from Darwin-only packages
-  through platform compatibility checks; it needs no additional interface.
+- `agents` deploys shared agent instructions and skills; it needs no additional
+  interface.
 - `darkman` intentionally retains the ordinary-login Niri integration. A
   nested or otherwise specialised session owns its service lifecycle, portal
   policy, environment recovery, and live-reload mechanics rather than

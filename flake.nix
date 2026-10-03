@@ -49,12 +49,9 @@
       _module.args = { inherit mkPkgs; };
 
       perSystem =
-        { pkgs, lib, ... }:
+        { pkgs, ... }:
         {
           formatter = pkgs.nixfmt-tree;
-          packages = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
-            josip = import ./pkgs/josip.nix { inherit pkgs; };
-          };
         };
 
       imports = [

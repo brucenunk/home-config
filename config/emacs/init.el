@@ -43,7 +43,6 @@
 (require 'my-emacs-ui)
 (require 'my-emacs-completion)
 (require 'my-emacs-editing)
-(require 'my-emacs-dictation)
 
 ;; ============================================================================
 ;; Startup Hooks

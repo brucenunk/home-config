@@ -4,7 +4,6 @@ let
   homeManagerModule =
     {
       lib,
-      pkgs,
       ...
     }:
 
@@ -21,20 +20,8 @@ let
           value.source = ../../config/agents/skills/${skillName};
         }) skillNames
       );
-
-      soxDictationInspector = pkgs.runCommand "sox-dictation-inspector" { } ''
-        mkdir -p $out/bin
-        ln -s ${pkgs.sox}/bin/sox $out/bin/sox
-      '';
-
-      josip = import ../../pkgs/josip.nix { inherit pkgs; };
     in
     {
-      home.packages = lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
-        soxDictationInspector
-        josip
-      ];
-
       home.file = skillEntries // {
         ".codex/AGENTS.md".source = ../../config/codex/AGENTS.md;
 
