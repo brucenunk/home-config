@@ -450,5 +450,5 @@ build; see `AGENTS.md`. These checks do not activate configuration or demonstrat
 a running Pi/remote server has loaded it.
 
 The bare-command entry menu, model comparisons, finish plugin integration, branch
-deletion, and cleanup of workspaces without a live agent are deferred. Existing `start-task` and
-`finish-task` commands remain available.
+deletion, and cleanup of workspaces without a live agent are deferred. Use
+`herdsman start` and `herdsman finish` for task launch and cleanup.
