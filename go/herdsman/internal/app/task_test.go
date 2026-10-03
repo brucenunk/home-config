@@ -16,7 +16,7 @@ func TestTaskPreservesBodyAndConstructsPrompt(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if task.Title != "A task: with punctuation" || task.Repo != "owner/repo" || task.Body != body {
+		if task.Title != "A task: with punctuation" || task.Skill != "task-workflow-v3" || task.Body != body {
 			t.Fatalf("%+v", task)
 		}
 		if task.Prompt() != body+"\n\nLoad the task-workflow-v3 agent skill and follow instructions." {

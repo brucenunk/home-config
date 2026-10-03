@@ -67,7 +67,7 @@ func NewFinish(c app.Config, targets []app.FinishTarget, themeDir string) (Finis
 			items[i] = row
 		}
 	}
-	picker.choices("Choose sessions to finish", labels, "")
+	picker.choices("Choose sessions to finish", labels)
 	picker.list.SetFilteringEnabled(false)
 	picker.list.SetItems(items)
 	return FinishModel{picker: picker}, nil

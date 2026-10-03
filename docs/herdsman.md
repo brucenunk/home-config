@@ -113,8 +113,10 @@ match Herdr's `[a-z][a-z0-9_-]{0,31}` rule. Wampa declares its twelve names;
 they are configuration, not a built-in Go pool. For managed configuration,
 declare this pool in Nix and rebuild.
 
-The repository picker shows the union of configured slugs. Task `repo` metadata
-preselects a configured entry but can be overridden. The machine picker shows
+The repository picker shows the union of configured slugs and opens with no
+selection. Navigate to explicitly select a repository before pressing Enter;
+filtering or returning from the machine picker clears the selection. Legacy
+task `repo` metadata is ignored. The machine picker shows
 only configured hosts for that repo which are Local or uniquely labelled,
 enabled saved Herdr machines. There is no availability probing while navigating.
 
@@ -271,8 +273,8 @@ these styles. Ordinary filenames and terminal-native fallback are unchanged.
 Tasks must be regular files. Reading them runs outside the TUI event loop, so
 Escape and Ctrl+C remain responsive while loading.
 Task files need YAML front matter with a non-empty, single-line `title`.
-`repo` and `skill` are optional. The prompt preserves the complete body after
-front matter. When a non-empty `skill` is declared, it must be a valid skill name
+`skill` is optional; legacy `repo` fields are ignored. The prompt preserves the
+complete body after front matter. When a non-empty `skill` is declared, it must be a valid skill name
 and the prompt appends:
 
 ```text

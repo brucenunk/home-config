@@ -69,7 +69,7 @@ func TestForcedModesInitializeBackground(t *testing.T) {
 			if r.HasDarkBackground() != (mode == "dark") {
 				t.Fatal("forced mode did not initialize Lip Gloss background state")
 			}
-			m.choices("Choose repository", []string{"owner/repo"}, "")
+			m.choices("Choose repository", []string{"owner/repo"})
 			_ = m.beginTasks()
 		})
 	}
@@ -84,7 +84,7 @@ func TestRenderedPaginationAndMatches(t *testing.T) {
 	for i := range names {
 		names[i] = fmt.Sprintf("owner/repo-%02d", i)
 	}
-	m.choices("Choose repository", names, "")
+	m.choices("Choose repository", names)
 	if m.list.Paginator.TotalPages < 2 {
 		t.Fatal("test requires pagination")
 	}
@@ -115,7 +115,7 @@ func TestRenderedPaginationAndMatches(t *testing.T) {
 	// merely on a selected border or elsewhere in the view.
 	pattern := regexp.MustCompile("\x1b\\[[0-9;]*" + foreground + "[0-9;]*mo")
 	m.list.SetFilterText("o")
-	d := choiceDelegate{list.NewDefaultDelegate()}
+	d := choiceDelegate{DefaultDelegate: list.NewDefaultDelegate()}
 	d.Styles = m.styles.items()
 	for _, index := range []int{0, 1} {
 		var out bytes.Buffer
@@ -154,6 +154,24 @@ func TestUnicodeFilenameMatchesUseActualFilterOffsets(t *testing.T) {
 	}
 	if highlighted.String() != "==todo" {
 		t.Fatalf("wrong filename match: %q in %q", highlighted.String(), out.String())
+	}
+}
+
+func TestUnselectedRepositoryHasNoHighlightedRow(t *testing.T) {
+	freshRenderer(t)
+	m, _ := key(newModel(t, config(t), nil), "n")
+	d := m.choiceDelegate(true)
+	var first, other bytes.Buffer
+	d.Render(&first, m.list, 0, item("owner/repo"))
+	d.Render(&other, m.list, 1, item("owner/repo"))
+	if first.String() != other.String() {
+		t.Fatal("unselected first row was highlighted")
+	}
+	d.unselected = false
+	first.Reset()
+	d.Render(&first, m.list, 0, item("owner/repo"))
+	if first.String() == other.String() {
+		t.Fatal("explicit selection has no visual highlight")
 	}
 }
 
@@ -368,7 +386,7 @@ func TestMissingPaletteUsesTerminalNativeStyling(t *testing.T) {
 	c.Theme.Mode = "light"
 	c.Theme.Light = "not-installed"
 	m := newModel(t, c, nil)
-	m.choices("Choose repository", []string{"owner/one", "owner/two"}, "")
+	m.choices("Choose repository", []string{"owner/one", "owner/two"})
 	_ = m.beginTasks()
 	m.selector.setFiles([]taskFile{{relative: "task.md", path: "task.md"}})
 	for _, stage := range []stage{askTask, pickTask, pickRepo, pickMachine} {
@@ -389,10 +407,8 @@ func TestChoiceRowsAreConsecutive(t *testing.T) {
 		c.Theme.Mode = mode
 		m := newModel(t, c, nil)
 		for _, title := range []string{"Choose repository", "Choose machine"} {
-			m.choices(title, []string{"owner/one", "owner/two", "owner/three"}, "owner/two")
-			if m.list.Index() != 1 {
-				t.Fatal("preselection changed")
-			}
+			m.choices(title, []string{"owner/one", "owner/two", "owner/three"})
+			m.list.Select(1)
 			view := ansi.Strip(m.list.View())
 			lines := strings.Split(view, "\n")
 			for i, line := range lines {
@@ -418,7 +434,7 @@ func TestDoricStylesReachEveryPicker(t *testing.T) {
 		if m.styles.text.GetForeground() != lipgloss.Color(colors.Text) || m.styles.selected.GetBackground() != lipgloss.Color(colors.SelectionBackground) {
 			t.Fatal("wrong palette")
 		}
-		m.choices("Choose repository", []string{"owner/repo"}, "")
+		m.choices("Choose repository", []string{"owner/repo"})
 		if m.list.FilterInput.PromptStyle.GetForeground() != lipgloss.Color(colors.Accent) || m.list.Help.Styles.ShortDesc.GetForeground() != lipgloss.Color(colors.Muted) {
 			t.Fatal("list defaults leaked")
 		}

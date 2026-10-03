@@ -16,7 +16,6 @@ import (
 type Task struct {
 	Title string `yaml:"title"`
 	Skill string `yaml:"skill"`
-	Repo  string `yaml:"repo"`
 	Body  string `yaml:"-"`
 }
 

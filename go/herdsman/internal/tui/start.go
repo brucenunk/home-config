@@ -8,6 +8,7 @@ import (
 	"github.com/brucenunk/home-config/go/herdsman/internal/app"
 	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
 	"github.com/brucenunk/home-config/go/herdsman/internal/tui/themes"
+	listkey "github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -46,6 +47,7 @@ type Model struct {
 	taskLoading   bool
 	readID        int
 	list          list.Model
+	repoSelected  bool
 	destinations  []herdr.Machine
 	width, height int
 	message       string
@@ -105,16 +107,12 @@ func (m *Model) beginTasks() tea.Cmd {
 	}
 }
 
-func (m *Model) choices(title string, names []string, preselect string) {
+func (m *Model) choices(title string, names []string) {
 	items := make([]list.Item, len(names))
 	for i, n := range names {
 		items[i] = item(n)
 	}
-	d := list.NewDefaultDelegate()
-	d.ShowDescription = false
-	d.SetSpacing(0)
-	d.Styles = m.styles.items()
-	m.list = list.New(items, choiceDelegate{d}, m.width, max(8, m.height-5))
+	m.list = list.New(items, m.choiceDelegate(false), m.width, max(8, m.height-5))
 	m.list.KeyMap.CursorUp.SetKeys(append(m.list.KeyMap.CursorUp.Keys(), "ctrl+p")...)
 	m.list.KeyMap.CursorUp.SetHelp("↑/k/ctrl+p", "up")
 	m.list.KeyMap.CursorDown.SetKeys(append(m.list.KeyMap.CursorDown.Keys(), "ctrl+n")...)
@@ -123,21 +121,55 @@ func (m *Model) choices(title string, names []string, preselect string) {
 	m.list.Title = title
 	m.list.SetShowStatusBar(false)
 	m.list.DisableQuitKeybindings()
-	for i, n := range names {
-		if n == preselect {
-			m.list.Select(i)
-			break
-		}
-	}
 }
 
 func (m *Model) repositories() {
 	m.stage, m.message = pickRepo, ""
-	preselect := ""
-	if m.Request.Task != nil {
-		preselect = m.Request.Task.Repo
+	m.Request.Repo = ""
+	m.choices("Choose repository", m.config.RepositoryNames())
+	m.setRepositorySelection(false)
+}
+
+func (m Model) choiceDelegate(unselected bool) choiceDelegate {
+	d := list.NewDefaultDelegate()
+	d.ShowDescription = false
+	d.SetSpacing(0)
+	d.Styles = m.styles.items()
+	return choiceDelegate{DefaultDelegate: d, unselected: unselected}
+}
+
+func (m *Model) setRepositorySelection(selected bool) {
+	m.repoSelected = selected
+	m.list.SetDelegate(m.choiceDelegate(!selected))
+}
+
+// Bubbles selects the first row by default and can reset its cursor while
+// filtering or resizing. Only explicit navigation may select a repository.
+func (m *Model) updateRepositoryList(msg tea.Msg) tea.Cmd {
+	selected := m.repoSelected
+	filterState := m.list.FilterState()
+	if k, ok := msg.(tea.KeyMsg); ok && filterState != list.Filtering {
+		bindings := m.list.KeyMap
+		if listkey.Matches(k, bindings.CursorUp, bindings.CursorDown, bindings.PrevPage,
+			bindings.NextPage, bindings.GoToStart, bindings.GoToEnd) {
+			if !selected {
+				m.list.Select(0)
+				if listkey.Matches(k, bindings.CursorUp, bindings.CursorDown) {
+					m.setRepositorySelection(m.list.SelectedItem() != nil)
+					return nil
+				}
+			}
+			selected = true
+		}
 	}
-	m.choices("Choose repository", m.config.RepositoryNames(), preselect)
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+	_, matchesUpdated := msg.(list.FilterMatchesMsg)
+	if !selected || matchesUpdated || filterState == list.Filtering || filterState != m.list.FilterState() {
+		selected = false
+	}
+	m.setRepositorySelection(selected && m.list.SelectedItem() != nil)
+	return cmd
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -248,6 +280,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if key.String() == "enter" && (m.stage == pickRepo || m.stage == pickMachine) && m.list.FilterState() != list.Filtering {
+			if m.stage == pickRepo && !m.repoSelected {
+				return m, nil
+			}
 			selected := m.list.SelectedItem()
 			if selected == nil {
 				return m, nil
@@ -271,7 +306,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.stage, m.message = pickMachine, ""
-				m.choices("Choose machine", names, "")
+				m.choices("Choose machine", names)
 				m.list.SetItems(items)
 				m.list.Select(localIndex)
 			} else {
@@ -286,7 +321,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.stage {
 	case pickTask:
 		cmd = m.selector.update(msg)
-	case pickRepo, pickMachine:
+	case pickRepo:
+		cmd = m.updateRepositoryList(msg)
+	case pickMachine:
 		m.list, cmd = m.list.Update(msg)
 	}
 	return m, cmd
@@ -309,6 +346,9 @@ func (m Model) View() string {
 		body = m.styles.title.Render("Choose task file") + "\n" + m.selector.view(m.indexLoading, m.taskLoading) + "\n" + m.styles.muted.Render("type to find · ↑/↓ or ctrl+p/ctrl+n choose · enter select · esc empty-session/cancel")
 	case pickRepo, pickMachine:
 		body = m.list.View() + "\n" + m.styles.muted.Render("esc back")
+		if m.stage == pickRepo {
+			body += "\n" + m.styles.muted.Render("Navigate to select a repository before pressing Enter.")
+		}
 	}
 	if m.message != "" {
 		body += "\n\n" + m.styles.error.Render(displayText(m.message))

@@ -55,6 +55,11 @@ func TestEmptySelectionAndCancellation(t *testing.T) {
 		t.Fatal(m.stage, m.Ready)
 	}
 	m, _ = key(m, "enter")
+	if m.stage != pickRepo || m.repoSelected || m.Request.Repo != "" {
+		t.Fatal("Enter accepted an implicit repository", m.stage, m.Request)
+	}
+	m, _ = key(m, "down")
+	m, _ = key(m, "enter")
 	if m.stage != pickMachine {
 		t.Fatal(m.stage)
 	}
@@ -78,6 +83,7 @@ func TestChoiceNavigationBindings(t *testing.T) {
 				c.Machines["remote"] = app.MachineConfig{Repositories: []string{"owner/one"}}
 				profiles := []herdr.Machine{{ID: "remote-profile", Label: "remote", Enabled: true}}
 				m, _ := key(newModel(t, c, profiles), "n")
+				m, _ = key(m, bindings[0]) // Explicitly select the first repository.
 				if picker == pickMachine {
 					m, _ = key(m, "enter")
 				}
@@ -105,6 +111,7 @@ func TestLocalDisplayDoesNotChangeMachineIdentity(t *testing.T) {
 	c.Machines["Local"] = app.MachineConfig{Repositories: []string{"owner/one"}}
 	profiles := []herdr.Machine{{ID: "remote-profile", Label: "Local", Target: "ssh-alias", Enabled: true}}
 	m, _ := key(newModel(t, c, profiles), "n")
+	m, _ = key(m, "down")
 	m, _ = key(m, "enter")
 	if selected := m.list.SelectedItem().(machineItem); selected.Title() != "Local" || !selected.machine.IsLocal() {
 		t.Fatal(selected)
@@ -144,7 +151,7 @@ func TestLeavingTaskPickerOffersEmptyOrCancel(t *testing.T) {
 	}
 }
 
-func TestTaskFileSelectionAndRepoOverride(t *testing.T) {
+func TestTaskFileSelectionIgnoresLegacyRepo(t *testing.T) {
 	c := config(t)
 	p := filepath.Join(c.TasksDir, "20260930T193614==todo--task.md")
 	if err := os.WriteFile(p, []byte("---\ntitle: Task\nrepo: owner/two\n---\nTask body\n"), 0600); err != nil {
@@ -161,10 +168,14 @@ func TestTaskFileSelectionAndRepoOverride(t *testing.T) {
 	}
 	next, _ = m.Update(cmd())
 	m = next.(Model)
-	if m.stage != pickRepo || m.Request.Task == nil || m.list.SelectedItem().(item) != "owner/two" {
+	if m.stage != pickRepo || m.Request.Task == nil || m.repoSelected {
 		t.Fatalf("stage=%v task=%+v", m.stage, m.Request.Task)
 	}
-	m.list.Select(0)
+	m, _ = key(m, "enter")
+	if m.stage != pickRepo || m.Request.Repo != "" {
+		t.Fatal("legacy repo selected a repository", m.Request)
+	}
+	m, _ = key(m, "down")
 	m, _ = key(m, "enter")
 	m, _ = key(m, "enter")
 	if !m.Ready || m.Request.Repo != "owner/one" || m.Request.Task.Title != "Task" {
@@ -177,16 +188,22 @@ func TestUnavailableMachineAndBackNavigation(t *testing.T) {
 	c.Machines = map[string]app.MachineConfig{"missing": {Repositories: []string{"owner/one"}}}
 	m := newModel(t, c, nil)
 	m, _ = key(m, "n")
+	m, _ = key(m, "down")
 	m, _ = key(m, "enter")
 	if m.stage != pickRepo || m.message == "" || m.Ready {
 		t.Fatal(m.stage, m.message)
 	}
 	m = newModel(t, config(t), nil)
 	m, _ = key(m, "n")
+	m, _ = key(m, "down")
 	m, _ = key(m, "enter")
 	m, _ = key(m, "esc")
+	if m.stage != pickRepo || m.repoSelected || m.Request.Repo != "" {
+		t.Fatal(m.stage, m.Request)
+	}
+	m, _ = key(m, "enter")
 	if m.stage != pickRepo {
-		t.Fatal(m.stage)
+		t.Fatal("back navigation retained repository selection")
 	}
 	m, _ = key(m, "esc")
 	if m.stage != askTask {
@@ -204,6 +221,95 @@ func TestFilteringEnterDoesNotChoosePrematurely(t *testing.T) {
 	m, _ = key(m, "enter")
 	if m.stage != pickRepo || m.Ready {
 		t.Fatal("filter enter selected repository")
+	}
+}
+
+func TestRepositorySelectionSurvivesResizeButNotFiltering(t *testing.T) {
+	m, _ := key(newModel(t, config(t), nil), "n")
+	resize := func() {
+		next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+		m = next.(Model)
+	}
+	resize()
+	if m.repoSelected || !strings.Contains(m.View(), "Navigate to select") {
+		t.Fatal("resize created an initial selection", m.list.Index())
+	}
+	m, _ = key(m, "down")
+	resize()
+	if !m.repoSelected || m.list.SelectedItem().(item) != "owner/one" {
+		t.Fatal("resize lost explicit selection")
+	}
+	m, _ = key(m, "/")
+	m, filterCmd := key(m, "two")
+	// Deliver actual asynchronous filter results, ignoring input blink messages.
+	var deliverFilter func(tea.Cmd)
+	deliverFilter = func(cmd tea.Cmd) {
+		if cmd == nil {
+			return
+		}
+		switch msg := cmd().(type) {
+		case tea.BatchMsg:
+			for _, child := range msg {
+				deliverFilter(child)
+			}
+		case list.FilterMatchesMsg:
+			next, _ := m.Update(msg)
+			m = next.(Model)
+		}
+	}
+	deliverFilter(filterCmd)
+	m, _ = key(m, "enter") // Accept the filter, not a repository.
+	if m.list.FilterState() != list.FilterApplied || len(m.list.VisibleItems()) != 1 || m.repoSelected {
+		t.Fatal("filter created a selection", m.list.FilterState(), m.list.Index())
+	}
+	m, _ = key(m, "enter")
+	if m.stage != pickRepo || m.Request.Repo != "" {
+		t.Fatal("Enter accepted the first filtered result", m.Request)
+	}
+	m, _ = key(m, "down")
+	if !m.repoSelected || m.list.SelectedItem().(item) != "owner/two" {
+		t.Fatal("navigation did not select the filtered result")
+	}
+	m, _ = key(m, "esc") // Clearing the filter also clears selection.
+	if m.stage != pickRepo || m.repoSelected {
+		t.Fatal("clearing the filter retained selection")
+	}
+	m, _ = key(m, "down")
+	m, _ = key(m, "enter")
+	if m.stage != pickMachine || m.Request.Repo != "owner/one" {
+		t.Fatal("explicit selection did not advance", m.Request)
+	}
+}
+
+func TestSingleRepositoryStillRequiresSelection(t *testing.T) {
+	c := config(t)
+	c.Machines["local"] = app.MachineConfig{Repositories: []string{"owner/one"}}
+	m, _ := key(newModel(t, c, nil), "n")
+	for i := 0; i < 2; i++ {
+		m, _ = key(m, "enter")
+		if m.stage != pickRepo || m.repoSelected || m.Ready {
+			t.Fatal("single repository was implicitly selected")
+		}
+	}
+	m, _ = key(m, "up")
+	m, _ = key(m, "enter")
+	if m.stage != pickMachine || m.Request.Repo != "owner/one" {
+		t.Fatal("explicit selection did not advance")
+	}
+}
+
+func TestRepositorySelectionKeepsFrameHeightStable(t *testing.T) {
+	m, _ := key(newModel(t, config(t), nil), "n")
+	initialHeight := strings.Count(m.View(), "\n")
+	for _, navigation := range []string{"down", "down", "up"} {
+		m, _ = key(m, navigation)
+		view := m.View()
+		if !m.repoSelected || strings.Count(view, "\n") != initialHeight {
+			t.Fatal("repository selection changed the frame height")
+		}
+		if !strings.Contains(view, "Navigate to select") {
+			t.Fatal("repository navigation hint disappeared")
+		}
 	}
 }
 
@@ -225,6 +331,35 @@ func TestInitialAndLaterWindowSizes(t *testing.T) {
 	resize()
 	m, _ = key(m, "enter")
 	resize()
+}
+
+func TestUnselectedRepositoryRendersWithOneRowPagination(t *testing.T) {
+	m, _ := key(newModel(t, config(t), nil), "n")
+	for _, size := range []tea.WindowSizeMsg{
+		{Width: 20, Height: 1}, {Width: 80, Height: 8}, {Width: 100, Height: 30},
+	} {
+		next, _ := m.Update(size)
+		m = next.(Model)
+		for i := 0; i < 2; i++ {
+			m, _ = key(m, "?")
+			_ = m.View()
+			m, _ = key(m, "enter")
+			if m.stage != pickRepo || m.repoSelected || m.list.Paginator.Page < 0 {
+				t.Fatal("resize/help created a selection or invalid page")
+			}
+		}
+	}
+	m.list.SetHeight(1)
+	if m.list.Paginator.PerPage != 1 {
+		t.Fatal("test requires one-row pagination")
+	}
+	_ = m.View()
+	m, _ = key(m, "down")
+	_ = m.View()
+	m, _ = key(m, "enter")
+	if m.stage != pickMachine || m.Request.Repo != "owner/one" {
+		t.Fatal("small-terminal selection did not advance")
+	}
 }
 
 func TestMissingTaskDirectoryOffersEmptyOrCancel(t *testing.T) {

@@ -91,13 +91,16 @@ func (s styles) list(l *list.Model) {
 
 // choiceDelegate retains the standard list behavior but explicitly overrides
 // the match foreground. Inherit alone preserves the row's existing foreground.
-type choiceDelegate struct{ list.DefaultDelegate }
+type choiceDelegate struct {
+	list.DefaultDelegate
+	unselected bool
+}
 
 func (d choiceDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
 	style := d.Styles.NormalTitle
 	if m.FilterState() == list.Filtering && m.FilterValue() == "" {
 		style = d.Styles.DimmedTitle
-	} else if index == m.Index() && m.FilterState() != list.Filtering {
+	} else if !d.unselected && index == m.Index() && m.FilterState() != list.Filtering {
 		style = d.Styles.SelectedTitle
 	}
 	var matches []int
