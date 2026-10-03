@@ -6,7 +6,7 @@
 accent = "#603d3a"
 panel_bg = "#ededed"
 sidebar_bg = "#ededed"
-active_row_bg = "#dfdfdf"
+active_row_bg = "#e5d7c5"
 selection_bg = "#b0b0b0"
 surface0 = "#dfdfdf"
 surface1 = "#cdcdcd"

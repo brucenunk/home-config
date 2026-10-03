@@ -121,7 +121,8 @@ error.  Evaluate the theme's package source once and retry to register it."
 (use-package lin
   :ensure nil
   :config
-  (setq lin-face 'lin-blue)
+  ;; Keep Doric's bg-accent selection colour, matching Herdr and Herdsman.
+  (setq lin-face 'hl-line)
   (lin-global-mode))
 
 (provide 'my-emacs-ui)

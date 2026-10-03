@@ -219,7 +219,7 @@ def herdr_theme_text(theme: dict[str, str]) -> str:
         "accent": theme["fg_accent"],
         "panel_bg": theme["bg_main"],
         "sidebar_bg": theme["bg_main"],
-        "active_row_bg": theme["bg_shadow_subtle"],
+        "active_row_bg": theme["bg_accent"],
         "selection_bg": theme["bg_shadow_intense"],
         "surface0": theme["bg_shadow_subtle"],
         "surface1": theme["bg_neutral"],
