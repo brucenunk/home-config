@@ -53,6 +53,15 @@ queue must still be coordinated separately.
 
 ## Settings defaults
 
+Wampa's defaults explicitly select `tuiMode: "regular"` to retain terminal
+scrollback inside Herdr rather than adopting Pi 1.0's fullscreen default.
+`defaultTools: ["+codemode"]` adds codemode alongside the usual built-in tools
+and the auto-discovered `apply_patch` extension. Codemode remains in its default
+`on` mode: tools are still directly available to the model, and scripts can
+orchestrate calls and filter their results. This does not configure MCP servers,
+image models, or additional provider credentials.
+`terminal.showTerminalProgress: true` enables OSC 9;4 terminal progress reporting.
+
 When configured, settings defaults are merged into mutable
 `~/.pi/agent/settings.json` during Home Manager activation. Missing settings
 start from an empty object. Configured defaults retain the module's existing

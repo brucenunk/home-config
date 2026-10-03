@@ -249,6 +249,14 @@ in
             touch "$out"
           '';
 
+        pi-wampa-settings =
+          assert wampaSettings.tuiMode == "regular";
+          assert wampaSettings.defaultTools == [ "+codemode" ];
+          assert wampaSettings.terminal.showTerminalProgress;
+          pkgs.runCommand "pi-wampa-settings" { } ''
+            touch "$out"
+          '';
+
         pi-wampa-gpt6-models =
           assert gpt6ModelsValid;
           assert newBedrockModelsValid;
