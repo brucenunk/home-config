@@ -1,16 +1,16 @@
 # Herdsman
 
-Run `herdsman [--config PATH] [--debug]` to choose **Start session** or **End session**.
+Run `herdsman [--config PATH]` to choose **Start session** or **End session**.
 Start session is selected by default. Use arrows, Tab, or h/l to switch, Enter to
 confirm, or s/f to choose directly. Escape, q, or Ctrl+C cancels without
 querying Herdr or starting/ending anything. This uses the same horizontal
 prompt styling and navigation as “Start from a task file?”.
 
-`herdsman start` collects a local task file or session description, a context, and a
-destination machine, then starts a new Pi session through the Herdr CLI.
-`herdsman finish` ends and cleans up one or more existing sessions; it does not
-complete task notes or merge changes. The CLI command names remain unchanged. Neither command
-invokes a coordinator agent. The source lives in `go/herdsman/`.
+Start session collects a local task file or session description, a context, and a
+destination machine, then queues a Pi launch. End session queues cleanup of one or
+more existing sessions; it does not complete task notes or merge changes. The former
+`start` and `finish` subcommands are removed. Neither operation invokes a coordinator
+agent. The source lives in `go/herdsman/`.
 
 The launcher can run outside Herdr, including an ordinary terminal or Emacs
 terminal. A local Herdr server and any selected saved-machine server must
@@ -70,15 +70,28 @@ The dedicated `herdsman` Home Manager feature installs the program and manages
 `~/.config/herdsman/config.toml`) as a Nix-generated file. Change inventory,
 source directories, base refs and theme selection in the host's Nix configuration,
 then rebuild and activate through that host's prescribed route. Do not edit the
-managed TOML file directly. Restart Herdsman to load an updated configuration.
+managed TOML file directly. Restart the managed Herdsman daemon to load an updated
+configuration; opening a new picker does not reload daemon policy. The UI rejects
+configuration or local Herdr routing that differs from the running daemon. Named
+Herdr sessions and socket overrides must match the service environment; Herdsman
+does not silently route them to the default server. Invalid Herdr session names
+are rejected. Routing comparisons preserve literal absolute path spellings,
+including symlink/parent components; different spellings are conservatively
+rejected even if they happen to address the same socket.
 
-`herdsman start --config PATH` can still use a separate, user-owned file.
+`herdsman --config PATH` can use a separate, user-owned file when the daemon was
+started with matching configuration.
 
 ```toml
 agent_names = ["bushturkey", "binchicken", "possum", "quokka"]
 tasks_dir = "~/work/tasks"
 default_base = "origin/main"
 default_gitdir = "main"
+
+[daemon]
+refresh_interval = "30s"
+queue_capacity = 32
+refresh_concurrency = 4
 
 [theme]
 mode = "auto"
@@ -102,6 +115,13 @@ gitdir = "master.git"
 ```
 
 `tasks_dir`, `default_base` and `default_gitdir` default to the values above.
+The optional `[daemon]` fields also default to the example values.
+`refresh_interval` is a positive Go duration parsed with `time.ParseDuration`,
+such as `"30s"`, `"1m"`, or `"500ms"`; bare numbers and non-positive durations are
+rejected. Extremely large durations are rejected so twice the interval remains
+representable. `queue_capacity` accepts 1–1024 pending requests and
+`refresh_concurrency` accepts 1–64 simultaneous snapshot reads. Restart the daemon
+after changing these settings; the UI never changes policy on a running service.
 Per-repository `base` and `gitdir` override their respective defaults independently.
 `local` is reserved
 as the configuration/internal selector and is displayed as **Local** in the UI
@@ -171,6 +191,11 @@ declares its managed inventory with:
 ```nix
 brucenunk.homeManager.herdsman.config = {
   agentNames = [ "runner" "helper" ];
+  daemon = {
+    refreshInterval = "30s";
+    queueCapacity = 32;
+    refreshConcurrency = 4;
+  };
   defaultBase = "origin/main";
   defaultGitdir = "main";
   machines.local = [ "owner/repo" "owner/other-repo" ];
@@ -338,11 +363,11 @@ in the destination's workspace inventory, even if that workspace has no agent.
 If those leftovers exhaust the pool, inspect and close them manually; Herdsman
 does not automatically remove abandoned workspaces.
 
-Start reuses the machine profiles loaded for the picker. One `herdr api snapshot`
-per enabled server supplies agent inventory and, on the destination, parent
-workspace inventory; it does not separately list workspaces or reload profiles
-after selection. Changes while the picker is open are handled by operation
-errors rather than a second machine-profile read.
+The picker uses cached machine profiles. When a queued start executes, the daemon
+reloads profiles and verifies the selected machine ID, label, SSH target, remote
+Herdr session, and enabled state. One live `herdr api snapshot` per enabled server supplies agent-name
+availability and, on the destination, parent workspace inventory. Cached snapshots
+never authorize launch mutations.
 
 For repository contexts, Herdsman uses Herdr's source resolver to select an existing non-linked source
 workspace, renaming it to `owner/repo`, or creates that parent at the configured
@@ -393,13 +418,15 @@ when entering a repository during research.
 
 ## Ending a session
 
-Run `herdsman finish [--config PATH]` from an ordinary terminal or a Herdr
-pane. It uses the same configuration and themes as `start`. The sorted picker
+Run `herdsman [--config PATH]` from an ordinary terminal or a Herdr
+pane and choose **End session**. Both operations share configuration and themes. The sorted picker
 lists workspace labels (the task title, or description for sessions without task files,
 with owner sessions retaining their cleanup marker)
 across Local and every enabled saved Herdr machine, including machines absent
 from the configured repository inventory. Duplicate labels gain an agent/machine
-prefix. An unreachable server stops discovery without changing anything.
+prefix. An unreachable server retains its last successful cached inventory with
+a stale/error warning; other machines remain visible. A machine with no successful
+refresh is reported as loading/unavailable, not as having no sessions.
 
 Only idle/done Pi agents in eligible linked-worktree workspaces or recognizable
 Herdsman owner-session workspaces are offered. Owner workspaces must retain the
@@ -414,10 +441,8 @@ do not assign this pattern to unrelated workspaces. The pinned snapshot exposes
 no stable ordinary-workspace root path, so owner classification does not rely
 on current shell directories or additional remote lookups.
 
-One
-`herdr api snapshot` per server supplies agents and workspaces together. The status
-check uses this inventory, with no extra calls or
-waiting. Checkouts reported as shared by multiple agents are excluded; the
+The daemon cache supplies agents and workspaces together. Opening the picker
+does not query any remote server. The status check uses this cached inventory. Checkouts reported as shared by multiple agents are excluded; the
 current session is not excluded. There is no special default selection or filtering.
 Use arrows or Ctrl+N/Ctrl+P to navigate. Space toggles a row's selection mark
 and advances to the next row, whether selecting or deselecting. At the final
@@ -426,21 +451,18 @@ Enter ends all marked sessions
 in displayed order; if none are marked, it finishes only the highlighted row.
 Escape or Ctrl+C cancels without cleanup, including when rows are marked.
 
-Discovery is shared across the selection, but cleanup is sequential. Each
-session retains its own quit, wait, safety snapshots, and removal; final safety
-snapshots are not shared. Successful sessions are reported as they finish.
-The first error stops the batch and identifies the failed/possibly uncertain
-session, the number completed, and those not attempted. Cancellation between
-sessions leaves the remaining sessions unattempted. There is no daemon,
-background execution, or parallel cleanup.
+Discovery is shared across the selection, but background cleanup is sequential.
+Each session retains its own pre-quit revalidation, quit, wait, safety snapshots,
+and removal; final safety snapshots are not shared. Successful steps and results
+are logged. The first error stops that batch and logs the failed/possibly uncertain
+session, the number completed, and unattempted sessions. Later independent queued
+requests can still execute.
 
-**Enter immediately starts cleanup, without a confirmation dialog.** Herdsman
-sends `/quit` once to each selected agent name when its turn arrives, without
-a pre-quit recheck.
-Selection authorizes quitting even if the session's status changed while the
-picker was open. If the name has been reused, `/quit` can reach a replacement
-session; do not leave the picker open across session changes, and avoid changes
-to later selected sessions while earlier ones are finishing.
+**Enter queues cleanup without another confirmation dialog.** Before `/quit`,
+the daemon obtains a fresh snapshot and verifies that the original agent/session
+and workspace identity still match and remain eligible (idle/done). A reused name,
+changed checkout/label, busy agent, or additional occupant stops the request
+without quitting. Revalidation is not a lock against concurrent external changes.
 
 Herdsman uses `herdr agent wait PANE --until unknown --timeout 30000` on the
 selected pane as the initial notification. Herdr reporting unknown
@@ -460,8 +482,9 @@ without printing payloads. The Herdr wait and snapshot retries
 share one 30-second exit-confirmation deadline. Only reads are retried: `/quit`
 and removal are each sent at most once. Wait transport errors, timeouts, and
 unexpected responses also stop cleanup. Removal has a separate timeout.
-The common path uses four calls after selection; an early wakeup adds snapshot
-reads until the original session disappears or confirmation stops.
+Execution reloads machine profiles and adds a pre-quit safety snapshot, followed
+by quit, wait, final snapshot, and removal. An early wakeup adds snapshot reads
+until the original session disappears or confirmation stops.
 For worktree sessions, after the final safety checks, Herdsman calls
 `herdr worktree remove --workspace ID --force`. Forced removal intentionally
 discards uncommitted checkout contents and removes the task workspace. The
@@ -477,8 +500,8 @@ Herdsman then calls `herdr workspace close ID`, never group closure or worktree
 removal. This drops workspace/pane runtime state while retaining all directory
 contents and the saved Pi transcript. Closure is sent at most once, with a
 separate timeout; uncertainty requires manual inspection before retrying.
-The normal owner end path also uses four calls after selection: quit, wait,
-snapshot, close. No extra discovery or pre-quit inspections are added.
+The owner end path uses the same pre-quit revalidation, then quit, wait, final
+snapshot, and close.
 
 Herdr submits `/quit` through Pi's editor without clearing it. An existing draft
 can therefore be submitted instead of quitting. Check that the target session's
@@ -494,34 +517,108 @@ cleanup without retrying mutations. Pi may already have quit, or removal may
 already have applied: inspect Herdr before retrying. Rechecks are not a lock;
 avoid concurrent changes to the selected workspace while finishing it.
 
-## Debug timings
+## Daemon, cache, and queue
 
-Use `herdsman start --debug` or `herdsman finish --debug` to log every local
-and remote Herdr CLI invocation to stderr. The direct SSH `$HOME` lookup used
-by `start` is also logged. Debugging is off by default and does not change
-normal stdout, timeouts, safety checks, or retry behavior.
+Home Manager manages a local daemon with systemd on Linux and launchd on macOS.
+The foreground entry point is `herdsman daemon [--config PATH] [--debug]`.
+The UI never auto-starts it and never calls Herdr or SSH. A missing daemon reports
+an error with service/log guidance. Cancelling the initial menu does not contact
+it either.
 
-Each invocation produces one timestamped line when it finishes, with the
-machine, tool, quoted arguments, `elapsed`, and `status=ok` or `status=error`,
-indicating subprocess success or failure. A hung call is not logged until it
-finishes or times out. JSON parsing,
-Herdr response errors, and application validation are still reported through
-the normal command error path; `status=ok` alone does not prove an operation
-succeeded. Timings include CLI startup and remote transport, not individual
-network/server phases. Finish's `agent wait` entry includes time spent waiting
-inside Herdr, and repeated snapshots expose any exit-confirmation retries.
-An expected agent-disappearance response may have `status=error`
-because the CLI reports it with a nonzero exit code.
+Local IPC is HTTP/JSON over a Unix socket in a user-owned private directory:
+`$XDG_RUNTIME_DIR/herdsman/daemon.sock` when set, otherwise the platform user
+cache directory (`$XDG_CACHE_HOME/herdsman/daemon.sock` or
+`~/.cache/herdsman/daemon.sock` on Linux; normally
+`~/Library/Caches/herdsman/daemon.sock` on macOS). UI and daemon must agree on
+these environment settings. A file lock prevents multiple socket owners and
+permits recovery of a stale socket after a crash. There is no TCP listener.
 
-Prompt bodies are replaced with `<redacted>` (the fixed `/quit` command is
-shown). Debug entries never include response payloads or subprocess stderr.
-Machine names, paths, labels, and other command metadata remain visible, so
-inspect logs before sharing them. Normal error diagnostics are unchanged.
-No log file is created automatically. To capture diagnostics:
+Profiles and per-machine snapshots are refreshed on startup and at the configured
+`daemon.refresh_interval` (default `"30s"`). Snapshot reads use the configured
+`daemon.refresh_concurrency` (default four), one in flight per machine
+profile, so slow remote reads do not hold the cache lock or delay publishing other
+completed reads. Failed refreshes preserve the last successful snapshot and its
+timestamp. Removed/disabled profiles disappear from the picker inventory. Task
+files and remote HOME lookups are not cached.
+
+Each picker uses one stable cache view and a persistent inventory status line:
+healthy inventory shows the oldest successful refresh age; stale or unavailable
+entries identify the affected machines (or machine profiles). Age is time since
+the last successful refresh, not the last attempt. A refresh error warns
+immediately; otherwise a snapshot is stale after twice the configured interval.
+The displayed age updates every second against the fixed picker snapshot, so
+leaving a picker open can make its view stale even while the daemon refreshes.
+Rows never change underneath a selection, and age updates perform no IPC or
+remote calls. Detailed refresh failures are in daemon logs; no-target output also
+lists cache warnings. Leave and reopen for an updated view. Start requires an initial
+successful profile refresh; end-session discovery can use whichever machines
+have loaded. No-target output distinguishes incomplete/stale inventory from a
+successfully refreshed empty inventory. Fresh execution checks—not cached state—
+authorize mutations. A completed or failed operation schedules a refresh of the
+affected machine. Refreshes fetched before a mutation, or for a replaced machine profile/cache
+entry, are discarded rather than published as new state.
+
+Requests enter a bounded, in-memory FIFO (`daemon.queue_capacity`, default 32
+pending requests) with one execution worker. A full queue is rejected immediately. All mutations issued by this daemon
+are serial, including multi-session cleanup; external Git/Herdr activity is not
+locked. The UI reports **Queued**, not Started/Ended, and exits after acknowledgement.
+Closing the UI does not cancel accepted work. If acknowledgement is lost, acceptance
+is uncertain: inspect logs before resubmitting.
+
+The queue, cache, and results are not persisted. On daemon shutdown, active
+subprocess work is cancelled and pending requests are discarded with log entries.
+There is no restart replay, automatic mutation retry, or cleanup of uncertain
+results. Herdr is the source of truth: inspect it after a failure/restart and
+submit a new request if needed. There is no job-status command.
+
+## Service operation and logs
+
+Linux:
 
 ```sh
-herdsman finish --debug 2>herdsman-debug.log
+systemctl --user status herdsman.service
+journalctl --user -u herdsman.service -f
+systemctl --user restart herdsman.service
 ```
+
+macOS:
+
+```sh
+launchctl print "gui/$(id -u)/org.brucenunk.herdsman"
+tail -f ~/Library/Logs/herdsman.log
+launchctl kickstart -k "gui/$(id -u)/org.brucenunk.herdsman"
+```
+
+Normal logs are timestamped JSON on stderr: daemon lifecycle; request acceptance,
+selection, execution, success/failure and elapsed time; confirmed finish steps;
+start result paths/branch/workspace and successful steps; and recovery guidance.
+Internal request IDs correlate entries within one daemon lifetime. Refresh errors
+are logged on change and recovery, not repeated on every unchanged failure.
+Linux journal retention belongs to systemd; launchd appends to the log above,
+without application-managed rotation. Neither log is a persisted queue.
+
+The service wrapper loads Home Manager’s managed session environment, including
+`home.sessionPath` with shell variable expansion (such as `$HOME/.local/bin`),
+and includes managed profile tools. Put SSH ProxyCommand helpers such as Coder in those paths,
+or use absolute paths in SSH configuration; interactive-shell-only PATH edits
+are not available. Authentication, SSH agent availability, and saved-machine
+routing remain Herdr/OpenSSH responsibilities.
+
+For subprocess timings, enable `--debug` on the daemon, either by overriding
+the native Home Manager service command or by stopping the managed service and
+running it in the foreground. Do not run a second daemon against the same socket.
+Debug entries report machine, tool, quoted sanitized arguments, elapsed time,
+and subprocess status. A hung call logs only after it exits or times out. Timings
+include CLI startup/transport, not individual remote-server phases. Expected
+agent-disappearance responses can show `status=error` while safely waking the
+finish checks; subprocess success alone is not application success.
+
+Task bodies and initial prompts are never logged. Debug arguments redact prompts
+except the fixed `/quit` command, and response payloads/stderr are excluded.
+Daemon error diagnostics omit CLI stderr and API messages that might echo prompts,
+retaining operation context, exit status or error code, and recovery guidance.
+Machine labels, paths, workspace labels and other metadata remain visible;
+inspect logs before sharing them.
 
 ## Task-directory snapshots
 
@@ -553,5 +650,5 @@ build; see `AGENTS.md`. These checks do not activate configuration or demonstrat
 a running Pi/remote server has loaded it.
 
 Model comparisons, branch deletion, repository-parent pruning, and cleanup of
-workspaces without a live agent are deferred. Use `herdsman start` and
-`herdsman finish` for session launch and cleanup.
+workspaces without a live agent are deferred. Use `herdsman` for session launch
+and cleanup.

@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
 	"github.com/brucenunk/home-config/go/herdsman/internal/tui/themes"
@@ -212,5 +213,42 @@ func TestConfigRequiresValidUniqueAgentNames(t *testing.T) {
 	}
 	if err := validateAgentNames([]string{strings.Repeat("a", 33)}); err == nil {
 		t.Fatal("accepted overlong agent name")
+	}
+}
+
+func TestDaemonConfig(t *testing.T) {
+	base := `agent_names = ["runner"]
+[machines.local]
+repositories = ["owner/repo"]
+`
+	c, err := load(t, base)
+	if err != nil || c.Daemon != DefaultDaemonConfig() {
+		t.Fatal(c.Daemon, err)
+	}
+	c, err = load(t, base+`[daemon]
+refresh_interval = "500ms"
+queue_capacity = 7
+refresh_concurrency = 2
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	interval, err := c.Daemon.RefreshEvery()
+	if err != nil || interval != 500*time.Millisecond || c.Daemon.QueueCapacity != 7 || c.Daemon.RefreshConcurrency != 2 {
+		t.Fatal(c.Daemon, interval, err)
+	}
+	c, err = load(t, base+`[daemon]
+refresh_interval = "1m"
+`)
+	if err != nil || c.Daemon.QueueCapacity != 32 || c.Daemon.RefreshConcurrency != 4 {
+		t.Fatal(c.Daemon, err)
+	}
+	for _, field := range []string{
+		`refresh_interval = ""`, `refresh_interval = "30"`, `refresh_interval = "0s"`, `refresh_interval = "-1s"`, `refresh_interval = "999999999h"`, `refresh_interval = "1500000h"`,
+		`queue_capacity = 0`, `queue_capacity = -1`, `queue_capacity = 1025`, `refresh_concurrency = 0`, `refresh_concurrency = 65`,
+	} {
+		if _, err := load(t, base+"[daemon]\n"+field+"\n"); err == nil {
+			t.Fatalf("accepted %s", field)
+		}
 	}
 }

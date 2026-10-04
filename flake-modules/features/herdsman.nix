@@ -86,6 +86,11 @@ let
         tasks_dir = cfg.tasksDir;
         default_base = cfg.defaultBase;
         default_gitdir = cfg.defaultGitdir;
+        daemon = {
+          refresh_interval = cfg.daemon.refreshInterval;
+          queue_capacity = cfg.daemon.queueCapacity;
+          refresh_concurrency = cfg.daemon.refreshConcurrency;
+        };
         theme = cfg.theme;
         machines = lib.mapAttrs (_: repositories: { inherit repositories; }) cfg.machines;
         repositories = cfg.repositories;
@@ -94,6 +99,34 @@ let
         name = "herdsman/themes/${name}";
         value.source = ../../config/herdsman/themes/${name};
       }) (lib.filterAttrs (_: type: type == "regular") (builtins.readDir ../../config/herdsman/themes));
+      daemonCommand = [
+        "${package}/bin/herdsman"
+        "daemon"
+        "--config"
+        "${config.xdg.configHome}/herdsman/config.toml"
+      ];
+      daemonRunner = pkgs.writeShellScript "herdsman-daemon" ''
+        # Expand Home Manager's shell-valued session paths/variables, just as
+        # interactive sessions do. Service-manager Environment does not expand.
+        unset __HM_SESS_VARS_SOURCED
+        . ${config.home.sessionVariablesPackage}/etc/profile.d/hm-session-vars.sh
+        exec ${lib.escapeShellArgs daemonCommand}
+      '';
+      daemonEnvironment = {
+        HOME = config.home.homeDirectory;
+        XDG_CONFIG_HOME = config.xdg.configHome;
+        XDG_CACHE_HOME = config.xdg.cacheHome;
+        XDG_DATA_HOME = config.xdg.dataHome;
+        # Service managers do not run an interactive shell. Include managed
+        # tools and consumer session paths (for SSH ProxyCommand helpers).
+        PATH = lib.concatStringsSep ":" ([
+          "${config.home.profileDirectory}/bin"
+          "/run/current-system/sw/bin"
+          "/usr/local/bin"
+          "/usr/bin"
+          "/bin"
+        ]);
+      };
     in
     {
       options.brucenunk.homeManager.herdsman.config = lib.mkOption {
@@ -105,6 +138,29 @@ let
               type = lib.types.listOf lib.types.str;
               default = [ ];
               description = "Agent name pool. Names must be unique and match Herdr's [a-z][a-z0-9_-]{0,31} rule.";
+            };
+            daemon = lib.mkOption {
+              default = { };
+              description = "Daemon refresh and in-memory queue policy; restart the service after changes.";
+              type = lib.types.submodule {
+                options = {
+                  queueCapacity = lib.mkOption {
+                    type = lib.types.ints.between 1 1024;
+                    default = 32;
+                    description = "Maximum pending requests, excluding the executing request.";
+                  };
+                  refreshConcurrency = lib.mkOption {
+                    type = lib.types.ints.between 1 64;
+                    default = 4;
+                    description = "Maximum simultaneous snapshot refreshes; mutations remain serial.";
+                  };
+                  refreshInterval = lib.mkOption {
+                    type = lib.types.str;
+                    default = "30s";
+                    description = "Positive Go duration such as 30s, 1m, or 500ms; validated by Herdsman.";
+                  };
+                };
+              };
             };
             defaultBase = lib.mkOption {
               type = lib.types.str;
@@ -179,6 +235,37 @@ let
 
       config = {
         home.packages = [ package ];
+        systemd.user.services.herdsman = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
+          Unit.Description = "Herdsman cached discovery and execution daemon";
+          Service = {
+            ExecStart = "${daemonRunner}";
+            Environment = lib.mapAttrsToList (name: value: "${name}=${value}") daemonEnvironment;
+            Restart = "on-failure";
+            RestartSec = 5;
+            TimeoutStopSec = 10;
+            UMask = "0077";
+          };
+          Install.WantedBy = [ "default.target" ];
+        };
+        launchd.agents.herdsman = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
+          enable = true;
+          config = {
+            Label = "org.brucenunk.herdsman";
+            ProgramArguments = [ "${daemonRunner}" ];
+            EnvironmentVariables = daemonEnvironment;
+            RunAtLoad = true;
+            KeepAlive = true;
+            ThrottleInterval = 5;
+            ProcessType = "Background";
+            StandardOutPath = "${config.home.homeDirectory}/Library/Logs/herdsman.log";
+            StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/herdsman.log";
+          };
+        };
+        home.activation.herdsmanLogDirectory = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin (
+          lib.hm.dag.entryBefore [ "setupLaunchAgents" ] ''
+            run mkdir -p ${lib.escapeShellArg "${config.home.homeDirectory}/Library/Logs"}
+          ''
+        );
         # Keep the registry user-owned; Herdr merges this link with other plugins.
         home.activation.herdsmanPlugin = lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" ] ''
           # Register offline with the pinned CLI, independent of any older server.
@@ -246,6 +333,7 @@ in
                 "example/train".base = "refs/heads/train/first-pr";
               };
             };
+            home.sessionPath = [ "$HOME/.local/bin" ];
           }
         ];
       };
@@ -259,6 +347,12 @@ in
         assert !(home.config.home.activation ? herdsmanInitialConfig);
         assert home.config.home.activation ? herdsmanPlugin;
         assert
+          if pkgs.stdenv.hostPlatform.isDarwin then
+            builtins.length home.config.launchd.agents.herdsman.config.ProgramArguments == 1
+            && home.config.launchd.agents.herdsman.config.KeepAlive
+          else
+            builtins.length home.config.systemd.user.services.herdsman.Service.ExecStart == 1;
+        assert
           home.config.programs.herdr.settings.keys.command == [
             {
               key = "prefix+t";
@@ -268,6 +362,34 @@ in
             }
           ];
         pkgs.runCommand "herdsman-home-manager-module" { } ''
+          daemonRunner=${
+            if pkgs.stdenv.hostPlatform.isDarwin then
+              builtins.head home.config.launchd.agents.herdsman.config.ProgramArguments
+            else
+              builtins.head home.config.systemd.user.services.herdsman.Service.ExecStart
+          }
+          ${pkgs.python3}/bin/python - "$daemonRunner" <<'PY'
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          with open(sys.argv[1]) as f:
+              runner = f.read()
+          assert 'exec ${package}/bin/herdsman daemon --config ' in runner
+          with tempfile.TemporaryDirectory() as directory:
+              mock = os.path.join(directory, "herdsman")
+              with open(mock, "w") as f:
+                  f.write('#!${pkgs.runtimeShell}\nprintf "%s\\n" "$PATH"\nprintf "%s\\n" "$@"\n')
+              os.chmod(mock, 0o755)
+              result = subprocess.run(["${pkgs.runtimeShell}", "-c",
+                  runner.replace("${package}/bin/herdsman", mock)],
+                  capture_output=True, text=True, check=True,
+                  env=dict(os.environ, HOME=directory, PATH="/usr/bin:/bin"))
+              lines = result.stdout.splitlines()
+              assert directory + "/.local/bin" in lines[0].split(":")
+              assert "$HOME" not in lines[0]
+              assert lines[1:] == ["daemon", "--config", "${home.config.xdg.configHome}/herdsman/config.toml"]
+          PY
           plugin=${home.config.xdg.configFile."herdsman/plugin".source}
           ${pkgs.python3}/bin/python - "$plugin/herdr-plugin.toml" <<'PY'
           import sys
@@ -371,6 +493,9 @@ in
           assert config["default_base"] == "origin/main"
           assert config["default_gitdir"] == "main"
           assert config["agent_names"] == ["example-agent"]
+          assert config["daemon"] == {
+              "refresh_interval": "30s", "queue_capacity": 32, "refresh_concurrency": 4,
+          }
           assert config["theme"] == {
               "mode": "auto", "light": "doric-marble", "dark": "doric-obsidian"
           }
@@ -400,7 +525,7 @@ in
                   "match", "error",
               }
           PY
-          ${package}/bin/herdsman --help | grep -F 'herdsman start'
+          ${package}/bin/herdsman --help 2>&1 | grep -F 'herdsman daemon'
           touch "$out"
         ''
       );

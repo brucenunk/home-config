@@ -4,6 +4,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/app"
 	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type stage int
@@ -39,23 +41,26 @@ func (i machineItem) Description() string { return "" }
 func (i machineItem) FilterValue() string { return i.Title() }
 
 type Model struct {
-	styles        styles
-	config        app.Config
-	profiles      []herdr.Machine
-	stage         stage
-	yes           bool
-	selector      taskSelector
-	description   textinput.Model
-	indexLoading  bool
-	taskLoading   bool
-	readID        int
-	list          list.Model
-	repoSelected  bool
-	destinations  []herdr.Machine
-	width, height int
-	message       string
-	Request       app.StartRequest
-	Ready         bool
+	styles           styles
+	config           app.Config
+	profiles         []herdr.Machine
+	stage            stage
+	yes              bool
+	selector         taskSelector
+	description      textinput.Model
+	indexLoading     bool
+	taskLoading      bool
+	readID           int
+	list             list.Model
+	repoSelected     bool
+	destinations     []herdr.Machine
+	width, height    int
+	message          string
+	inventoryNotice  string
+	inventoryWarning bool
+	inventoryStatus  func(time.Time) (string, bool)
+	Request          app.StartRequest
+	Ready            bool
 }
 
 func New(c app.Config, profiles []herdr.Machine, themeDir string) (Model, error) {
@@ -79,7 +84,46 @@ func New(c app.Config, profiles []herdr.Machine, themeDir string) (Model, error)
 	return Model{config: c, profiles: profiles, styles: styles, description: description, yes: true, width: 80, height: 22}, nil
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd {
+	if m.inventoryStatus != nil {
+		return inventoryTick()
+	}
+	return nil
+}
+
+type inventoryTickMsg time.Time
+
+func inventoryTick() tea.Cmd {
+	return tea.Tick(time.Second, func(now time.Time) tea.Msg { return inventoryTickMsg(now) })
+}
+
+func (m *Model) SetInventoryNotice(status func(time.Time) (string, bool)) {
+	m.inventoryStatus = status
+	m.inventoryNotice, m.inventoryWarning = status(time.Now())
+}
+func (m *Model) updateInventoryNotice(msg tea.Msg) (tea.Cmd, bool) {
+	if now, ok := msg.(inventoryTickMsg); ok && m.inventoryStatus != nil {
+		m.inventoryNotice, m.inventoryWarning = m.inventoryStatus(time.Time(now))
+		return inventoryTick(), true
+	}
+	return nil, false
+}
+func (m Model) noticeHeight() int {
+	if m.inventoryNotice != "" {
+		return 3
+	}
+	return 0
+}
+func (m Model) noticeView() string {
+	if m.inventoryNotice == "" {
+		return ""
+	}
+	text := ansi.Truncate(displayText(m.inventoryNotice), max(1, m.width), "…")
+	if m.inventoryWarning {
+		return "\n" + m.styles.error.Render(text) + "\n"
+	}
+	return "\n" + m.styles.muted.Render(text) + "\n"
+}
 
 type tasksIndexedMsg struct {
 	id    int
@@ -104,7 +148,7 @@ func (m *Model) readTask(path string) tea.Cmd {
 }
 
 func (m *Model) beginTasks() tea.Cmd {
-	m.selector = newTaskSelector(m.width, m.height)
+	m.selector = newTaskSelector(m.width, max(1, m.height-m.noticeHeight()))
 	m.selector.applyStyles(m.styles)
 	m.readID++
 	m.indexLoading, m.taskLoading = true, false
@@ -120,7 +164,7 @@ func (m *Model) choices(title string, names []string) {
 	for i, n := range names {
 		items[i] = item(n)
 	}
-	m.list = list.New(items, m.choiceDelegate(false), m.width, max(8, m.height-5))
+	m.list = list.New(items, m.choiceDelegate(false), m.width, max(1, m.height-8-m.noticeHeight()))
 	m.list.KeyMap.CursorUp.SetKeys(append(m.list.KeyMap.CursorUp.Keys(), "ctrl+p")...)
 	m.list.KeyMap.CursorUp.SetHelp("↑/k/ctrl+p", "up")
 	m.list.KeyMap.CursorDown.SetKeys(append(m.list.KeyMap.CursorDown.Keys(), "ctrl+n")...)
@@ -191,6 +235,9 @@ func (m *Model) updateRepositoryList(msg tea.Msg) tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, ok := m.updateInventoryNotice(msg); ok {
+		return m, cmd
+	}
 	if result, ok := msg.(taskReadMsg); ok {
 		if m.stage != pickTask || result.id != m.readID {
 			return m, nil
@@ -220,10 +267,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = size.Width, size.Height
 		m.description.Width = max(1, size.Width-4)
 		if m.stage == pickTask {
-			m.selector.resize(size.Width, size.Height)
+			m.selector.resize(size.Width, max(1, size.Height-m.noticeHeight()))
 		}
 		if m.stage == pickRepo || m.stage == pickMachine {
-			m.list.SetSize(size.Width, max(8, size.Height-5))
+			m.list.SetSize(size.Width, max(1, size.Height-8-m.noticeHeight()))
 		}
 	}
 	if key, ok := msg.(tea.KeyMsg); ok {
@@ -402,5 +449,5 @@ func (m Model) View() string {
 	if m.message != "" {
 		body += "\n\n" + m.styles.error.Render(displayText(m.message))
 	}
-	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n", m.styles.title.Render("herdsman start"), strings.TrimRight(body, "\n"), m.styles.muted.Render("ctrl+c cancels"))
+	return fmt.Sprintf("\n%s\n\n%s\n%s\n%s\n", m.styles.title.Render("herdsman · start session"), strings.TrimRight(body, "\n"), m.noticeView(), m.styles.muted.Render("ctrl+c cancels"))
 }

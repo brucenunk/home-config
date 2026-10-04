@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
 	"github.com/brucenunk/home-config/go/herdsman/internal/tui/themes"
@@ -14,6 +15,7 @@ import (
 )
 
 type Config struct {
+	Daemon        DaemonConfig                `toml:"daemon"`
 	Theme         themes.Config               `toml:"theme"`
 	AgentNames    []string                    `toml:"agent_names"`
 	TasksDir      string                      `toml:"tasks_dir"`
@@ -26,6 +28,40 @@ type Config struct {
 type MachineConfig struct {
 	Repositories []string `toml:"repositories"`
 }
+
+type DaemonConfig struct {
+	RefreshInterval    string `toml:"refresh_interval"`
+	QueueCapacity      int    `toml:"queue_capacity"`
+	RefreshConcurrency int    `toml:"refresh_concurrency"`
+}
+
+func DefaultDaemonConfig() DaemonConfig {
+	return DaemonConfig{RefreshInterval: "30s", QueueCapacity: 32, RefreshConcurrency: 4}
+}
+
+// RefreshEvery parses the operator-facing duration; callers also use it for
+// cache staleness so UI and scheduling share one policy.
+func (c DaemonConfig) RefreshEvery() (time.Duration, error) {
+	interval, err := time.ParseDuration(c.RefreshInterval)
+	if err != nil || interval <= 0 || interval > time.Duration(1<<63-1)/2 {
+		return 0, fmt.Errorf("daemon.refresh_interval must be a positive Go duration (for example 30s or 1m), no greater than half the duration limit")
+	}
+	return interval, nil
+}
+
+func (c DaemonConfig) Validate() error {
+	if _, err := c.RefreshEvery(); err != nil {
+		return err
+	}
+	if c.QueueCapacity < 1 || c.QueueCapacity > 1024 {
+		return fmt.Errorf("daemon.queue_capacity must be between 1 and 1024")
+	}
+	if c.RefreshConcurrency < 1 || c.RefreshConcurrency > 64 {
+		return fmt.Errorf("daemon.refresh_concurrency must be between 1 and 64")
+	}
+	return nil
+}
+
 type RepositoryConfig struct {
 	Base   string `toml:"base"`
 	Gitdir string `toml:"gitdir"`
@@ -92,9 +128,12 @@ func LoadConfig(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("read config %s: %w", path, err)
 	}
-	var c Config
+	c := Config{Daemon: DefaultDaemonConfig()}
 	if err := toml.Unmarshal(data, &c); err != nil {
 		return c, fmt.Errorf("parse config: %w", err)
+	}
+	if err := c.Daemon.Validate(); err != nil {
+		return c, err
 	}
 	c.Theme = c.Theme.WithDefaults()
 	if err := c.Theme.Validate(); err != nil {

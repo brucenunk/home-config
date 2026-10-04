@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -492,11 +493,100 @@ func TestWaitForQuitResults(t *testing.T) {
 }
 
 func TestWaitForQuitCancellation(t *testing.T) {
+	// Cancellation is still bounded when daemon-safe diagnostics are enabled.
 	c, _ := fakeCLI(t, "")
 	t.Setenv("HERDSMAN_SLEEP", "1")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 	if err := c.WaitForQuit(ctx, Local(), "pane"); err == nil || !strings.Contains(err.Error(), "deadline exceeded") {
 		t.Fatal("wait ignored caller deadline", err)
+	}
+}
+
+func TestDaemonErrorsDoNotEchoPrompt(t *testing.T) {
+	for _, stderr := range []bool{true, false} {
+		c, _ := fakeCLI(t, `{"error":{"code":"rejected","message":"secret task body"}}`)
+		c.RedactErrors = true
+		if stderr {
+			t.Setenv("HERDSMAN_STDERR", "secret task body")
+		}
+		err := c.Prompt(context.Background(), Local(), "possum", "secret task body")
+		if err == nil || strings.Contains(err.Error(), "secret task body") {
+			t.Fatal(err)
+		}
+		t.Setenv("HERDSMAN_STDERR", "")
+	}
+	c, _ := fakeCLI(t, "")
+	c.RedactErrors = true
+	t.Setenv("HERDSMAN_STDERR", `{"error":{"code":"agent_not_found","message":"secret"}}`)
+	if err := c.WaitForQuit(context.Background(), Local(), "pane"); err != nil {
+		t.Fatal("redaction broke disappearance handling", err)
+	}
+}
+
+func TestDaemonRedactsNonExitProcessError(t *testing.T) {
+	original := &processError{fmt.Errorf("fake-cli: %w: secret task body", exec.ErrWaitDelay), "secret task body"}
+	err := redactProcessError("fake-cli", original)
+	if strings.Contains(err.Error(), "secret task body") || !errors.Is(err, exec.ErrWaitDelay) {
+		t.Fatal(err)
+	}
+	var proc *processError
+	if !errors.As(err, &proc) || proc.stderr != "secret task body" {
+		t.Fatal("private stderr lost")
+	}
+}
+
+func TestLocalEndpointRejectsInvalidSessionNames(t *testing.T) {
+	t.Setenv("HERDR_SOCKET_PATH", "")
+	_ = os.Unsetenv("HERDR_SOCKET_PATH")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	for _, session := range []string{"", ".", "..", "../default", "a/b", "bad name", "é", strings.Repeat("a", 65)} {
+		t.Setenv("HERDR_SESSION", session)
+		if endpoint, err := LocalEndpoint(); err == nil || endpoint != "" {
+			t.Fatalf("accepted %q as %q", session, endpoint)
+		}
+	}
+	for _, session := range []string{"default", "work", ".work", strings.Repeat("a", 64)} {
+		t.Setenv("HERDR_SESSION", session)
+		if _, err := LocalEndpoint(); err != nil {
+			t.Fatal(session, err)
+		}
+	}
+	t.Setenv("HERDR_SESSION", "..")
+	t.Setenv("HERDR_SOCKET_PATH", "/explicit/herdr.sock")
+	if endpoint, err := LocalEndpoint(); err != nil || endpoint != "/explicit/herdr.sock" {
+		t.Fatal("socket override must retain pinned CLI precedence", endpoint, err)
+	}
+}
+
+func TestLocalEndpointPreservesSymlinkParentComponents(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "other", "dir")
+	if err := os.MkdirAll(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HERDR_SESSION", "default")
+	lexical := filepath.Join(root, "herdr.sock")
+	t.Setenv("HERDR_SOCKET_PATH", lexical)
+	baseline, err := LocalEndpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ambiguous := link + "/../herdr.sock"
+	t.Setenv("HERDR_SOCKET_PATH", ambiguous)
+	endpoint, err := LocalEndpoint()
+	if err != nil || endpoint != ambiguous || endpoint == baseline {
+		t.Fatal("different Unix routes equated", endpoint, baseline, err)
+	}
+	t.Setenv("HERDR_SOCKET_PATH", "")
+	_ = os.Unsetenv("HERDR_SOCKET_PATH")
+	t.Setenv("XDG_CONFIG_HOME", link+"/..")
+	endpoint, err = LocalEndpoint()
+	if err != nil || endpoint != link+"/../herdr/herdr.sock" {
+		t.Fatal("config directory route normalized", endpoint, err)
 	}
 }

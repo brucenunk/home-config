@@ -20,6 +20,7 @@ type Machine struct {
 	ID      string `json:"id"`
 	Label   string `json:"label"`
 	Target  string `json:"target"`
+	Session string `json:"session"`
 	Enabled bool   `json:"enabled"`
 }
 
@@ -99,16 +100,65 @@ type Client struct {
 	SSH     string
 	Timeout time.Duration
 	Debug   *log.Logger
+	// Daemon logs must not contain CLI stderr or API messages that can echo prompts.
+	RedactErrors bool
 }
 
 func New() *Client { return &Client{Binary: "herdr", SSH: "ssh", Timeout: 30 * time.Second} }
 
+// LocalEndpoint mirrors the pinned Herdr CLI's implicit socket selection.
+// Herdsman does not pass --session: socket override wins over HERDR_SESSION.
+func LocalEndpoint() (string, error) {
+	if path, ok := os.LookupEnv("HERDR_SOCKET_PATH"); ok {
+		return absoluteEndpoint(path)
+	}
+	dir, ok := os.LookupEnv("XDG_CONFIG_HOME")
+	if !ok {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		dir = endpointChild(home, ".config")
+	}
+	dir = endpointChild(dir, "herdr")
+	if session, ok := os.LookupEnv("HERDR_SESSION"); ok && session != "default" {
+		// Match the pinned CLI before comparing routes. Empty-but-set is invalid.
+		if len(session) == 0 || len(session) > 64 || session == "." || session == ".." || strings.IndexFunc(session, func(r rune) bool {
+			return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-')
+		}) >= 0 {
+			return "", fmt.Errorf("invalid HERDR_SESSION %q; expected 1–64 ASCII letters, digits, '.', '_' or '-', excluding '.' and '..'", session)
+		}
+		dir = endpointChild(endpointChild(dir, "sessions"), session)
+	}
+	return absoluteEndpoint(endpointChild(dir, "herdr.sock"))
+}
+
+// Compare literal absolute route spellings conservatively. Join/Abs would
+// clean '..' lexically even though Unix resolves it after following symlinks.
+// Different spellings of the same socket are intentionally not equated.
+func endpointChild(dir, child string) string {
+	if dir == "" {
+		return child
+	}
+	if strings.HasSuffix(dir, string(os.PathSeparator)) {
+		return dir + child
+	}
+	return dir + string(os.PathSeparator) + child
+}
+func absoluteEndpoint(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return endpointChild(cwd, path), nil
+}
+
 // invoke logs subprocess timing, not response contents or server-side phases.
 // Do not log errors verbatim: CLI stderr may echo prompts or response payloads.
 func (c *Client) invoke(ctx context.Context, m Machine, tool, binary string, timeout time.Duration, args ...string) ([]byte, error) {
-	if c.Debug == nil {
-		return run(ctx, timeout, binary, args...)
-	}
 	visible := append([]string(nil), args...)
 	offset := 0
 	if tool == "herdr" && len(visible) >= 2 && visible[0] == "--machine" {
@@ -119,15 +169,31 @@ func (c *Client) invoke(ctx context.Context, m Machine, tool, binary string, tim
 	}
 	start := time.Now()
 	data, err := run(ctx, timeout, binary, args...)
+	if c.RedactErrors {
+		err = redactProcessError(binary, err)
+	}
 	status := "ok"
 	if err != nil {
 		status = "error"
 	}
-	c.Debug.Printf("machine=%q tool=%s args=%q elapsed=%s status=%s", m.DisplayName(), tool, visible, time.Since(start), status)
+	if c.Debug != nil {
+		c.Debug.Printf("machine=%q tool=%s args=%q elapsed=%s status=%s", m.DisplayName(), tool, visible, time.Since(start), status)
+	}
 	return data, err
 }
 
 // Every subprocess is bounded. Keep stderr out of the JSON stream.
+func redactProcessError(binary string, err error) error {
+	var procErr *processError
+	if errors.As(err, &procErr) {
+		// run wraps the actual exec error with %w alongside stderr. Keep the cause
+		// (including ErrWaitDelay), but never that wrapper's sensitive message.
+		cause := errors.Unwrap(procErr.error)
+		return &processError{fmt.Errorf("%s: %w (stderr omitted)", binary, cause), procErr.stderr}
+	}
+	return err
+}
+
 func run(ctx context.Context, timeout time.Duration, binary string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -182,6 +248,9 @@ func (c *Client) call(ctx context.Context, m Machine, timeout time.Duration, res
 		var apiErr apiError
 		if err := json.Unmarshal(envelope.Error, &apiErr); err != nil {
 			return fmt.Errorf("Herdr response error: %w", err)
+		}
+		if c.RedactErrors {
+			apiErr.Message = "server message omitted"
 		}
 		return &apiErr
 	}

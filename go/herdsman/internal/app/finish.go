@@ -54,6 +54,14 @@ func finishTargetsOn(ctx context.Context, client Finisher, m herdr.Machine) ([]F
 	if err != nil {
 		return nil, err
 	}
+	return FinishTargetsFromSnapshot(m, snapshot)
+}
+
+// FinishTargetsFromSnapshot is shared by live discovery and the daemon cache.
+func FinishTargetsFromSnapshot(m herdr.Machine, snapshot herdr.Snapshot) ([]FinishTarget, error) {
+	if err := validateFinishSnapshot(snapshot); err != nil {
+		return nil, err
+	}
 	agents, workspaces := snapshot.Agents, snapshot.Workspaces
 	paths := workspacePaths(workspaces)
 	names, occupants, workspaceOccupants := map[string]int{}, map[string]int{}, map[string]int{}
@@ -93,7 +101,29 @@ func workspacePaths(workspaces []herdr.Workspace) map[string]string {
 	return paths
 }
 
-// Selection authorizes /quit without a pre-quit recheck. Finish never retries a
+// RevalidateFinish checks delayed selections before any mutation. Status may
+// change between idle and done, but session and workspace identity must match.
+func RevalidateFinish(ctx context.Context, client Finisher, target FinishTarget) error {
+	snapshot, err := finishSnapshot(ctx, client, target.Machine)
+	if err != nil {
+		return fmt.Errorf("revalidate selection; no changes made: %w", err)
+	}
+	targets, err := FinishTargetsFromSnapshot(target.Machine, snapshot)
+	if err != nil {
+		return err
+	}
+	for _, current := range targets {
+		if len(agentIdentityChanges(current.Agent, target.Agent)) != 0 || current.Workspace.ID != target.Workspace.ID || current.Workspace.Label != target.Workspace.Label || current.OwnerSession() != target.OwnerSession() {
+			continue
+		}
+		if target.OwnerSession() || (current.Workspace.Worktree != nil && target.Workspace.Worktree != nil && current.Workspace.Worktree.CheckoutPath == target.Workspace.Worktree.CheckoutPath) {
+			return nil
+		}
+	}
+	return fmt.Errorf("selected session identity or eligibility changed; no changes made; select again in Herdsman")
+}
+
+// The daemon revalidates selection before calling Finish. Finish never retries a
 // mutation. Exit confirmation (wait plus snapshots) has one deadline, separate
 // from removal, so a slow shutdown cannot consume the removal timeout.
 func Finish(ctx context.Context, client Finisher, target FinishTarget) error {
@@ -222,10 +252,14 @@ func finishSnapshot(ctx context.Context, client Finisher, m herdr.Machine) (herd
 	if err != nil {
 		return snapshot, err
 	}
+	return snapshot, validateFinishSnapshot(snapshot)
+}
+
+func validateFinishSnapshot(snapshot herdr.Snapshot) error {
 	for _, a := range snapshot.Agents {
 		if a.WorkspaceID == "" || a.PaneID == "" || a.Status == "" {
-			return snapshot, fmt.Errorf("incomplete agent inventory")
+			return fmt.Errorf("incomplete agent inventory")
 		}
 	}
-	return snapshot, nil
+	return nil
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/app"
 	"github.com/charmbracelet/bubbles/list"
@@ -73,14 +74,23 @@ func NewFinish(c app.Config, targets []app.FinishTarget, themeDir string) (Finis
 	return FinishModel{picker: picker}, nil
 }
 
-func (m FinishModel) Init() tea.Cmd { return nil }
+func (m FinishModel) Init() tea.Cmd { return m.picker.Init() }
+
+func (m *FinishModel) SetInventoryNotice(status func(time.Time) (string, bool)) {
+	m.picker.SetInventoryNotice(status)
+	m.picker.list.SetSize(m.picker.width, max(1, m.picker.height-8-m.picker.noticeHeight()))
+}
 
 func (m FinishModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.Ready {
 		return m, nil
 	}
+	if cmd, ok := m.picker.updateInventoryNotice(msg); ok {
+		return m, cmd
+	}
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
-		m.picker.list.SetSize(size.Width, max(8, size.Height-5))
+		m.picker.width, m.picker.height = size.Width, size.Height
+		m.picker.list.SetSize(size.Width, max(1, size.Height-8-m.picker.noticeHeight()))
 	}
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
@@ -128,5 +138,5 @@ func (m FinishModel) View() string {
 	if m.Ready {
 		return ""
 	}
-	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n", m.picker.styles.title.Render(fmt.Sprintf("herdsman · end session · %d selected", m.marked)), m.picker.list.View(), m.picker.styles.muted.Render("space toggles · enter ends marked or highlighted · esc/ctrl+c cancels"))
+	return fmt.Sprintf("\n%s\n\n%s\n%s\n%s\n", m.picker.styles.title.Render(fmt.Sprintf("herdsman · end session · %d selected", m.marked)), m.picker.list.View(), m.picker.noticeView(), m.picker.styles.muted.Render("space toggles · enter queues marked or highlighted · esc/ctrl+c cancels"))
 }

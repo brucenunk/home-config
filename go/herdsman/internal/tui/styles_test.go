@@ -447,7 +447,7 @@ func TestDoricStylesReachEveryPicker(t *testing.T) {
 			m.stage = stage
 			m.message = "bad\x1b]52;clipboard\a"
 			view := m.View()
-			if strings.Contains(view, "\x1b]52;") || strings.ContainsRune(view, '\a') || !strings.Contains(ansi.Strip(view), "herdsman start") {
+			if strings.Contains(view, "\x1b]52;") || strings.ContainsRune(view, '\a') || !strings.Contains(ansi.Strip(view), "herdsman · start session") {
 				t.Fatalf("unsafe or missing view: %q", view)
 			}
 		}
