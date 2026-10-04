@@ -6,10 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/daemon"
-	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
 )
 
 func TestCLIParsing(t *testing.T) {
@@ -44,23 +42,6 @@ func TestHelpBypassesConfig(t *testing.T) {
 		}
 	}
 }
-func TestInventoryWarnings(t *testing.T) {
-	now := time.Now()
-	i := daemon.Inventory{ProfilesUpdated: now, Machines: []daemon.MachineState{{Machine: herdr.Local(), Updated: now}}}
-	if warnings := inventoryWarnings(i, now, 30*time.Second); len(warnings) != 0 {
-		t.Fatal(warnings)
-	}
-	i.Machines = append(i.Machines, daemon.MachineState{Machine: herdr.Machine{ID: "r", Label: "remote\x1b"}, Error: "failure\x1b"})
-	warnings := strings.Join(inventoryWarnings(i, now, 30*time.Second), "\n")
-	if !strings.Contains(warnings, "no successful refresh") || strings.ContainsRune(warnings, '\x1b') {
-		t.Fatal(warnings)
-	}
-	i.Machines[1].Updated = now.Add(-time.Minute)
-	if warnings := strings.Join(inventoryWarnings(i, now, 30*time.Second), " "); !strings.Contains(warnings, "stale") {
-		t.Fatal(warnings)
-	}
-}
-
 func TestSubmissionErrorsDistinguishRejection(t *testing.T) {
 	rejected := submissionError(&daemon.Rejection{Status: 409, Reason: "queue full"})
 	if !strings.Contains(rejected.Error(), "nothing queued") || strings.Contains(rejected.Error(), "may have been accepted") {

@@ -6,10 +6,72 @@ import (
 	"time"
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/app"
+	"github.com/brucenunk/home-config/go/herdsman/internal/daemon"
 	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
+
+func TestInventoryStatusAgeAndStaleness(t *testing.T) {
+	now := time.Now()
+	fresh := daemon.Inventory{ProfilesUpdated: now, Machines: []daemon.MachineState{{Machine: herdr.Local(), Updated: now.Add(-12 * time.Second)}}}
+	text, warning := InventoryStatus(fresh, now, 30*time.Second)
+	if warning || text != "Inventory: oldest snapshot 12s ago" {
+		t.Fatal(text, warning)
+	}
+	text, warning = InventoryStatus(fresh, now.Add(48*time.Second), 30*time.Second)
+	if warning || !strings.Contains(text, "1m ago") {
+		t.Fatal("boundary should not yet be stale", text, warning)
+	}
+	text, warning = InventoryStatus(fresh, now.Add(49*time.Second), 30*time.Second)
+	if !warning || !strings.Contains(text, "stale: Local") {
+		t.Fatal(text, warning)
+	}
+	text, warning = InventoryStatus(fresh, now.Add(49*time.Second), time.Minute)
+	if warning {
+		t.Fatal("staleness ignored configured interval", text)
+	}
+	fresh.Machines[0].Error = "offline"
+	text, warning = InventoryStatus(fresh, now, 30*time.Second)
+	if !warning || !strings.Contains(text, "stale: Local") || !strings.Contains(text, "12s ago") {
+		t.Fatal("refresh failure must warn immediately", text)
+	}
+	fresh.Machines = append(fresh.Machines, daemon.MachineState{Machine: herdr.Machine{ID: "r", Label: "devbox"}})
+	text, warning = InventoryStatus(fresh, now, 30*time.Second)
+	if !warning || !strings.Contains(text, "unavailable: devbox") || !strings.Contains(text, "stale: Local") {
+		t.Fatal(text)
+	}
+	fresh.ProfilesUpdated = time.Time{}
+	text, warning = InventoryStatus(fresh, now, 30*time.Second)
+	if !warning || !strings.Contains(text, "machine profiles") {
+		t.Fatal(text)
+	}
+}
+
+func TestInventoryAgeClampsFutureTimestamps(t *testing.T) {
+	now := time.Now()
+	text, warning := InventoryStatus(daemon.Inventory{ProfilesUpdated: now.Add(time.Minute)}, now, 30*time.Second)
+	if warning || text != "Inventory: oldest snapshot 0s ago" {
+		t.Fatal(text, warning)
+	}
+}
+
+func TestInventoryWarnings(t *testing.T) {
+	now := time.Now()
+	i := daemon.Inventory{ProfilesUpdated: now, Machines: []daemon.MachineState{{Machine: herdr.Local(), Updated: now}}}
+	if warnings := InventoryWarnings(i, now, 30*time.Second); len(warnings) != 0 {
+		t.Fatal(warnings)
+	}
+	i.Machines = append(i.Machines, daemon.MachineState{Machine: herdr.Machine{ID: "r", Label: "remote\x1b"}, Error: "failure\x1b"})
+	warnings := strings.Join(InventoryWarnings(i, now, 30*time.Second), "\n")
+	if !strings.Contains(warnings, "no successful refresh") || strings.ContainsRune(warnings, '\x1b') {
+		t.Fatal(warnings)
+	}
+	i.Machines[1].Updated = now.Add(-time.Minute)
+	if warnings := strings.Join(InventoryWarnings(i, now, 30*time.Second), " "); !strings.Contains(warnings, "stale") {
+		t.Fatal(warnings)
+	}
+}
 
 func TestInventoryNoticeVisibleWithinPicker(t *testing.T) {
 	c := app.Config{}

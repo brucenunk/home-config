@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -8,9 +8,9 @@ import (
 	"github.com/brucenunk/home-config/go/herdsman/internal/daemon"
 )
 
-// Recompute age against the picker's fixed inventory; this never queries the
+// InventoryStatus recomputes age against the picker's fixed inventory; this never queries the
 // daemon or replaces rows underneath a selection.
-func inventoryStatus(i daemon.Inventory, now time.Time, interval time.Duration) (string, bool) {
+func InventoryStatus(i daemon.Inventory, now time.Time, interval time.Duration) (string, bool) {
 	var unavailable, stale []string
 	var oldest, oldestStale time.Duration
 	inspect := func(name string, updated time.Time, err string) {
@@ -47,4 +47,24 @@ func ageText(age time.Duration) string {
 		text = strings.TrimSuffix(text, "0s")
 	}
 	return text
+}
+
+// InventoryWarnings describes unavailable or stale snapshots for non-picker output.
+func InventoryWarnings(i daemon.Inventory, now time.Time, interval time.Duration) []string {
+	var warnings []string
+	describe := func(name string, updated time.Time, err string) {
+		if updated.IsZero() {
+			warnings = append(warnings, fmt.Sprintf("Inventory %q: loading or unavailable (no successful refresh yet).", name))
+		} else if err != "" || now.Sub(updated) > 2*interval {
+			warnings = append(warnings, fmt.Sprintf("Inventory %q: stale (last successful refresh %s); selections will be revalidated.", name, updated.Format(time.RFC3339)))
+		}
+		if err != "" {
+			warnings = append(warnings, fmt.Sprintf("Inventory %q refresh error: %q", name, err))
+		}
+	}
+	describe("machine profiles", i.ProfilesUpdated, i.ProfilesError)
+	for _, m := range i.Machines {
+		describe(m.Machine.DisplayName(), m.Updated, m.Error)
+	}
+	return warnings
 }

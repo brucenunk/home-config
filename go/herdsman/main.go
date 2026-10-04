@@ -109,8 +109,8 @@ func run() error {
 	// Cache reads do not call Herdr. Keep warnings in the visible picker rather
 	// than scrolling them above a full-height Bubble Tea frame.
 	interval, _ := c.Daemon.RefreshEvery()
-	warnings := inventoryWarnings(inventory, time.Now(), interval)
-	notice := func(now time.Time) (string, bool) { return inventoryStatus(inventory, now, interval) }
+	warnings := tui.InventoryWarnings(inventory, time.Now(), interval)
+	notice := func(now time.Time) (string, bool) { return tui.InventoryStatus(inventory, now, interval) }
 	request := daemon.Request{ConfigID: inventory.ConfigID, LocalEndpoint: inventory.LocalEndpoint}
 	if command == "finish" {
 		targets := inventory.FinishTargets()
@@ -169,25 +169,6 @@ func run() error {
 		fmt.Printf("Queued finish for %d session(s). Inspect daemon logs for the result.\n", len(request.Finish))
 	}
 	return nil
-}
-
-func inventoryWarnings(i daemon.Inventory, now time.Time, interval time.Duration) []string {
-	var warnings []string
-	describe := func(name string, updated time.Time, err string) {
-		if updated.IsZero() {
-			warnings = append(warnings, fmt.Sprintf("Inventory %q: loading or unavailable (no successful refresh yet).", name))
-		} else if err != "" || now.Sub(updated) > 2*interval {
-			warnings = append(warnings, fmt.Sprintf("Inventory %q: stale (last successful refresh %s); selections will be revalidated.", name, updated.Format(time.RFC3339)))
-		}
-		if err != "" {
-			warnings = append(warnings, fmt.Sprintf("Inventory %q refresh error: %q", name, err))
-		}
-	}
-	describe("machine profiles", i.ProfilesUpdated, i.ProfilesError)
-	for _, m := range i.Machines {
-		describe(m.Machine.DisplayName(), m.Updated, m.Error)
-	}
-	return warnings
 }
 
 func submissionError(err error) error {
