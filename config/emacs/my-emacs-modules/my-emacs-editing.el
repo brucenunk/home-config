@@ -2,11 +2,12 @@
 
 ;;; Commentary:
 
-;; Basic editing settings, Markdown, editorconfig,
+;; Basic editing settings, Markdown, Jinx spell checking, editorconfig,
 ;; rainbow-delimiters, ws-butler, and autorevert configuration.
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'subr-x)
 (require 'url-parse)
 
@@ -72,6 +73,19 @@ configured external opener to Markdown's default link handler."
   :config
   (add-hook 'markdown-follow-link-functions
             #'my/markdown-follow-file-link-other-window))
+
+(use-package jinx
+  :ensure nil
+  :hook ((text-mode . jinx-mode)
+         (prog-mode . jinx-mode))
+  :bind (("M-$" . jinx-correct)
+         ("C-M-$" . jinx-languages))
+  :custom
+  (jinx-languages "en_AU")
+  :config
+  ;; Indented Markdown code uses this face rather than markdown-code-face.
+  ;; Preserve Jinx's other per-mode exclusions, including native fenced code.
+  (cl-pushnew 'markdown-pre-face (alist-get 'markdown-mode jinx-exclude-faces)))
 
 (use-package rainbow-delimiters
   :ensure nil

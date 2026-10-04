@@ -5,6 +5,11 @@ let
     { lib, pkgs, ... }:
 
     let
+      spellingDictionaries = with pkgs.hunspellDicts; [
+        en_AU
+        en_US
+      ];
+
       # Nix owns Emacs package and Tree-sitter parser installation; use-package
       # owns package configuration in config/emacs.
       emacsPackages =
@@ -26,6 +31,7 @@ let
           fontaine
           forge
           (import ../../pkgs/ghostel.nix { inherit pkgs epkgs; })
+          jinx
           jsonnet-mode
           lin
           magit
@@ -78,7 +84,12 @@ let
         package = lib.mkDefault pkgs.emacs;
       };
 
+      home.packages = [ pkgs.enchant ] ++ spellingDictionaries;
+
       home.sessionVariables = {
+        # Enchant's Hunspell provider must also find dictionaries when Emacs
+        # is launched without a system-wide Hunspell installation.
+        DICPATH = lib.makeSearchPath "share/hunspell" spellingDictionaries;
         EDITOR = "emacsclient";
         VISUAL = "emacsclient";
       };
