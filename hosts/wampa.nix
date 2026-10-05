@@ -16,12 +16,10 @@ let
 
   git = {
     repositories = {
-      "brucenunk/cluster-api-x".path = "/home/james/work/brucenunk/cluster-api-x/main";
       "brucenunk/home-config".path = "/home/james/work/brucenunk/home-config/main";
       "brucenunk/nixos-config".path = "/home/james/work/brucenunk/nixos-config/main";
       "brucenunk/playground".path = "/home/james/work/brucenunk/playground/main";
-      "brucenunk/tinkerbell-x".path = "/home/james/work/brucenunk/tinkerbell-x/main";
-      "brucenunk/zsa-voyager-keymap".path = "/home/james/work/brucenunk/zsa-voyager-keymap/main";
+      "brucenunk/qmk_firmware".path = "/home/james/work/brucenunk/qmk_firmware/main";
     };
   };
   piModels = import ../config/pi/wampa-relay-models.nix {
