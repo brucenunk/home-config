@@ -12,6 +12,8 @@
 ;;   - my/task-add — create a task note with optional skill metadata
 ;;   - my/task-directory — return the shared task root
 ;;   - my/task-file-p — test whether the current buffer visits a task note
+;; Capture writes repository, machine, base-ref, model and thinking hints from
+;; the Nix-generated Herdsman catalogue.  Herdsman owns final launch selection.
 ;; `my/tasks-map' provides capture/list bindings.  `my/task-workflows' supplies
 ;; capture choices; `my/task-note-created-hook' refreshes lists after saving.
 ;; `my/task-list' is owned by my-task-list.el and autoloaded here.
@@ -19,6 +21,9 @@
 ;;; Code:
 
 (require 'denote)
+(require 'cl-lib)
+(require 'json)
+(require 'subr-x)
 
 (defgroup my-task nil
   "Denote task files and filtering."
@@ -38,6 +43,154 @@
   "Capture choices for note templates and skill metadata.
 `task' uses the structured template, `none' uses an empty template without
 skill metadata, and other choices write their name as the skill.")
+
+(defcustom my/task-catalogue-file
+  (expand-file-name "herdsman/catalogue.json"
+                    (let ((xdg (getenv "XDG_CONFIG_HOME")))
+                      (if (and xdg (not (string-empty-p xdg)))
+                          xdg
+                        (expand-file-name "~/.config/"))))
+  "Nix-generated catalogue supplying capture choices and defaults."
+  :type 'file
+  :group 'my-task)
+
+(defun my/task--hint-p (value)
+  "Return non-nil when VALUE is a bounded single-line hint."
+  (and (stringp value) (not (string-empty-p value))
+       (<= (length value) 4096)
+       (not (string-match-p "[[:cntrl:]]" value))))
+
+(defun my/task--catalogue-read ()
+  "Read and validate the generated capture catalogue, or signal a user error."
+  (condition-case err
+      (let* ((data (with-temp-buffer
+                     ;; Read a bounded local configuration, never probe a host.
+                     (when (file-remote-p my/task-catalogue-file)
+                       (error "Catalogue must be a local file"))
+                     (insert-file-contents my/task-catalogue-file nil 0 1048577)
+                     (when (> (1- (position-bytes (point-max))) 1048576)
+                       (error "Catalogue exceeds 1 MiB"))
+                     (let ((value (json-parse-buffer :object-type 'alist :array-type 'list
+                                                     :null-object nil :false-object :false)))
+                       (skip-chars-forward " \t\r\n")
+                       (unless (eobp) (error "Catalogue must contain one JSON object"))
+                       value)))
+             (machines (alist-get 'machines data))
+             (local (alist-get 'localMachine data)))
+        (unless (and (my/task--hint-p local) (listp machines) machines
+                     (assoc (intern local) machines))
+          (error "Missing named localMachine or machines"))
+        (dolist (entry machines)
+          (let* ((name (symbol-name (car entry)))
+                 (machine (cdr entry))
+                 (repos (alist-get 'repositories machine))
+                 (refs (alist-get 'defaultBaseRefs machine))
+                 (models (alist-get 'models machine))
+                 (default-model (alist-get 'defaultModel machine)))
+            (unless (and (my/task--hint-p name) (not (equal name "local"))
+                         (cl-every (lambda (key) (assq key machine))
+                                   '(repositories defaultBaseRefs defaultModel models))
+                         (listp repos) (listp refs) (listp models)
+                         (stringp default-model)
+                         (= (length repos) (length (delete-dups (copy-sequence repos))))
+                         (= (length repos) (length refs)))
+              (error "Invalid machine %s" name))
+            (dolist (repo repos)
+              (unless (and (my/task--hint-p repo)
+                           (string-match-p "\\`[^/[:space:]]+/[^/[:space:]]+\\'" repo)
+                           (my/task--hint-p (alist-get (intern repo) refs)))
+                (error "Missing repository/base-ref data on %s" name)))
+            (let (names)
+              (dolist (model models)
+                (let ((reference (alist-get 'name model))
+                      (levels (alist-get 'thinkingLevels model))
+                      (default (alist-get 'defaultThinking model)))
+                  (unless (and (my/task--hint-p reference)
+                               ;; The remainder of the model ID may contain slashes.
+                               (string-match-p "\\`[^/[:space:]]+/[^[:space:]]+\\'" reference)
+                               (not (member (downcase reference) names))
+                               (listp levels)
+                               (assq 'thinkingLevels model)
+                               (= (length levels) (length (delete-dups (copy-sequence levels))))
+                               (cl-every (lambda (level)
+                                           (member level '("off" "minimal" "low" "medium" "high" "xhigh" "max")))
+                                         levels)
+                               (stringp default)
+                               (equal default (cond ((member "medium" levels) "medium")
+                                                    ((member "off" levels) "off")
+                                                    (t ""))))
+                    (error "Invalid model on %s" name))
+                  (push (downcase reference) names)))
+              (unless (if models
+                          (cl-find default-model models :key (lambda (model) (alist-get 'name model)) :test #'equal)
+                        (equal default-model ""))
+                (error "Missing or invalid model default on %s" name)))))
+        data)
+    (error (user-error "Cannot capture task: fix/rebuild Herdsman catalogue %s (%s)"
+                       my/task-catalogue-file (error-message-string err)))))
+
+(defun my/task--choice-read (prompt choices default)
+  "Read a required choice using PROMPT, CHOICES and DEFAULT."
+  (unless choices (user-error "Cannot capture task: no choices for %s" prompt))
+  (let ((value (completing-read prompt choices nil t nil nil default)))
+    (unless (member value choices)
+      (user-error "Choose a supported value for %s" prompt))
+    value))
+
+(defun my/task--metadata-read (extended-p)
+  "Collect capture metadata in Herdsman's order, prompting with EXTENDED-P."
+  (let* ((catalogue (my/task--catalogue-read))
+         (machines (alist-get 'machines catalogue))
+         (repos (sort (delete-dups
+                       (cl-mapcan (lambda (entry)
+                                    (copy-sequence (alist-get 'repositories (cdr entry))))
+                                  machines)) #'string<))
+         (repo (my/task--choice-read "Repository: " repos nil))
+         (eligible (sort (cl-loop for (name . machine) in machines
+                                 when (member repo (alist-get 'repositories machine))
+                                 collect (symbol-name name)) #'string<))
+         (local (alist-get 'localMachine catalogue))
+         (destination (if (member local eligible) local (car eligible)))
+         (machine-name (if (and extended-p (cdr eligible))
+                           (my/task--choice-read "Machine: " eligible destination)
+                         destination))
+         (machine (alist-get (intern machine-name) machines))
+         (base-default (alist-get (intern repo) (alist-get 'defaultBaseRefs machine)))
+         (base (if extended-p (read-string "Base ref: " base-default) base-default))
+         (models (alist-get 'models machine))
+         (model-default (alist-get 'defaultModel machine))
+         (model-name (if extended-p
+                         (my/task--choice-read "Model: "
+                                               (mapcar (lambda (model) (alist-get 'name model)) models)
+                                               model-default)
+                       model-default))
+         (model (or (cl-find model-name models :key (lambda (item) (alist-get 'name item)) :test #'equal)
+                    (user-error "Cannot capture task: no configured model for %s; fix/rebuild %s"
+                                machine-name my/task-catalogue-file)))
+         (levels (alist-get 'thinkingLevels model))
+         (thinking-default (alist-get 'defaultThinking model))
+         (thinking (if (or extended-p (equal thinking-default ""))
+                       (my/task--choice-read "Thinking: " levels
+                                             (unless (equal thinking-default "") thinking-default))
+                     thinking-default)))
+    (unless (and (my/task--hint-p base) model (member thinking levels))
+      (user-error "Cannot capture task: destination needs a base ref, model and supported thinking level"))
+    `((repo . ,repo) (machine . ,machine-name) (base-ref . ,base)
+      (model . ,model-name) (thinking . ,thinking))))
+
+(defun my/task--metadata-insert (metadata)
+  "Append captured METADATA to the new note's YAML front matter."
+  (save-excursion
+    (goto-char (point-min))
+    (unless (looking-at "---\n") (error "Task note has no YAML front matter"))
+    (forward-line)
+    (unless (re-search-forward "^---$" nil t) (error "Task note has no closing front matter delimiter"))
+    (beginning-of-line)
+    (dolist (entry metadata)
+      ;; JSON strings are YAML quoted scalars, including escaped special characters.
+      (insert (format "%s: " (car entry)))
+      (json-insert (cdr entry))
+      (insert "\n"))))
 
 ;;;###autoload
 (defun my/task-directory ()
@@ -74,7 +227,9 @@ skill metadata, and other choices write their name as the skill.")
 (defun my/task-add (&optional title workflow extended-workflow-p)
   "Create a task note with TITLE and WORKFLOW.
 Interactively, prompt for the title and optional epic subdirectory.  A prefix
-argument enables the full workflow choice; otherwise use task-workflow-v3.
+argument enables skill and launch-hint choices; otherwise use task-workflow-v3
+and catalogue defaults.  Repository is always prompted.  Every captured hint
+is written, including the exact base ref.  Herdsman owns final launch selection.
 The `todo' filename signature is retained only to match the existing default
 list filter.  No status lifecycle is managed."
   (interactive (list nil nil current-prefix-arg))
@@ -93,11 +248,14 @@ list filter.  No status lifecycle is managed."
                   ("task" "task-workflow-v3")
                   ("none" nil)
                   (_ workflow)))
-         (template (if (equal workflow "task") 'task-workflow-v3 'empty)))
+         (template (if (equal workflow "task") 'task-workflow-v3 'empty))
+         ;; Finish all selection before Denote creates any file or buffer.
+         (metadata (my/task--metadata-read extended-workflow-p)))
     (make-directory target-dir t)
     (let ((denote-directory target-dir))
       (denote title nil 'markdown-yaml nil nil template "todo")
       (when skill (my/task--skill-set skill))
+      (my/task--metadata-insert metadata)
       (save-buffer)
       (let ((file buffer-file-name))
         (run-hooks 'my/task-note-created-hook)

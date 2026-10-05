@@ -210,12 +210,30 @@ in
 
 `$XDG_CONFIG_HOME/herdsman/catalogue.json` is the generated view shared by Emacs
 metadata editing and Herdsman's launch selection:
-`machines.<name> = { repositories: [slugs], models: [{name, thinkingLevels}] }`.
+`localMachine` is the launcher's named machine key; each `machines.<name>` record
+contains `repositories: [slugs]`, `defaultBaseRefs: {slug: ref}`, an effective
+`defaultModel`, and `models: [{name, thinkingLevels, defaultThinking}]`.
 Model names are exact `provider/model` references: split at the first slash only.
 Thinking levels follow Pi's maps; only configured chat models are included.
-There are no Git paths/policy, provider connection fields, credentials, display
+Base refs project the per-machine Git branch defaults as `origin/${defaultBranch}`;
+they contain no live reachability information. There are no Git paths, provider connection fields, credentials, display
 names, or schema version. These are configured choices, not readiness checks;
 task metadata provides defaults and Herdsman owns final selection.
+
+Emacs `my/task-add` prompts for a repository and writes all five launch hints,
+using catalogue defaults for ordinary capture. Prefix capture exposes choices
+in the same order as Herdsman: repository, machine, base ref, model, thinking.
+It skips a single eligible machine; thinking always uses the selected model's
+supported levels. Missing/invalid catalogue data blocks capture, not listing.
+See `work/TASKS.md` for capture details. Existing notes are not migrated.
+
+The catalogue's effective model is the configured machine default, otherwise
+the first model (or an empty string with no models). Thinking projects the
+existing launch rule: `medium` when supported, otherwise `off`, otherwise an
+empty default requiring explicit selection. Herdsman consumes these projected
+defaults and validates their agreement with operational configuration. Standalone
+older catalogues without capture defaults remain usable by Herdsman; Emacs
+requires the generated capture data. No mutable Pi settings are consulted.
 
 Only the current launcher TOML translates `machineName` to `local`; its
 `local_machine_name` records the original catalogue key explicitly. JSON keeps
@@ -239,8 +257,8 @@ it and restores first-catalogue-model preselection. For example:
 brucenunk.homeManager.herdsman.machines."machine-a".defaultModel = "example-provider/vendor/model";
 ```
 
-The option is emitted only into operational TOML as `machines.<destination>.default_model`;
-catalogue JSON is unchanged. Defaults must belong to the selected machine's
+The option is emitted into operational TOML as `machines.<destination>.default_model`;
+catalogue JSON exposes the resulting effective model. Defaults must belong to the selected machine's
 catalogue; Nix and standalone TOML loading reject unknown defaults. Rebuild,
 activate, and restart the Herdsman daemon after changing this policy. Changing
 Pi's mutable default alone does not change Herdsman's initial selection.

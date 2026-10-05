@@ -15,15 +15,19 @@ import (
 )
 
 type Catalogue struct {
-	Machines map[string]CatalogueMachine `json:"machines"`
+	LocalMachine string                      `json:"localMachine"`
+	Machines     map[string]CatalogueMachine `json:"machines"`
 }
 type CatalogueMachine struct {
-	Repositories []string      `json:"repositories"`
-	Models       []ModelChoice `json:"models"`
+	DefaultBaseRefs map[string]string `json:"defaultBaseRefs"`
+	DefaultModel    string            `json:"defaultModel"`
+	Repositories    []string          `json:"repositories"`
+	Models          []ModelChoice     `json:"models"`
 }
 type ModelChoice struct {
-	Name           string   `json:"name"`
-	ThinkingLevels []string `json:"thinkingLevels"`
+	ThinkingDefault string   `json:"defaultThinking"`
+	Name            string   `json:"name"`
+	ThinkingLevels  []string `json:"thinkingLevels"`
 }
 
 var thinkingLevels = []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}
@@ -50,6 +54,9 @@ func (c *Config) loadCatalogue(path string) error {
 
 // Operational TOML owns routing and repository policy; JSON supplies only choices.
 func (c Config) ValidateCatalogue() error {
+	if c.Catalogue.LocalMachine != "" && c.Catalogue.LocalMachine != c.LocalMachineName {
+		return fmt.Errorf("catalogue localMachine differs from TOML")
+	}
 	if c.LocalMachineName == "" || !safeHint(c.LocalMachineName) || c.LocalMachineName == "local" {
 		return fmt.Errorf("local_machine_name must be a named catalogue key, not local")
 	}
@@ -81,6 +88,25 @@ func (c Config) ValidateCatalogue() error {
 		if !slices.Equal(repos, expected) {
 			return fmt.Errorf("catalogue repositories differ from TOML for %s", name)
 		}
+		if c.Catalogue.LocalMachine != "" || machine.DefaultBaseRefs != nil {
+			if len(machine.DefaultBaseRefs) != len(operational.Repositories) {
+				return fmt.Errorf("catalogue base refs differ from TOML for %s", name)
+			}
+			for slug, repository := range operational.Repositories {
+				if machine.DefaultBaseRefs[slug] != repository.BaseRef() {
+					return fmt.Errorf("catalogue base ref differs from TOML for %s/%s", name, slug)
+				}
+			}
+		}
+		if c.Catalogue.LocalMachine != "" || machine.DefaultModel != "" {
+			expectedModel := operational.DefaultModel
+			if expectedModel == "" && len(machine.Models) > 0 {
+				expectedModel = machine.Models[0].Name
+			}
+			if machine.DefaultModel != expectedModel {
+				return fmt.Errorf("catalogue default model differs from TOML for %s", name)
+			}
+		}
 		seen := map[string]bool{}
 		providers := map[string]string{}
 		for _, model := range machine.Models {
@@ -101,6 +127,11 @@ func (c Config) ValidateCatalogue() error {
 					return fmt.Errorf("invalid or duplicate thinking level %q for %s", level, model.Name)
 				}
 				levels[level] = true
+			}
+			capabilityDefault := model
+			capabilityDefault.ThinkingDefault = ""
+			if (c.Catalogue.LocalMachine != "" || model.ThinkingDefault != "") && model.ThinkingDefault != capabilityDefault.DefaultThinking() {
+				return fmt.Errorf("invalid default thinking for %s", model.Name)
 			}
 		}
 		if operational.DefaultModel != "" && !slices.ContainsFunc(machine.Models, func(model ModelChoice) bool { return model.Name == operational.DefaultModel }) {
@@ -128,6 +159,9 @@ func (c Config) Model(m herdr.Machine, name string) (ModelChoice, bool) {
 	return ModelChoice{}, false
 }
 func (m ModelChoice) DefaultThinking() string {
+	if m.ThinkingDefault != "" {
+		return m.ThinkingDefault
+	}
 	if slices.Contains(m.ThinkingLevels, "medium") {
 		return "medium"
 	}

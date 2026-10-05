@@ -114,10 +114,41 @@ let
           "${piDefaults.defaultProvider}/${piDefaults.defaultModel}"
         else
           null;
-      catalogue.machines = lib.mapAttrs (_: machine: {
-        repositories = builtins.attrNames machine.repositories;
-        models = piData.projectModels machine.models;
-      }) machines;
+      catalogue = {
+        localMachine = machineName;
+        machines = lib.mapAttrs (
+          _: machine:
+          let
+            models = map (
+              model:
+              model
+              // {
+                defaultThinking =
+                  if builtins.elem "medium" model.thinkingLevels then
+                    "medium"
+                  else if builtins.elem "off" model.thinkingLevels then
+                    "off"
+                  else
+                    "";
+              }
+            ) (piData.projectModels machine.models);
+          in
+          {
+            repositories = builtins.attrNames machine.repositories;
+            defaultBaseRefs = lib.mapAttrs (
+              _: repository: "origin/${repository.defaultBranch}"
+            ) machine.repositories;
+            defaultModel =
+              if machine.defaultModel != null then
+                machine.defaultModel
+              else if models != [ ] then
+                (builtins.head models).name
+              else
+                "";
+            inherit models;
+          }
+        ) machines;
+      };
       package = packageFor pkgs;
       herdrPackage = pkgs.llm-agents.herdr;
       format = pkgs.formats.toml { };
@@ -518,6 +549,28 @@ in
           { brucenunk.homeManager.herdsman.machines.machine-a.defaultModel = "example/unknown"; }
         ];
       };
+      nonfirstDefaultHome = home.extendModules {
+        modules = [
+          {
+            brucenunk.homeManager.herdsman.machines.machine-a = {
+              defaultModel = "example/alternate";
+              models = pkgs.lib.mkForce (
+                let
+                  original = home.config.brucenunk.homeManager.herdsman.machines.machine-a.models;
+                in
+                pkgs.lib.recursiveUpdate original {
+                  providers.example.models = original.providers.example.models ++ [
+                    {
+                      id = "alternate";
+                      reasoning = false;
+                    }
+                  ];
+                }
+              );
+            };
+          }
+        ];
+      };
     in
     {
       packages.herdsman = package;
@@ -675,7 +728,7 @@ in
             explicitDefaultHome.config.xdg.configFile."herdsman/config.toml".source
           } ${clearedDefaultHome.config.xdg.configFile."herdsman/config.toml".source} ${
             partialDefaultHome.config.xdg.configFile."herdsman/config.toml".source
-          } <<'PY'
+          } ${nonfirstDefaultHome.config.xdg.configFile."herdsman/catalogue.json".source} <<'PY'
           import json
           import sys
           import tomllib
@@ -690,7 +743,7 @@ in
                   selected = tomllib.load(f)
               assert selected["machines"]["local"]["default_model"] == "example/vendor/model"
               assert "default_model" not in selected["machines"]["machine-b"]
-          for path in sys.argv[5:]:
+          for path in sys.argv[5:7]:
               with open(path, "rb") as f:
                   cleared = tomllib.load(f)
               assert "default_model" not in cleared["machines"]["local"]
@@ -713,16 +766,30 @@ in
           with open(sys.argv[2]) as f:
               text = f.read()
           catalogue = json.loads(text)
-          assert set(catalogue) == {"machines"}
+          assert set(catalogue) == {"localMachine", "machines"}
+          assert catalogue["localMachine"] == "machine-a"
           assert set(catalogue["machines"]) == {"machine-a", "machine-b"}
           for name, destination in [("machine-a", "local"), ("machine-b", "machine-b")]:
               machine = catalogue["machines"][name]
-              assert set(machine) == {"repositories", "models"}
+              assert set(machine) == {"repositories", "defaultBaseRefs", "defaultModel", "models"}
               assert machine["repositories"] == sorted(config["machines"][destination]["repositories"])
+              assert machine["defaultBaseRefs"] == {
+                  slug: "origin/" + repository["default_branch"]
+                  for slug, repository in config["machines"][destination]["repositories"].items()
+              }
           assert catalogue["machines"]["machine-a"]["models"] == [{
-              "name": "example/vendor/model", "thinkingLevels": ["off", "low", "medium", "high"]
+              "name": "example/vendor/model", "thinkingLevels": ["off", "low", "medium", "high"],
+              "defaultThinking": "medium"
           }]
+          assert catalogue["machines"]["machine-a"]["defaultModel"] == "example/vendor/model"
+          assert catalogue["machines"]["machine-b"]["defaultModel"] == ""
           assert catalogue["machines"]["machine-b"]["models"] == []
+          with open(sys.argv[7]) as f:
+              nonfirst = json.load(f)["machines"]["machine-a"]
+          assert nonfirst["defaultModel"] == "example/alternate"
+          assert nonfirst["models"][1] == {
+              "name": "example/alternate", "thinkingLevels": ["off"], "defaultThinking": "off"
+          }
           assert "private-" not in text and "/srv/git" not in text and "default_branch" not in text
           PY
           ${pkgs.python3}/bin/python - \

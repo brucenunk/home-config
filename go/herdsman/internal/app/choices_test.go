@@ -215,3 +215,65 @@ func TestBaseRefFormsAndThinkingDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectedCaptureDefaults(t *testing.T) {
+	c := startConfig()
+	c.Catalogue.LocalMachine = c.LocalMachineName
+	for label, operational := range c.Machines {
+		name := label
+		if label == "local" {
+			name = c.LocalMachineName
+		}
+		machine := c.Catalogue.Machines[name]
+		machine.DefaultBaseRefs = map[string]string{}
+		for slug, repository := range operational.Repositories {
+			machine.Repositories = append(machine.Repositories, slug)
+			machine.DefaultBaseRefs[slug] = repository.BaseRef()
+		}
+		machine.DefaultModel = machine.Models[0].Name
+		for i := range machine.Models {
+			machine.Models[i].ThinkingDefault = machine.Models[i].DefaultThinking()
+		}
+		c.Catalogue.Machines[name] = machine
+	}
+	if err := c.ValidateCatalogue(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(c.Catalogue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*Catalogue){
+		func(cat *Catalogue) { cat.LocalMachine = "other" },
+		func(cat *Catalogue) {
+			machine := cat.Machines[c.LocalMachineName]
+			machine.DefaultBaseRefs["owner/repo"] = "upstream/train/next"
+			cat.Machines[c.LocalMachineName] = machine
+		},
+		func(cat *Catalogue) {
+			machine := cat.Machines[c.LocalMachineName]
+			machine.DefaultBaseRefs = nil
+			cat.Machines[c.LocalMachineName] = machine
+		},
+		func(cat *Catalogue) {
+			machine := cat.Machines[c.LocalMachineName]
+			machine.DefaultModel = ""
+			cat.Machines[c.LocalMachineName] = machine
+		},
+		func(cat *Catalogue) {
+			machine := cat.Machines[c.LocalMachineName]
+			machine.Models[0].ThinkingDefault = "high"
+			cat.Machines[c.LocalMachineName] = machine
+		},
+	} {
+		broken := c
+		broken.Catalogue = Catalogue{}
+		if err := json.Unmarshal(data, &broken.Catalogue); err != nil {
+			t.Fatal(err)
+		}
+		mutate(&broken.Catalogue)
+		if err := broken.ValidateCatalogue(); err == nil {
+			t.Fatal("accepted mismatched projected defaults", broken.Catalogue)
+		}
+	}
+}

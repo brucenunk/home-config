@@ -62,6 +62,9 @@ func (m *Model) machines() {
 }
 
 func (m Model) defaultBase() string {
+	if refs := m.config.Catalogue.Machines[m.config.MachineName(m.Request.Machine)].DefaultBaseRefs; refs != nil {
+		return refs[m.Request.Repo]
+	}
 	return m.config.Machines[m.Request.Machine.Label].Repositories[m.Request.Repo].BaseRef()
 }
 func (m *Model) beginBase() tea.Cmd {
@@ -83,6 +86,9 @@ func (m *Model) models() {
 	}
 	m.choices("Choose model", names)
 	value := m.Request.Model
+	if value == "" {
+		value = m.config.Catalogue.Machines[m.config.MachineName(m.Request.Machine)].DefaultModel
+	}
 	if value == "" {
 		value = m.config.Machines[m.Request.Machine.Label].DefaultModel
 	}
