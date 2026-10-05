@@ -14,9 +14,14 @@ import (
 )
 
 type Task struct {
-	Title string `yaml:"title"`
-	Skill string `yaml:"skill"`
-	Body  string `yaml:"-"`
+	Repo     string `yaml:"repo"`
+	Machine  string `yaml:"machine"`
+	Model    string `yaml:"model"`
+	Thinking string `yaml:"thinking"`
+	BaseRef  string `yaml:"base-ref"`
+	Title    string `yaml:"title"`
+	Skill    string `yaml:"skill"`
+	Body     string `yaml:"-"`
 }
 
 var skillName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
@@ -89,6 +94,11 @@ const maxAgentArgumentBytes = 120 * 1024
 const maxTaskFileBytes = 256 * 1024
 
 func (t *Task) ValidateTransport() error {
+	for _, hint := range []string{t.Repo, t.Machine, t.Model, t.Thinking, t.BaseRef} {
+		if !safeHint(hint) {
+			return fmt.Errorf("task hints must be bounded, single-line UTF-8 without control characters")
+		}
+	}
 	if strings.IndexFunc(t.Title, unicode.IsControl) >= 0 {
 		return fmt.Errorf("task title must not contain control characters")
 	}

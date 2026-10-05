@@ -13,6 +13,9 @@ import (
 )
 
 type StartRequest struct {
+	BaseRef     string // Final repository branch ref; empty for owner sessions.
+	Model       string // Exact catalogue provider/model reference.
+	Thinking    string // Supported level for the selected model.
 	Repo        string // Selected context: owner or owner/repo.
 	Description string // Required without a task file; title only, never a prompt.
 	Machine     herdr.Machine
@@ -28,7 +31,7 @@ type Launcher interface {
 	CreateParent(context.Context, herdr.Machine, string, string) (herdr.Created, error)
 	RenameParent(context.Context, herdr.Machine, string, string) error
 	CreateWorktree(context.Context, herdr.Machine, herdr.WorktreeRequest) (herdr.Created, error)
-	StartAgent(context.Context, herdr.Machine, string, string, string) error
+	StartAgent(context.Context, herdr.Machine, string, string, string, string, string) error
 	Prompt(context.Context, herdr.Machine, string, string) error
 	Focus(context.Context, herdr.Machine, string) error
 }
@@ -68,6 +71,9 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 		return r, fmt.Errorf("context/machine selection is no longer available")
 	}
 	m := destinations[i]
+	if err := c.ValidateChoices(req); err != nil {
+		return r, err
+	}
 	occupied := map[string]bool{}
 	var workspaces []herdr.Workspace
 	// Names are globally unique client policy, including saved servers outside our config.
@@ -138,7 +144,10 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 		r.Steps = append(r.Steps, "created owner session workspace "+r.Workspace+" at "+r.Path)
 	} else {
 		repository := c.Machines[m.Label].Repositories[req.Repo]
-		base := repository.BaseRef()
+		base := "refs/heads/" + req.BaseRef
+		if strings.Contains(req.BaseRef, "/") {
+			base = "refs/remotes/" + req.BaseRef
+		}
 		source := repository.Path
 		stamp := time.Now().UTC().Format("20060102T150405.000000000Z")
 		r.Path = filepath.Join(home, "work", req.Repo, stamp)
@@ -197,7 +206,7 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 		r.Workspace, r.Pane = created.Workspace.ID, created.RootPane.ID
 		r.Steps = append(r.Steps, "created worktree "+r.Path+" ("+r.Workspace+", "+r.Pane+")")
 	}
-	if err = client.StartAgent(ctx, m, r.AgentName, r.Pane, r.Title); err != nil {
+	if err = client.StartAgent(ctx, m, r.AgentName, r.Pane, r.Title, req.Model, req.Thinking); err != nil {
 		return r, fmt.Errorf("start Pi %s: %w", r.AgentName, err)
 	}
 	r.Steps = append(r.Steps, "started Pi "+r.AgentName)

@@ -448,8 +448,15 @@ func validateCreated(r Created, err error) (Created, error) {
 	return r, err
 }
 
-func (c *Client) StartAgent(ctx context.Context, m Machine, name, pane, title string) error {
-	return c.call(ctx, m, 125*time.Second, nil, "agent", "start", name, "--kind", "pi", "--pane", pane, "--timeout", "120000", "--", "--name", title)
+func (c *Client) StartAgent(ctx context.Context, m Machine, name, pane, title, model, thinking string) error {
+	provider, id, ok := strings.Cut(model, "/")
+	if !ok || provider == "" || id == "" || thinking == "" {
+		return fmt.Errorf("model and thinking selections are required")
+	}
+	// Pi strips one provider prefix before matching, then prioritizes canonical
+	// references over bare IDs. Preserve the exact catalogue reference for that
+	// matcher, including IDs which themselves start with the provider name.
+	return c.call(ctx, m, 125*time.Second, nil, "agent", "start", name, "--kind", "pi", "--pane", pane, "--timeout", "120000", "--", "--name", title, "--provider", provider, "--model", provider+"/"+model, "--thinking", thinking)
 }
 
 func (c *Client) Prompt(ctx context.Context, m Machine, name, prompt string) error {

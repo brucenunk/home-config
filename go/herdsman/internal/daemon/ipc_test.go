@@ -140,7 +140,11 @@ func TestMaximumEscapedTaskRoundTrip(t *testing.T) {
 	defer server.Close()
 	r := startRequest()
 	r.Start.Repo = "owner/repo"
+	r.Start.BaseRef = "origin/main"
+	r.Start.Model, r.Start.Thinking = "example/vendor/model", "high"
 	r.Start.Task = &app.Task{Title: strings.Repeat("<", 120*1024), Body: strings.Repeat("<", 120*1024)}
+	r.Start.Task.Repo, r.Start.Task.Machine = "owner/repo", "machine-a"
+	r.Start.Task.Model, r.Start.Task.Thinking, r.Start.Task.BaseRef = "example/vendor/model", "medium", "upstream/train/next"
 	// Task selection can retain a previously entered valid description.
 	r.Start.Description = strings.Repeat("<", 120*1024)
 	if err := r.Start.Task.ValidateTransport(); err != nil {
@@ -163,6 +167,9 @@ func TestMaximumEscapedTaskRoundTrip(t *testing.T) {
 		t.Fatal(response.StatusCode, string(body))
 	}
 	job := <-d.queue
+	if job.request.Start.BaseRef != r.Start.BaseRef || job.request.Start.Model != r.Start.Model || job.request.Start.Thinking != r.Start.Thinking || job.request.Start.Task.BaseRef != r.Start.Task.BaseRef || job.request.Start.Task.Machine != "machine-a" {
+		t.Fatal("choices or hints altered during IPC", job.request.Start)
+	}
 	if job.request.Start.Task.Body != r.Start.Task.Body || job.request.Start.Task.Title != r.Start.Task.Title {
 		t.Fatal("task altered during IPC")
 	}

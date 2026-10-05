@@ -16,7 +16,7 @@ The launcher can run outside Herdr, including an ordinary terminal or Emacs
 terminal. A local Herdr server and any selected saved-machine server must
 already be running. Hosts are managed: Git, Pi, Herdr and the normal repository
 layout are assumed. Herdsman does not install tools, clone repositories, fetch,
-or change project trust.
+or change project trust. Launch-time fetching is deferred.
 
 ## Configuration
 
@@ -68,10 +68,12 @@ they do not prove popup interaction or focus behavior in a live Herdr session.
 The dedicated `herdsman` Home Manager feature installs the program and manages
 `$XDG_CONFIG_HOME/herdsman/config.toml` (normally
 `~/.config/herdsman/config.toml`) as a Nix-generated file. Change inventory,
-source directories, base refs and theme selection in the host's Nix configuration,
+repository paths/default branches, models and theme selection in the host's Nix configuration,
 then rebuild and activate through that host's prescribed route. Do not edit the
 managed TOML file directly. Restart the managed Herdsman daemon to load an updated
-configuration; opening a new picker does not reload daemon policy. The UI rejects
+configuration and catalogue; opening a new picker does not reload daemon policy. Restart
+after deploying a new executable too: the long-lived daemon executes launches.
+The UI rejects
 configuration or local Herdr routing that differs from the running daemon. Named
 Herdr sessions and socket overrides must match the service environment; Herdsman
 does not silently route them to the default server. Invalid Herdr session names
@@ -80,11 +82,19 @@ including symlink/parent components; different spellings are conservatively
 rejected even if they happen to address the same socket.
 
 `herdsman --config PATH` can use a separate, user-owned file when the daemon was
-started with matching configuration.
+started with matching configuration. Its `catalogue.json` must be in the same
+directory as `PATH`, not discovered on the destination or read from another
+XDG directory. TOML and catalogue inventories must agree. Model references must
+be unique case-insensitively, and each provider must have one consistent spelling:
+Pi cannot distinguish case-only variants reliably. Provider names and model IDs
+must not have surrounding whitespace, which Pi normalizes during lookup. Existing standalone
+configs need `local_machine_name` and a matching catalogue; there is no inferred
+machine-identity migration.
 
 ```toml
 agent_names = ["runner", "helper"]
 tasks_dir = "~/work/tasks"
+local_machine_name = "machine-a"
 
 [daemon]
 refresh_interval = "30s"
@@ -95,6 +105,10 @@ refresh_concurrency = 4
 mode = "auto"
 light = "doric-marble"
 dark = "doric-obsidian"
+
+[machines.local]
+# Optional; must name a model in this machine's catalogue.
+default_model = "example-provider/vendor/model"
 
 [machines.local.repositories."example/project"]
 path = "/home/example/work/example/project/main"
@@ -142,19 +156,19 @@ an owner starts directly at `$HOME/work/{owner}` without a worktree or branch.
 Owner directories must already exist. Owners are derived from the configured
 repository inventory, not filesystem discovery; there is no arbitrary path picker.
 
-The picker opens with no selection. Navigate to explicitly select a context before pressing Enter;
-filtering or returning from the machine picker clears the selection. Legacy
-task `repo` metadata is ignored. The machine picker shows
+Without a repository hint, the picker opens with no selection. Navigate to
+explicitly select a context before pressing Enter; filtering clears the selection.
+Back-navigation preserves the selected context. The machine picker shows
 only configured hosts for that repo which are Local or uniquely labelled,
 enabled saved Herdr machines. There is no availability probing while navigating.
 For an owner, it shows eligible hosts configured with any repository under that
 owner. No additional owner configuration is required.
 
 Source paths come directly from the selected machine's repository definition.
-The initial worktree base ref is `origin/${defaultBranch}`; Herdsman neither
-fetches nor changes the branch checked out at the source. Per-launch/task
-`base-ref` overrides belong to the follow-up metadata/selection work, not static
-repository policy. New task worktrees still use `$HOME/work/{owner}/{repo}/{stamp}`,
+The initial worktree base ref is `origin/${defaultBranch}` for the selected
+machine/repository. The base-ref form supports per-launch/task overrides;
+they are not static repository policy. Herdsman never changes the branch or
+files checked out at the source. New task worktrees still use `$HOME/work/{owner}/{repo}/{stamp}`,
 and owner sessions still use `$HOME/work/{owner}`.
 
 ### Shared machine data
@@ -194,7 +208,8 @@ in
 }
 ```
 
-`$XDG_CONFIG_HOME/herdsman/catalogue.json` is Emacs's generated view:
+`$XDG_CONFIG_HOME/herdsman/catalogue.json` is the generated view shared by Emacs
+metadata editing and Herdsman's launch selection:
 `machines.<name> = { repositories: [slugs], models: [{name, thinkingLevels}] }`.
 Model names are exact `provider/model` references: split at the first slash only.
 Thinking levels follow Pi's maps; only configured chat models are included.
@@ -202,10 +217,33 @@ There are no Git paths/policy, provider connection fields, credentials, display
 names, or schema version. These are configured choices, not readiness checks;
 task metadata provides defaults and Herdsman owns final selection.
 
-Only the current launcher TOML translates `machineName` to `local`; JSON keeps
-machine names for future Herdsman resolution. Remote names currently match saved
+Only the current launcher TOML translates `machineName` to `local`; its
+`local_machine_name` records the original catalogue key explicitly. JSON keeps
+machine names, including the local machine's name. Task `machine` hints use
+these keys, never the user-facing **Local** label or the TOML routing key `local`.
+Remote names match saved
 Herdr labels. Repository paths and default branches are per machine: shared slugs
 may point to different checkouts or bare repositories.
+
+Each machine may declare `brucenunk.homeManager.herdsman.machines.<name>.defaultModel`
+as an exact `provider/model` reference. For the local machine, its option default
+comes from `defaultProvider` and `defaultModel` in Pi's Nix `settingsDefaults` JSON
+file, when both are provided. It does not read mutable `~/.pi/agent/settings.json`.
+Remote records do not inherit the local Pi default; supply their default from
+that machine's shared Nix Pi data if desired.
+
+An explicit value overrides the inherited local default; explicit `null` disables
+it and restores first-catalogue-model preselection. For example:
+
+```nix
+brucenunk.homeManager.herdsman.machines."machine-a".defaultModel = "example-provider/vendor/model";
+```
+
+The option is emitted only into operational TOML as `machines.<destination>.default_model`;
+catalogue JSON is unchanged. Defaults must belong to the selected machine's
+catalogue; Nix and standalone TOML loading reject unknown defaults. Rebuild,
+activate, and restart the Herdsman daemon after changing this policy. Changing
+Pi's mutable default alone does not change Herdsman's initial selection.
 
 ### Migration from writable or separately defined configuration
 
@@ -288,6 +326,95 @@ these styles. Ordinary filenames and terminal-native fallback are unchanged.
 
 ## Selection and launch
 
+### Optional task hints and precedence
+
+The start sequence is task/description → context → destination → base ref
+(repositories only) → model → thinking. Every screen requires confirmation;
+hints do not skip screens, trigger automatic launches, or edit task notes.
+
+All five front-matter hints are optional:
+
+```yaml
+repo: example/project
+machine: machine-a
+model: example-provider/vendor/model
+thinking: high
+base-ref: upstream/train/next
+```
+
+Explicit final selections win over hints; hints win over initial launcher
+defaults. Unknown or incompatible hints are shown at the affected screen, with
+no selected replacement. Navigate to deliberately replace a list hint, or edit
+the base-ref form; Enter alone does not silently accept a fallback. Hints with
+unsafe control characters or oversized/non-UTF-8 values are rejected when read.
+Old notes with no hints still work.
+
+- `repo` preselects a configured repository. Without it, select a context by
+  navigation. Owner contexts remain available for launches without a task file.
+- `machine` preselects an eligible destination supporting that context. Without
+  it, prefer Local when eligible, otherwise retain the existing first-destination
+  default. Catalogue membership does not imply reachability or authentication.
+- `base-ref` initializes the form **verbatim**, without prepending `origin/`.
+  Without it, use `origin/${defaultBranch}`. Editing makes the field an explicit
+  override; **Ctrl+R** resets it to the selected repository's default. Automatic
+  defaults recompute on repository/destination changes; explicit overrides remain
+  unchanged for correction or confirmation on the new destination.
+- `model` is an exact destination-specific catalogue reference, split only at
+  the first slash to identify its provider and model ID. Pi's CLI consumes one
+  provider prefix before matching, so Herdsman adds that prefix to the canonical
+  reference in `--model`; the resolver then receives the exact catalogue
+  reference, even when the model ID itself starts with the provider name.
+  The task hint and IPC selection remain unchanged. Without a hint, the machine's
+  configured default model is initially selected, falling back to the first
+  catalogue model only when no default is configured. A destination with no configured
+  models cannot launch; choose another destination or update configuration.
+- `thinking` is selected from that model's projected Pi-supported levels. Without
+  a hint, select `medium` if supported, otherwise `off` if supported; otherwise
+  require a deliberate selection. A thinking-only hint can preselect a compatible
+  level after model selection. Explicit incompatible thinking is not reset when
+  changing model. There are no “Pi default” model/thinking entries: final choices
+  are passed explicitly.
+
+Back-navigation preserves compatible choices. Repository/destination/model
+changes revalidate dependent selections; incompatible explicit values remain
+visible until corrected. Task hints are not re-applied over final selections.
+The daemon validates final model, thinking, context and base-ref choices again,
+independently of the task's original hints.
+
+### Base-ref semantics
+
+A slash means **remote/ref**, split at the first slash:
+
+| Base ref | Queued execution |
+| --- | --- |
+| `origin/main` | Give Herdr `refs/remotes/origin/main`, using the existing remote-tracking ref. |
+| `upstream/train/next` | Give Herdr `refs/remotes/upstream/train/next`, using the existing remote-tracking ref. |
+| `main` | Give Herdr `refs/heads/main`, using the existing local branch without upstream inference. |
+
+The form labels both local and remote refs as existing, unrefreshed choices. Slash-containing local
+branch names, fully qualified `refs/...` forms, tags, commit IDs and revision
+expressions are not supported. Explicit refs are not interpreted as paths or
+used to name the new worktree. The field and daemon IPC value stay verbatim;
+only the worktree creation argument is qualified to the selected namespace,
+so a same-named tag or local branch cannot shadow a selected remote ref.
+
+Herdsman validates ref syntax before workspace mutations. Herdr resolves the
+qualified ref during worktree creation; Herdsman does not inspect its existence,
+commit, symbolic-alias target, configured remote, or freshness beforehand.
+A missing or unusable ref can therefore fail after parent workspace creation or
+rename. Launch stops without starting Pi; inspect Herdr before retrying. There
+is no automatic retry or cleanup.
+
+Launch-time fetch, pre-mutation Git ref validation, and background “keep warm”
+fetching are deferred. Ensure refs are updated separately on the destination.
+Git maintenance prefetch warms `refs/prefetch/`; it does not update ordinary
+`refs/remotes/` tracking refs. Herdsman adds no Git subprocess, transport override,
+Git package dependency, or Git timeout setting. Source branch/files remain under
+the existing Herdr lifecycle boundary. Owner sessions have no base-ref field or
+base-ref launch argument.
+
+### Picker controls
+
 - Confirmation: arrows/tab and Enter, or `y`/`n`.
 - Task selector: type immediately to fuzzy-find relative filenames; arrows or
   Ctrl+N (down)/Ctrl+P (up) move through ranked matches and one Enter selects
@@ -303,12 +430,15 @@ these styles. Ordinary filenames and terminal-native fallback are unchanged.
   without a task file still requires a session description.
 - Context/repository/machine lists: arrows or Ctrl+N (down)/Ctrl+P (up) to navigate,
   `/` to filter, Enter to choose, Escape to clear the filter or go back.
+- Model/thinking lists use the same controls. The base-ref form uses Enter to
+  continue, Escape to go back, and Ctrl+R to reset to the repository default.
 - Ctrl+C cancels everywhere. Selection performs no launch mutations.
 
 Tasks must be regular files. Reading them runs outside the TUI event loop, so
 Escape and Ctrl+C remain responsive while loading.
 Task files need YAML front matter with a non-empty, single-line `title`.
-`skill` is optional; legacy `repo` fields are ignored. The prompt preserves the
+`skill` and the five selection hints above are optional. Hints are not appended
+to the prompt or converted into launch instructions. The prompt preserves the
 complete body after front matter. When a non-empty `skill` is declared, it must be a valid skill name
 and the prompt appends:
 

@@ -11,12 +11,63 @@ let
 
   packageFor =
     pkgs:
+    let
+      piNode = pkgs.llm-agents.pi.override { useBun = false; };
+    in
     pkgs.buildGoModule {
       pname = "herdsman";
       version = "0.1.0";
       src = ../../go/herdsman;
       vendorHash = "sha256-lq+G1UfBMiAbnD9jNWN1Tn67KYXk770N5cQI7jUqHWU=";
       nativeBuildInputs = [ pkgs.makeWrapper ];
+      preCheck = ''
+        export HERDSMAN_MODEL_ARGUMENT_FIXTURE="$TMPDIR/herdsman-model-arguments.json"
+      '';
+      postCheck = ''
+        ${pkgs.nodejs}/bin/node --input-type=module - "$HERDSMAN_MODEL_ARGUMENT_FIXTURE" <<'JS'
+        import assert from "node:assert/strict";
+        import { readFileSync } from "node:fs";
+        import { resolveCliModel } from "${piNode}/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/model-resolver.js";
+        const fixtures = JSON.parse(readFileSync(process.argv[2], "utf8"));
+        const models = fixtures.map(({ Reference }) => {
+          const slash = Reference.indexOf("/");
+          return { provider: Reference.slice(0, slash), id: Reference.slice(slash + 1) };
+        });
+        const modelRuntime = { getModels: () => models, hasConfiguredAuth: () => true };
+        for (const { Reference, Args, Rejected } of fixtures) {
+          const piArgs = Args.slice(Args.indexOf("--") + 1);
+          const argument = flag => {
+            const index = piArgs.indexOf(flag);
+            assert(index >= 0, `missing ''${flag}`);
+            return piArgs[index + 1];
+          };
+          const result = resolveCliModel({
+            cliProvider: argument("--provider"), cliModel: argument("--model"),
+            cliThinking: argument("--thinking"), modelRuntime,
+          });
+          assert.equal(result.error, undefined);
+          assert.equal(result.warning, undefined);
+          const selected = `''${result.model.provider}/''${result.model.id}`;
+          if (Rejected) {
+            assert.notEqual(selected, Reference);
+          } else {
+            assert.equal(selected, Reference);
+          }
+          assert.equal(result.thinkingLevel, undefined);
+        }
+        // Case-only IDs are not exact choices to Pi. The Go catalogue tests
+        // reject this inventory before launch; reproduce why using emitted args.
+        const ambiguousModels = [...models, { provider: "example", id: "Foo" }];
+        const { Args } = fixtures.find(fixture => fixture.Reference === "example/foo");
+        const ambiguous = resolveCliModel({
+          cliProvider: Args[Args.indexOf("--provider") + 1],
+          cliModel: Args[Args.indexOf("--model") + 1],
+          cliThinking: "high",
+          modelRuntime: { getModels: () => ambiguousModels, hasConfiguredAuth: () => true },
+        });
+        assert.notEqual(`''${ambiguous.model.provider}/''${ambiguous.model.id}`, "example/foo");
+        JS
+      '';
       postInstall = ''
         wrapProgram "$out/bin/herdsman" \
           --suffix PATH : ${
@@ -42,6 +93,27 @@ let
       machineName = config.brucenunk.homeManager.herdsman.machineName;
       machines = config.brucenunk.homeManager.herdsman.machines;
       localMachine = if machineName == null then null else machines.${machineName} or null;
+      piSettingsDefaults =
+        if options.brucenunk.homeManager ? pi then
+          config.brucenunk.homeManager.pi.settingsDefaults
+        else
+          null;
+      piDefaults =
+        if piSettingsDefaults == null then
+          { }
+        else
+          builtins.fromJSON (builtins.readFile piSettingsDefaults);
+      localDefaultModel =
+        if
+          builtins.isAttrs piDefaults
+          && builtins.isString (piDefaults.defaultProvider or null)
+          && builtins.isString (piDefaults.defaultModel or null)
+          && piDefaults.defaultProvider != ""
+          && piDefaults.defaultModel != ""
+        then
+          "${piDefaults.defaultProvider}/${piDefaults.defaultModel}"
+        else
+          null;
       catalogue.machines = lib.mapAttrs (_: machine: {
         repositories = builtins.attrNames machine.repositories;
         models = piData.projectModels machine.models;
@@ -98,6 +170,7 @@ let
         cp ${pluginStarter} "$out/herdsman-plugin"
       '';
       managedConfig = format.generate "herdsman-config.toml" {
+        local_machine_name = if machineName == null then "" else machineName;
         agent_names = cfg.agentNames;
         tasks_dir = cfg.tasksDir;
         daemon = {
@@ -108,10 +181,15 @@ let
         theme = cfg.theme;
         machines = lib.mapAttrs' (name: machine: {
           name = if name == machineName then "local" else name;
-          value.repositories = lib.mapAttrs (_: repository: {
-            path = repository.path;
-            default_branch = repository.defaultBranch;
-          }) machine.repositories;
+          value = {
+            repositories = lib.mapAttrs (_: repository: {
+              path = repository.path;
+              default_branch = repository.defaultBranch;
+            }) machine.repositories;
+          }
+          // lib.optionalAttrs (machine.defaultModel != null) {
+            default_model = machine.defaultModel;
+          };
         }) machines;
       };
       themeEntries = lib.mapAttrs' (name: _: {
@@ -157,12 +235,19 @@ let
         default = { };
         description = "Git/Pi definitions keyed by machine name, shared with Emacs task metadata.";
         type = lib.types.attrsOf (
-          lib.types.submodule {
-            options = {
-              repositories = gitData.repositoryOptions.repositories;
-              models = piData.modelsOption;
-            };
-          }
+          lib.types.submodule (
+            { name, ... }: {
+              options = {
+                defaultModel = lib.mkOption {
+                  type = lib.types.nullOr lib.types.str;
+                  default = if name == machineName then localDefaultModel else null;
+                  description = "Initial provider/model selection without a task hint. The local machine inherits Pi's Nix settings defaults; null falls back to the first catalogue model.";
+                };
+                repositories = gitData.repositoryOptions.repositories;
+                models = piData.modelsOption;
+              };
+            }
+          )
         );
       };
       options.brucenunk.homeManager.herdsman.config = lib.mkOption {
@@ -255,7 +340,15 @@ let
               || config.brucenunk.homeManager.pi.models == localMachine.models;
             message = "Herdsman and Pi must share this machine's model configuration.";
           }
-        ];
+        ]
+        ++ lib.mapAttrsToList (name: machine: {
+          assertion =
+            machine.defaultModel == null
+            || builtins.elem machine.defaultModel (
+              map (model: model.name) (piData.projectModels machine.models)
+            );
+          message = "Herdsman defaultModel for ${name} must be a model in that machine's catalogue.";
+        }) machines;
         home.packages = [ package ];
         systemd.user.services.herdsman = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
           Unit.Description = "Herdsman cached discovery and execution daemon";
@@ -384,11 +477,56 @@ in
         ];
       };
       configFile = home.config.xdg.configFile."herdsman/config.toml";
+      piDefaultHome = home.extendModules {
+        modules = [
+          config.flake.modules.homeManager.pi
+          {
+            brucenunk.homeManager.pi = {
+              enable = false;
+              models = home.config.brucenunk.homeManager.herdsman.machines.machine-a.models;
+              settingsDefaults = builtins.toFile "herdsman-pi-defaults.json" (
+                builtins.toJSON {
+                  defaultProvider = "example";
+                  defaultModel = "vendor/model";
+                }
+              );
+            };
+          }
+        ];
+      };
+      explicitDefaultHome = home.extendModules {
+        modules = [
+          { brucenunk.homeManager.herdsman.machines.machine-a.defaultModel = "example/vendor/model"; }
+        ];
+      };
+      clearedDefaultHome = piDefaultHome.extendModules {
+        modules = [ { brucenunk.homeManager.herdsman.machines.machine-a.defaultModel = null; } ];
+      };
+      partialDefaultHome = piDefaultHome.extendModules {
+        modules = [
+          {
+            brucenunk.homeManager.pi.settingsDefaults = pkgs.lib.mkForce (
+              builtins.toFile "herdsman-pi-partial-defaults.json" (
+                builtins.toJSON { defaultProvider = "example"; }
+              )
+            );
+          }
+        ];
+      };
+      invalidDefaultHome = home.extendModules {
+        modules = [
+          { brucenunk.homeManager.herdsman.machines.machine-a.defaultModel = "example/unknown"; }
+        ];
+      };
     in
     {
       packages.herdsman = package;
       checks.herdsman = package;
       checks.herdsman-home-manager-module = builtins.deepSeq home.activationPackage.drvPath (
+        assert !(builtins.tryEval invalidDefaultHome.activationPackage.drvPath).success;
+        assert
+          piDefaultHome.config.xdg.configFile."herdsman/catalogue.json".source
+          == home.config.xdg.configFile."herdsman/catalogue.json".source;
         assert !configFile.force;
         assert !(home.config.home.activation ? herdsmanInitialConfig);
         assert home.config.home.activation ? herdsmanPlugin;
@@ -533,6 +671,10 @@ in
           cmp shim-args expected-args
           ${pkgs.python3}/bin/python - ${configFile.source} ${
             home.config.xdg.configFile."herdsman/catalogue.json".source
+          } ${piDefaultHome.config.xdg.configFile."herdsman/config.toml".source} ${
+            explicitDefaultHome.config.xdg.configFile."herdsman/config.toml".source
+          } ${clearedDefaultHome.config.xdg.configFile."herdsman/config.toml".source} ${
+            partialDefaultHome.config.xdg.configFile."herdsman/config.toml".source
           } <<'PY'
           import json
           import sys
@@ -541,6 +683,17 @@ in
               config = tomllib.load(f)
           assert "default_base" not in config and "default_gitdir" not in config
           assert config["agent_names"] == ["example-agent"]
+          assert config["local_machine_name"] == "machine-a"
+          assert all("default_model" not in machine for machine in config["machines"].values())
+          for path in sys.argv[3:5]:
+              with open(path, "rb") as f:
+                  selected = tomllib.load(f)
+              assert selected["machines"]["local"]["default_model"] == "example/vendor/model"
+              assert "default_model" not in selected["machines"]["machine-b"]
+          for path in sys.argv[5:]:
+              with open(path, "rb") as f:
+                  cleared = tomllib.load(f)
+              assert "default_model" not in cleared["machines"]["local"]
           assert config["daemon"] == {
               "refresh_interval": "30s", "queue_capacity": 32, "refresh_concurrency": 4,
           }

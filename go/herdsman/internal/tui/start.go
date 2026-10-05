@@ -26,6 +26,9 @@ const (
 	askDescription
 	pickRepo
 	pickMachine
+	editBase
+	pickModel
+	pickThinking
 )
 
 type item string
@@ -48,6 +51,12 @@ type Model struct {
 	yes              bool
 	selector         taskSelector
 	description      textinput.Model
+	base             textinput.Model
+	baseExplicit     bool
+	thinkingExplicit bool
+	machineName      string
+	hintTask         *app.Task
+	choiceSelected   bool
 	indexLoading     bool
 	taskLoading      bool
 	readID           int
@@ -81,7 +90,10 @@ func New(c app.Config, profiles []herdr.Machine, themeDir string) (Model, error)
 	description.Prompt = "> "
 	description.Width = 76
 	styles.input(&description)
-	return Model{config: c, profiles: profiles, styles: styles, description: description, yes: true, width: 80, height: 22}, nil
+	base := textinput.New()
+	base.Prompt, base.Width, base.CharLimit = "> ", 76, 4096
+	styles.input(&base)
+	return Model{config: c, profiles: profiles, styles: styles, description: description, base: base, yes: true, width: 80, height: 22}, nil
 }
 
 func (m Model) Init() tea.Cmd {
@@ -177,18 +189,27 @@ func (m *Model) choices(title string, names []string) {
 
 func (m *Model) repositories() {
 	m.stage, m.message = pickRepo, ""
-	m.Request.Repo = ""
+	m.seedHints()
 	title := "Select context"
 	if m.Request.Task != nil {
 		title = "Choose repository"
 	}
 	m.choices(title, m.config.ContextNames(m.Request.Task == nil))
 	m.setRepositorySelection(false)
+	if m.Request.Repo != "" {
+		i := indexName(m.config.ContextNames(m.Request.Task == nil), m.Request.Repo)
+		if i >= 0 {
+			m.list.Select(i)
+			m.setRepositorySelection(true)
+		} else {
+			m.message = "Repository hint is unavailable: " + m.Request.Repo + ". Choose a repository to replace it."
+		}
+	}
 }
 
 func (m *Model) beginDescription() tea.Cmd {
 	m.stage, m.message = askDescription, ""
-	m.Request.Task, m.Request.Repo = nil, ""
+	m.Request.Task = nil
 	return m.description.Focus()
 }
 
@@ -269,13 +290,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.stage == pickTask {
 			m.selector.resize(size.Width, max(1, size.Height-m.noticeHeight()))
 		}
-		if m.stage == pickRepo || m.stage == pickMachine {
+		m.base.Width = max(1, size.Width-4)
+		if m.stage == pickRepo || m.stage == pickMachine || m.stage == pickModel || m.stage == pickThinking {
 			m.list.SetSize(size.Width, max(1, size.Height-8-m.noticeHeight()))
 		}
 	}
 	if key, ok := msg.(tea.KeyMsg); ok {
 		if key.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.stage == editBase {
+			switch key.String() {
+			case "esc":
+				m.base.Blur()
+				m.machines()
+				return m, nil
+			case "ctrl+r":
+				m.baseExplicit = false
+				m.Request.BaseRef = m.defaultBase()
+				m.base.SetValue(m.Request.BaseRef)
+				m.message = ""
+				return m, nil
+			case "enter":
+				if !app.ValidBaseRef(m.base.Value()) {
+					m.message = "Use remote/ref or a plain local branch name; revision expressions and refs/ forms are not supported."
+					return m, nil
+				}
+				m.Request.BaseRef = m.base.Value()
+				m.base.Blur()
+				m.models()
+				return m, nil
+			}
 		}
 		if m.stage == askDescription {
 			switch key.String() {
@@ -351,6 +396,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.repositories()
 				return m, nil
+			case pickModel:
+				if m.list.FilterState() != list.Unfiltered {
+					break
+				}
+				if strings.Contains(m.Request.Repo, "/") {
+					return m, m.beginBase()
+				}
+				m.machines()
+				return m, nil
+			case pickThinking:
+				if m.list.FilterState() != list.Unfiltered {
+					break
+				}
+				m.models()
+				return m, nil
 			}
 			if m.stage == askEmpty {
 				return m, nil
@@ -371,8 +431,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		if key.String() == "enter" && (m.stage == pickRepo || m.stage == pickMachine) && m.list.FilterState() != list.Filtering {
+		if key.String() == "enter" && (m.stage == pickRepo || m.stage == pickMachine || m.stage == pickModel || m.stage == pickThinking) && m.list.FilterState() != list.Filtering {
 			if m.stage == pickRepo && !m.repoSelected {
+				return m, nil
+			}
+			if m.stage != pickRepo && !m.choiceSelected {
 				return m, nil
 			}
 			selected := m.list.SelectedItem()
@@ -387,22 +450,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.message = "No enabled Herdr machines configured for this context."
 					return m, nil
 				}
-				names := make([]string, len(m.destinations))
-				items := make([]list.Item, len(m.destinations))
-				localIndex := 0
-				for i, d := range m.destinations {
-					names[i] = d.DisplayName()
-					items[i] = machineItem{machine: d}
-					if d.IsLocal() {
-						localIndex = i
-					}
-				}
-				m.stage, m.message = pickMachine, ""
-				m.choices("Choose machine", names)
-				m.list.SetItems(items)
-				m.list.Select(localIndex)
-			} else {
+				m.machines()
+			} else if m.stage == pickMachine {
 				m.Request.Machine = selected.(machineItem).machine
+				m.machineName = m.config.MachineName(m.Request.Machine)
+				if strings.Contains(m.Request.Repo, "/") {
+					return m, m.beginBase()
+				}
+				m.Request.BaseRef = ""
+				m.models()
+			} else if m.stage == pickModel {
+				m.Request.Model = selected.(item).Title()
+				m.thinking()
+			} else {
+				m.Request.Thinking = selected.(item).Title()
+				m.thinkingExplicit = true
+				if err := m.config.ValidateChoices(m.Request); err != nil {
+					m.message = err.Error()
+					return m, nil
+				}
 				m.Ready = true
 				return m, tea.Quit
 			}
@@ -413,12 +479,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.stage {
 	case askDescription:
 		m.description, cmd = m.description.Update(msg)
+	case editBase:
+		before := m.base.Value()
+		m.base, cmd = m.base.Update(msg)
+		if m.base.Value() != before {
+			m.baseExplicit = true
+			m.Request.BaseRef = m.base.Value()
+			m.message = ""
+		}
 	case pickTask:
 		cmd = m.selector.update(msg)
 	case pickRepo:
 		cmd = m.updateRepositoryList(msg)
-	case pickMachine:
-		m.list, cmd = m.list.Update(msg)
+	case pickMachine, pickModel, pickThinking:
+		cmd = m.updateChoiceList(msg)
 	}
 	return m, cmd
 }
@@ -440,7 +514,17 @@ func (m Model) View() string {
 		body = m.styles.title.Render("Session description") + "\n\n" + m.description.View() + "\n\n" + m.styles.muted.Render("enter continue · esc back")
 	case pickTask:
 		body = m.styles.title.Render("Choose task file") + "\n" + m.selector.view(m.indexLoading, m.taskLoading) + "\n" + m.styles.muted.Render("type to find · ↑/↓ or ctrl+p/ctrl+n choose · enter select · esc empty-session/cancel")
-	case pickRepo, pickMachine:
+	case editBase:
+		kind := "Repository default (ctrl+r resets)"
+		if m.baseExplicit {
+			kind = "Explicit override (ctrl+r resets to repository default)"
+		}
+		route := "Remote-tracking ref: uses the existing ref without fetching."
+		if !strings.Contains(m.base.Value(), "/") {
+			route = "Local branch: uses the existing branch without fetching."
+		}
+		body = m.styles.title.Render("Base ref") + "\n\n" + m.base.View() + "\n\n" + m.styles.muted.Render(kind+"\n"+route+"\nenter continue · esc back")
+	case pickRepo, pickMachine, pickModel, pickThinking:
 		body = m.list.View() + "\n" + m.styles.muted.Render("esc back")
 		if m.stage == pickRepo {
 			body += "\n" + m.styles.muted.Render("Navigate to select a context before pressing Enter.")

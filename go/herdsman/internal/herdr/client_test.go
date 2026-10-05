@@ -98,6 +98,45 @@ func checkArgs(t *testing.T, path string, want []string) {
 	}
 }
 
+// Nix's package check feeds these actual emitted arguments to the pinned Pi
+// resolver. Keep exact argv checks here too, for ordinary standalone Go tests.
+func TestExactModelArgumentFixtures(t *testing.T) {
+	type fixture struct {
+		Reference string
+		Args      []string
+		Rejected  bool
+	}
+	var fixtures []fixture
+	for _, reference := range []string{"example/foo", "example/example/foo", "example/vendor/model", "example/foo:high", "example/example/foo:high", "other/example/foo", "example/foo "} {
+		c, path := fakeCLI(t, `{"result":{}}`)
+		if err := c.StartAgent(context.Background(), Local(), "runner", "pane", "Title", reference, "high"); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var args []string
+		if err := json.Unmarshal(data, &args); err != nil {
+			t.Fatal(err)
+		}
+		provider, _, _ := strings.Cut(reference, "/")
+		checkArgs(t, path, []string{"agent", "start", "runner", "--kind", "pi", "--pane", "pane", "--timeout", "120000", "--", "--name", "Title", "--provider", provider, "--model", provider + "/" + reference, "--thinking", "high"})
+		// Catalogue validation rejects the whitespace case before launch. Emit its
+		// hypothetical arguments too so the pinned resolver check shows why.
+		fixtures = append(fixtures, fixture{Reference: reference, Args: args, Rejected: strings.TrimSpace(reference) != reference})
+	}
+	if path := os.Getenv("HERDSMAN_MODEL_ARGUMENT_FIXTURE"); path != "" {
+		data, err := json.Marshal(fixtures)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestInventorySchemas(t *testing.T) {
 	c, path := fakeCLI(t, `[{"id":"profile","label":"remote","target":"ssh-alias","enabled":true,"session":"default"}]`)
 	ms, err := c.Machines(context.Background())
@@ -213,15 +252,15 @@ func TestCreateAndAgentArgumentBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkArgs(t, path, []string{"--machine", "remote-id", "workspace", "rename", "opaque-id", "owner/repo"})
-	_, err = c.CreateWorktree(context.Background(), m, WorktreeRequest{Parent: "opaque-id", Branch: "jamesl/stamp", Base: "main", Path: "/home/person/work/owner/repo/stamp", Label: "Title; $(not a shell)"})
+	_, err = c.CreateWorktree(context.Background(), m, WorktreeRequest{Parent: "opaque-id", Branch: "jamesl/stamp", Base: "refs/remotes/upstream/train/next", Path: "/home/person/work/owner/repo/stamp", Label: "Title; $(not a shell)"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkArgs(t, path, []string{"--machine", "remote-id", "worktree", "create", "--workspace", "opaque-id", "--branch", "jamesl/stamp", "--base", "main", "--path", "/home/person/work/owner/repo/stamp", "--label", "Title; $(not a shell)", "--no-focus"})
-	if err = c.StartAgent(context.Background(), m, "possum", "opaque-pane", "A title; 'quoted'"); err != nil {
+	checkArgs(t, path, []string{"--machine", "remote-id", "worktree", "create", "--workspace", "opaque-id", "--branch", "jamesl/stamp", "--base", "refs/remotes/upstream/train/next", "--path", "/home/person/work/owner/repo/stamp", "--label", "Title; $(not a shell)", "--no-focus"})
+	if err = c.StartAgent(context.Background(), m, "possum", "opaque-pane", "A title; 'quoted'", "example/vendor/model", "high"); err != nil {
 		t.Fatal(err)
 	}
-	checkArgs(t, path, []string{"--machine", "remote-id", "agent", "start", "possum", "--kind", "pi", "--pane", "opaque-pane", "--timeout", "120000", "--", "--name", "A title; 'quoted'"})
+	checkArgs(t, path, []string{"--machine", "remote-id", "agent", "start", "possum", "--kind", "pi", "--pane", "opaque-pane", "--timeout", "120000", "--", "--name", "A title; 'quoted'", "--provider", "example", "--model", "example/example/vendor/model", "--thinking", "high"})
 	prompt := "multiline\n$(do not execute)\n'quote'"
 	if err = c.Prompt(context.Background(), m, "possum", prompt); err != nil {
 		t.Fatal(err)
@@ -274,7 +313,7 @@ func TestMalformedResponsesAndErrors(t *testing.T) {
 	}
 	c, _ := fakeCLI(t, "")
 	t.Setenv("HERDSMAN_STDERR", `{"error":{"code":"agent_not_ready"}}`)
-	if err := c.StartAgent(context.Background(), Local(), "possum", "pane", "title"); err == nil || !strings.Contains(err.Error(), "agent_not_ready") {
+	if err := c.StartAgent(context.Background(), Local(), "possum", "pane", "title", "example/vendor/model", "medium"); err == nil || !strings.Contains(err.Error(), "agent_not_ready") {
 		t.Fatal(err)
 	}
 	if err := c.Prompt(context.Background(), Local(), "possum", "sensitive prompt"); err == nil || strings.Contains(err.Error(), "sensitive prompt") {
@@ -351,7 +390,9 @@ func TestDebugCallCoverage(t *testing.T) {
 					_, err := c.CreateWorktree(ctx, machine, WorktreeRequest{Parent: "w", Branch: "task", Base: "main", Path: "/repo/task", Label: "task"})
 					return err
 				}},
-				{"start", `{"result":{}}`, `"agent" "start"`, func(c *Client) error { return c.StartAgent(ctx, machine, "possum", "p", "title") }},
+				{"start", `{"result":{}}`, `"agent" "start"`, func(c *Client) error {
+					return c.StartAgent(ctx, machine, "possum", "p", "title", "example/vendor/model", "medium")
+				}},
 				{"prompt", `{"result":{}}`, `"agent" "prompt" "possum" "<redacted>"`, func(c *Client) error { return c.Prompt(ctx, machine, "possum", "secret task\nbody") }},
 				{"quit", `{"result":{}}`, `"agent" "prompt" "possum" "/quit"`, func(c *Client) error { return c.Prompt(ctx, machine, "possum", "/quit") }},
 				{"focus", `{"result":{}}`, `"agent" "focus"`, func(c *Client) error { return c.Focus(ctx, machine, "possum") }},

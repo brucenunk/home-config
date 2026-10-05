@@ -14,7 +14,7 @@ import (
 )
 
 func config(t *testing.T) app.Config {
-	return app.Config{AgentNames: []string{"runner"}, TasksDir: t.TempDir(), Machines: map[string]app.MachineConfig{"local": {Repositories: map[string]app.RepositoryConfig{"owner/one": {Path: "/repos/owner/one"}, "owner/two": {Path: "/repos/owner/two"}}}}}
+	return app.Config{LocalMachineName: "machine-a", Catalogue: app.Catalogue{Machines: map[string]app.CatalogueMachine{"machine-a": {Models: []app.ModelChoice{{Name: "example/vendor/model", ThinkingLevels: []string{"off", "medium", "high"}}}}}}, AgentNames: []string{"runner"}, TasksDir: t.TempDir(), Machines: map[string]app.MachineConfig{"local": {Repositories: map[string]app.RepositoryConfig{"owner/one": {Path: "/repos/owner/one"}, "owner/two": {Path: "/repos/owner/two"}}}}}
 }
 
 func newModel(t *testing.T, c app.Config, profiles []herdr.Machine) Model {
@@ -56,6 +56,16 @@ func describeSession(m Model) Model {
 	return m
 }
 
+// Confirm the new launch options, without bypassing any screen.
+func confirmOptions(m Model) Model {
+	for _, screen := range []stage{editBase, pickModel, pickThinking} {
+		if m.stage == screen {
+			m, _ = key(m, "enter")
+		}
+	}
+	return m
+}
+
 func TestEmptySelectionAndCancellation(t *testing.T) {
 	m := newModel(t, config(t), nil)
 	m, _ = key(m, "n")
@@ -73,7 +83,8 @@ func TestEmptySelectionAndCancellation(t *testing.T) {
 		t.Fatal(m.stage)
 	}
 	m, cmd := key(m, "enter")
-	if !m.Ready || m.Request.Task != nil || m.Request.Repo != "owner" || !m.Request.Machine.IsLocal() || cmd == nil {
+	m = confirmOptions(m)
+	if !m.Ready || m.Request.Task != nil || m.Request.Repo != "owner" || !m.Request.Machine.IsLocal() {
 		t.Fatal(m.Request, m.Ready)
 	}
 	for _, s := range []string{"esc", "ctrl+c", "q"} {
@@ -112,6 +123,7 @@ func TestSingleColumnContextsAndTaskRepositories(t *testing.T) {
 		}
 		m, _ = key(m, "enter")
 		m, _ = key(m, "enter")
+		m = confirmOptions(m)
 		if !m.Ready || m.Request.Repo != "owner/one" || (m.Request.Task != nil) != withTask {
 			t.Fatal(m.Request)
 		}
@@ -261,7 +273,7 @@ func TestLeavingTaskPickerOffersEmptyOrCancel(t *testing.T) {
 	}
 }
 
-func TestTaskFileSelectionIgnoresLegacyRepo(t *testing.T) {
+func TestTaskFileSelectionUsesRepoHint(t *testing.T) {
 	c := config(t)
 	p := filepath.Join(c.TasksDir, "20260930T193614==todo--task.md")
 	if err := os.WriteFile(p, []byte("---\ntitle: Task\nrepo: owner/two\n---\nTask body\n"), 0600); err != nil {
@@ -278,17 +290,16 @@ func TestTaskFileSelectionIgnoresLegacyRepo(t *testing.T) {
 	}
 	next, _ = m.Update(cmd())
 	m = next.(Model)
-	if m.stage != pickRepo || m.Request.Task == nil || m.repoSelected {
+	if m.stage != pickRepo || m.Request.Task == nil || !m.repoSelected || m.list.SelectedItem().(item) != "owner/two" {
 		t.Fatalf("stage=%v task=%+v", m.stage, m.Request.Task)
 	}
 	m, _ = key(m, "enter")
-	if m.stage != pickRepo || m.Request.Repo != "" {
-		t.Fatal("legacy repo selected a repository", m.Request)
+	if m.stage != pickMachine || m.Request.Repo != "owner/two" {
+		t.Fatal(m.Request)
 	}
-	m, _ = key(m, "down")
 	m, _ = key(m, "enter")
-	m, _ = key(m, "enter")
-	if !m.Ready || m.Request.Repo != "owner/one" || m.Request.Task.Title != "Task" {
+	m = confirmOptions(m)
+	if !m.Ready || m.Request.Repo != "owner/two" || m.Request.Task.Title != "Task" {
 		t.Fatal(m.Request)
 	}
 }
@@ -310,13 +321,14 @@ func TestUnavailableMachineAndBackNavigation(t *testing.T) {
 	m, _ = key(m, "down")
 	m, _ = key(m, "enter")
 	m, _ = key(m, "esc")
-	if m.stage != pickRepo || m.repoSelected || m.Request.Repo != "" {
+	if m.stage != pickRepo || !m.repoSelected || m.Request.Repo != "owner" {
 		t.Fatal(m.stage, m.Request)
 	}
 	m, _ = key(m, "enter")
-	if m.stage != pickRepo {
-		t.Fatal("back navigation retained repository selection")
+	if m.stage != pickMachine {
+		t.Fatal("back navigation lost repository selection")
 	}
+	m, _ = key(m, "esc")
 	m, _ = key(m, "esc")
 	if m.stage != askDescription {
 		t.Fatal(m.stage)

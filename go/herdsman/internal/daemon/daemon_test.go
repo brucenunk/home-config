@@ -113,12 +113,12 @@ func (f *fakeBackend) CreateParent(ctx context.Context, _ herdr.Machine, _, _ st
 	result.RootPane.ID = "new:p1"
 	return result, nil
 }
-func (f *fakeBackend) StartAgent(context.Context, herdr.Machine, string, string, string) error {
+func (f *fakeBackend) StartAgent(context.Context, herdr.Machine, string, string, string, string, string) error {
 	return f.record("agent start")
 }
 func (f *fakeBackend) Focus(context.Context, herdr.Machine, string) error { return f.record("focus") }
 func config() app.Config {
-	return app.Config{Daemon: app.DefaultDaemonConfig(), AgentNames: []string{"possum"}, Machines: map[string]app.MachineConfig{"local": {Repositories: map[string]app.RepositoryConfig{"owner/repo": {Path: "/repos/owner/repo"}}}}}
+	return app.Config{LocalMachineName: "machine-a", Catalogue: app.Catalogue{Machines: map[string]app.CatalogueMachine{"machine-a": {Models: []app.ModelChoice{{Name: "example/vendor/model", ThinkingLevels: []string{"medium", "high"}}}}}}, Daemon: app.DefaultDaemonConfig(), AgentNames: []string{"possum"}, Machines: map[string]app.MachineConfig{"local": {Repositories: map[string]app.RepositoryConfig{"owner/repo": {Path: "/repos/owner/repo"}}}}}
 }
 
 func testDaemon(t *testing.T, c app.Config, backend Backend, logger *slog.Logger) *Daemon {
@@ -163,7 +163,7 @@ func stopRun(t *testing.T, d *Daemon) (context.CancelFunc, <-chan struct{}) {
 func startRequest() Request {
 	c := config()
 	endpoint, _ := herdr.LocalEndpoint()
-	return Request{ConfigID: ConfigID(c), LocalEndpoint: endpoint, Start: &app.StartRequest{Repo: "owner", Machine: herdr.Local(), Description: "Testing"}}
+	return Request{ConfigID: ConfigID(c), LocalEndpoint: endpoint, Start: &app.StartRequest{Repo: "owner", Machine: herdr.Local(), Description: "Testing", Model: "example/vendor/model", Thinking: "medium"}}
 }
 func fixture() herdr.Snapshot {
 	s := herdr.Snapshot{}
@@ -499,6 +499,24 @@ func TestRoutingMismatchRejected(t *testing.T) {
 	t.Setenv("HERDR_SOCKET_PATH", "/different/socket")
 	if err := i.CheckConfig(config()); err == nil {
 		t.Fatal("socket override mismatch accepted")
+	}
+}
+
+func TestDefaultModelPolicyRequiresDaemonRestart(t *testing.T) {
+	c := config()
+	id := ConfigID(c)
+	machine := c.Machines["local"]
+	machine.DefaultModel = "example/vendor/model"
+	c.Machines["local"] = machine
+	if id == ConfigID(c) {
+		t.Fatal("default model change bypassed daemon policy comparison")
+	}
+	endpoint, err := herdr.LocalEndpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := (Inventory{ConfigID: id, LocalEndpoint: endpoint}).CheckConfig(c); err == nil {
+		t.Fatal("accepted daemon with old default model")
 	}
 }
 

@@ -140,6 +140,9 @@ func (d *Daemon) Submit(r Request) error {
 		return fmt.Errorf("submit exactly one start or a non-empty finish batch")
 	}
 	if r.Start != nil {
+		if err := d.config.ValidateChoices(*r.Start); err != nil {
+			return err
+		}
 		if len(d.config.Destinations(r.Start.Repo, []herdr.Machine{r.Start.Machine})) == 0 {
 			return fmt.Errorf("invalid context/machine selection")
 		}

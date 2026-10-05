@@ -16,14 +16,17 @@ import (
 )
 
 type Config struct {
-	Daemon     DaemonConfig             `toml:"daemon"`
-	Theme      themes.Config            `toml:"theme"`
-	AgentNames []string                 `toml:"agent_names"`
-	TasksDir   string                   `toml:"tasks_dir"`
-	Machines   map[string]MachineConfig `toml:"machines"`
+	LocalMachineName string                   `toml:"local_machine_name"`
+	Catalogue        Catalogue                `toml:"-"`
+	Daemon           DaemonConfig             `toml:"daemon"`
+	Theme            themes.Config            `toml:"theme"`
+	AgentNames       []string                 `toml:"agent_names"`
+	TasksDir         string                   `toml:"tasks_dir"`
+	Machines         map[string]MachineConfig `toml:"machines"`
 }
 
 type MachineConfig struct {
+	DefaultModel string                      `toml:"default_model"`
 	Repositories map[string]RepositoryConfig `toml:"repositories"`
 }
 
@@ -167,7 +170,13 @@ func LoadConfig(path string) (Config, error) {
 		}
 	}
 	c.TasksDir, err = ExpandHome(c.TasksDir)
-	return c, err
+	if err != nil {
+		return c, err
+	}
+	if err := c.loadCatalogue(filepath.Join(filepath.Dir(path), "catalogue.json")); err != nil {
+		return c, err
+	}
+	return c, nil
 }
 
 func ExpandHome(path string) (string, error) {

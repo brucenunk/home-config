@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,12 +12,32 @@ import (
 
 	"github.com/brucenunk/home-config/go/herdsman/internal/herdr"
 	"github.com/brucenunk/home-config/go/herdsman/internal/tui/themes"
+	"github.com/pelletier/go-toml/v2"
 )
 
 func load(t *testing.T, text string) (Config, error) {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "config.toml")
+	text = "local_machine_name = \"machine-a\"\n" + text
 	if err := os.WriteFile(p, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var operational Config
+	_ = toml.Unmarshal([]byte(text), &operational)
+	catalogue := Catalogue{Machines: map[string]CatalogueMachine{}}
+	for label, m := range operational.Machines {
+		name := label
+		if name == "local" {
+			name = "machine-a"
+		}
+		record := CatalogueMachine{}
+		for slug := range m.Repositories {
+			record.Repositories = append(record.Repositories, slug)
+		}
+		catalogue.Machines[name] = record
+	}
+	data, _ := json.Marshal(catalogue)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(p), "catalogue.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
 	return LoadConfig(p)

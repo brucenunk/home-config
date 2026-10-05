@@ -25,6 +25,7 @@ type fakeLauncher struct {
 	worktree                      herdr.WorktreeRequest
 	title, prompt                 string
 	workspaceLabel                string
+	model, thinking               string
 }
 
 func (f *fakeLauncher) call(m herdr.Machine, op string) error {
@@ -37,6 +38,15 @@ func (f *fakeLauncher) call(m herdr.Machine, op string) error {
 func start(ctx context.Context, c Config, f *fakeLauncher, req StartRequest) (StartResult, error) {
 	if req.Task == nil && req.Description == "" {
 		req.Description = "Investigate deploy latency"
+	}
+	if req.Model == "" {
+		req.Model = "example/vendor/model"
+	}
+	if req.Thinking == "" {
+		req.Thinking = "medium"
+	}
+	if validRepo(req.Repo) && req.BaseRef == "" {
+		req.BaseRef = c.Machines[req.Machine.Label].Repositories[req.Repo].BaseRef()
 	}
 	return Start(ctx, c, f, f.profiles, req)
 }
@@ -84,7 +94,8 @@ func (f *fakeLauncher) CreateWorktree(_ context.Context, m herdr.Machine, r herd
 	f.worktree = r
 	return creation("task", "task:p1"), f.call(m, "worktree")
 }
-func (f *fakeLauncher) StartAgent(_ context.Context, m herdr.Machine, name, pane, title string) error {
+func (f *fakeLauncher) StartAgent(_ context.Context, m herdr.Machine, name, pane, title, model, thinking string) error {
+	f.model, f.thinking = model, thinking
 	f.title = title
 	return f.call(m, "start")
 }
@@ -99,7 +110,10 @@ func (f *fakeLauncher) Focus(_ context.Context, m herdr.Machine, name string) er
 var testAgentNames = []string{"runner", "helper", "quokka", "platypus"}
 
 func startConfig() Config {
-	return Config{AgentNames: testAgentNames, Machines: map[string]MachineConfig{
+	return Config{LocalMachineName: "machine-a", Catalogue: Catalogue{Machines: map[string]CatalogueMachine{
+		"machine-a": {Models: []ModelChoice{{Name: "example/vendor/model", ThinkingLevels: []string{"off", "medium", "high"}}}},
+		"remote":    {Models: []ModelChoice{{Name: "example/vendor/model", ThinkingLevels: []string{"off", "medium", "high"}}}},
+	}}, AgentNames: testAgentNames, Machines: map[string]MachineConfig{
 		"local":  {Repositories: map[string]RepositoryConfig{"owner/repo": {Path: "/home/test/work/owner/repo/main", DefaultBranch: "main"}}},
 		"remote": {Repositories: map[string]RepositoryConfig{"owner/repo": {Path: "/srv/git/repo.git", DefaultBranch: "main"}}},
 	}}
@@ -131,7 +145,7 @@ func TestStartLocalRemoteAndEmpty(t *testing.T) {
 			if !reflect.DeepEqual(f.calls, want) {
 				t.Fatal(f.calls, want)
 			}
-			if r.Branch != "jamesl/"+filepath.Base(r.Path) || f.worktree.Base != "origin/main" || f.worktree.Parent != "parent" || f.parentSource != startConfig().Machines[m.Label].Repositories["owner/repo"].Path {
+			if r.Branch != "jamesl/"+filepath.Base(r.Path) || f.worktree.Base != "refs/remotes/origin/main" || f.worktree.Parent != "parent" || f.parentSource != startConfig().Machines[m.Label].Repositories["owner/repo"].Path {
 				t.Fatal(r, f.worktree)
 			}
 			if withTask {
@@ -263,7 +277,7 @@ func TestLaunchUsesDefaultBranch(t *testing.T) {
 	c.Machines["local"].Repositories["owner/repo"] = RepositoryConfig{Path: "/home/test/work/owner/repo/main", DefaultBranch: "master"}
 	f := &fakeLauncher{sourceID: "ordinary", workspaces: []herdr.Workspace{{ID: "ordinary", Label: "owner/repo"}}}
 	_, err := start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
-	if err != nil || f.worktree.Base != "origin/master" || f.requestedSource != "/home/test/work/owner/repo/main" {
+	if err != nil || f.worktree.Base != "refs/remotes/origin/master" || f.requestedSource != "/home/test/work/owner/repo/main" {
 		t.Fatal(err, f.worktree)
 	}
 }
@@ -281,7 +295,7 @@ func TestLaunchIndependentPathAndDefaultBranch(t *testing.T) {
 					}
 					// Bare sources need no default-branch checkout or probe.
 					r, err := start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: m})
-					if err != nil || f.requestedSource != path || f.worktree.Base != "origin/master" || filepath.Dir(r.Path) != "/home/test/work/owner/repo" {
+					if err != nil || f.requestedSource != path || f.worktree.Base != "refs/remotes/origin/master" || filepath.Dir(r.Path) != "/home/test/work/owner/repo" {
 						t.Fatal(r, err, f)
 					}
 					if reuse {

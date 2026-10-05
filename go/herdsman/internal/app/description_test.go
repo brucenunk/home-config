@@ -20,7 +20,7 @@ func TestDescriptionValidationBeforeLaunch(t *testing.T) {
 	}
 	for _, repo := range []string{"owner", "owner/repo"} {
 		f := &fakeLauncher{}
-		r, err := Start(context.Background(), startConfig(), f, nil, StartRequest{Repo: repo, Machine: herdr.Local(), Description: "  Investigate déploiement 🐾  "})
+		r, err := start(context.Background(), startConfig(), f, StartRequest{Repo: repo, Machine: herdr.Local(), Description: "  Investigate déploiement 🐾  "})
 		if err != nil || r.Title != "Investigate déploiement 🐾" || f.title != r.Title || f.prompt != "" {
 			t.Fatal(r, err, f)
 		}
@@ -29,7 +29,7 @@ func TestDescriptionValidationBeforeLaunch(t *testing.T) {
 
 func TestDescriptionOwnerLabelTransportLimit(t *testing.T) {
 	f := &fakeLauncher{}
-	_, err := Start(context.Background(), startConfig(), f, nil, StartRequest{Repo: "owner", Machine: herdr.Local(), Description: strings.Repeat("x", maxAgentArgumentBytes)})
+	_, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner", Machine: herdr.Local(), Description: strings.Repeat("x", maxAgentArgumentBytes)})
 	if err == nil || len(f.calls) != 1 || f.calls[0] != "local:snapshot" {
 		t.Fatal("oversized composite label reached mutation", err, f.calls)
 	}
@@ -60,7 +60,7 @@ func TestDescribedOwnerLeftoversReserveNames(t *testing.T) {
 	c := startConfig()
 	c.AgentNames = []string{"possum", "quokka"}
 	f := &fakeLauncher{workspaces: []herdr.Workspace{{ID: "leftover", Label: "Previous research · " + ownerSessionLabel("owner", "possum")}}}
-	r, err := Start(context.Background(), c, f, nil, StartRequest{Repo: "owner", Machine: herdr.Local(), Description: "New research"})
+	r, err := start(context.Background(), c, f, StartRequest{Repo: "owner", Machine: herdr.Local(), Description: "New research"})
 	if err != nil || r.AgentName != "quokka" || r.Title != "New research" {
 		t.Fatal("reused described leftover marker", r, err)
 	}
