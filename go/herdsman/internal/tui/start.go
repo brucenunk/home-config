@@ -533,5 +533,5 @@ func (m Model) View() string {
 	if m.message != "" {
 		body += "\n\n" + m.styles.error.Render(displayText(m.message))
 	}
-	return fmt.Sprintf("\n%s\n\n%s\n%s\n%s\n", m.styles.title.Render("herdsman · start session"), strings.TrimRight(body, "\n"), m.noticeView(), m.styles.muted.Render("ctrl+c cancels"))
+	return fmt.Sprintf("%s\n\n%s\n%s\n%s\n", m.breadcrumb(), strings.TrimRight(body, "\n"), m.noticeView(), m.styles.muted.Render("ctrl+c cancels"))
 }

@@ -350,6 +350,19 @@ The start sequence is task/description → context → destination → base ref
 (repositories only) → model → thinking. Every screen requires confirmation;
 hints do not skip screens, trigger automatic launches, or edit task notes.
 
+Start session uses a step trail as its top row, in place of a separate launcher
+heading. The current step is bracketed and accented, earlier steps use normal
+text, and upcoming steps are muted. The task-file question, picker, and fallback
+question share the Task step; choosing a description changes that step's label
+to Description. Selecting an owner context omits Base ref. Until a context is
+selected, the trail includes Base ref as a possible upcoming step.
+
+When the full trail does not fit, it shows the current step and position, for
+example `Start · 4/6 · [Base ref]`. Extremely narrow terminals show only the
+current label, truncated to fit. The trail is informational: it adds no
+navigation keys or confirmation screens and does not indicate daemon execution
+progress. End session retains its existing single-screen picker without a trail.
+
 All five front-matter hints are optional:
 
 ```yaml
