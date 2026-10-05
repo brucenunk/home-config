@@ -40,6 +40,16 @@ publication. An uncatchable interruption can also leave a temporary artifact,
 but the target is always wholly old or wholly new. Pi's built-in `edit` and
 `write` tools remain available as fallbacks.
 
+Tool rendering uses a compact operation/path header and a colorized submitted
+V4A patch preview, rather than dumping the operation JSON. Successful create
+and update results show up to 8 patch lines by default and 80 when expanded,
+with a 16,000-character preview limit. Long lines are clipped to the available
+terminal width; omitted content is marked. This is the submitted patch, not a
+computed filesystem diff. Failed calls show the error instead of a success
+preview. Renderers tolerate incomplete arguments and historical results without
+details, and are also used by Pi's HTML exports. Rendering does not change the
+model-facing result text or file-operation behavior.
+
 Atomic update requires both write access to the target and permission to create
 and rename files in its parent directory. It does not use directory permissions
 to bypass a read-only target. The updater must also be able to reproduce the

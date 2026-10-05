@@ -313,6 +313,10 @@ in
           pkgs.runCommand "pi-apply-patch-tests" { nativeBuildInputs = [ pkgs.nodejs ]; }
             ''
               node --test ${../../config/pi/extensions/apply-patch}/apply-patch.test.ts
+              cp -r ${../../config/pi/extensions/apply-patch} ./apply-patch
+              chmod -R u+w ./apply-patch
+              ln -s ${piNode}/lib/node_modules/@earendil-works/pi-coding-agent/node_modules ./apply-patch/node_modules
+              node --test ./apply-patch/renderers.test.ts
               touch "$out"
             '';
 
