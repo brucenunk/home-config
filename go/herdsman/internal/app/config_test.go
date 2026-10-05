@@ -22,24 +22,27 @@ func load(t *testing.T, text string) (Config, error) {
 	return LoadConfig(p)
 }
 
-func TestConfigDefaultsOverridesAndInventory(t *testing.T) {
+func TestMachineRepositoriesAndDefaults(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	c, err := load(t, `agent_names = ["runner", "helper"]
-[machines.local]
-repositories = ["owner/one", "owner/two"]
-[machines.remote]
-repositories = ["owner/one", "owner/three"]
-[repositories."owner/two"]
-gitdir = "master.git"
-base = "origin/master"
+[machines.local.repositories."owner/one"]
+path = "/checkouts/one/main"
+[machines.local.repositories."owner/two"]
+path = "/storage/two.git"
+default_branch = "master"
+[machines.remote.repositories."owner/one"]
+path = "/remote/checkouts/one"
+default_branch = "release/stable"
+[machines.remote.repositories."owner/three"]
+path = "/remote/three.git"
 `)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DefaultBase != "origin/main" || c.Base("owner/two") != "origin/master" || c.Base("owner/one") != "origin/main" {
-		t.Fatal(c)
-	}
-	if c.DefaultGitdir != "main" || c.Gitdir("owner/two") != "master.git" || c.Gitdir("owner/one") != "main" {
+	one := c.Machines["local"].Repositories["owner/one"]
+	two := c.Machines["local"].Repositories["owner/two"]
+	remote := c.Machines["remote"].Repositories["owner/one"]
+	if one.DefaultBranch != "main" || one.BaseRef() != "origin/main" || two.BaseRef() != "origin/master" || remote.BaseRef() != "origin/release/stable" || remote.Path != "/remote/checkouts/one" {
 		t.Fatal(c)
 	}
 	if !reflect.DeepEqual(c.AgentNames, []string{"runner", "helper"}) {
@@ -71,7 +74,7 @@ base = "origin/master"
 }
 
 func TestThemeConfig(t *testing.T) {
-	base := "agent_names = [\"runner\"]\n[machines.local]\nrepositories = [\"owner/repo\"]\n[theme]\n"
+	base := "agent_names = [\"runner\"]\n[machines.local.repositories.\"owner/repo\"]\npath = \"/repos/repo.git\"\n[theme]\n"
 	c, err := load(t, base+"mode = \"light\"\nlight = \"doric-obsidian\"\ndark = \"doric-marble\"\n")
 	if err != nil || c.Theme != (themes.Config{Mode: "light", Light: "doric-obsidian", Dark: "doric-marble"}) {
 		t.Fatal(c, err)
@@ -86,76 +89,38 @@ func TestThemeConfig(t *testing.T) {
 	}
 }
 
-func TestSourceAndBaseDefaultsAreIndependent(t *testing.T) {
-	c, err := load(t, `agent_names = ["runner"]
-default_gitdir = "master.git"
-default_base = "origin/master"
-[machines.local]
-repositories = ["owner/source-only", "owner/base-only", "owner/defaults"]
-[repositories."owner/source-only"]
-gitdir = "main"
-[repositories."owner/base-only"]
-base = "refs/heads/train/first-pr"
-`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Gitdir("owner/source-only") != "main" || c.Base("owner/source-only") != "origin/master" ||
-		c.Gitdir("owner/base-only") != "master.git" || c.Base("owner/base-only") != "refs/heads/train/first-pr" ||
-		c.Gitdir("owner/defaults") != "master.git" || c.Base("owner/defaults") != "origin/master" {
-		t.Fatal(c)
-	}
-}
-
-func TestConfigSourceAndRefValidation(t *testing.T) {
-	for _, value := range []string{"main", "master.git", "checkout-1"} {
-		if !validComponent(value) {
-			t.Fatalf("rejected source directory %q", value)
+func TestRepositoryPathAndBranchValidation(t *testing.T) {
+	for _, branch := range []string{"main", "master", "release/stable"} {
+		if !validBranch(branch) {
+			t.Fatalf("rejected branch %q", branch)
 		}
 	}
-	for _, value := range []string{"main", "origin/master", "upstream/main", "refs/heads/train/first-pr", "refs/remotes/origin/train/first-pr"} {
-		if !validBase(value) {
-			t.Fatalf("rejected branch/ref %q", value)
+	for _, branch := range []string{"../main", "/main", "-main", "main..other", "main.lock", "main~1", "main branch", "main\nother"} {
+		if validBranch(branch) {
+			t.Fatalf("accepted invalid branch %q", branch)
+		}
+		if _, err := load(t, fmt.Sprintf("agent_names = [\"runner\"]\n[machines.local.repositories.\"owner/repo\"]\npath = \"/repos/repo.git\"\ndefault_branch = %q", branch)); err == nil {
+			t.Fatalf("accepted default_branch %q", branch)
 		}
 	}
-	for _, value := range []string{"", "../main", "/main", "origin//main", "origin/main/", "-main", "main..other", "main.lock", "main.", "main~1", "main^", "main:other", "@{1}", "main*", "main?", "main[", `main\other`, "main branch", "main\nother", "main\x00other", ".hidden"} {
-		if validBase(value) {
-			t.Fatalf("accepted unsafe branch/ref %q", value)
-		}
-		for _, field := range []string{"default_base", "default_gitdir"} {
-			// Empty values select defaults, not an invalid path/ref.
-			if value == "" {
-				continue
-			}
-			text := fmt.Sprintf("agent_names = [\"runner\"]\n%s = %q\n[machines.local]\nrepositories = [\"owner/repo\"]", field, value)
-			if _, err := load(t, text); err == nil {
-				t.Fatalf("accepted %s = %q", field, value)
-			}
+	for _, path := range []string{"", "relative/repo", "~/repo", "../repo"} {
+		if _, err := load(t, fmt.Sprintf("agent_names = [\"runner\"]\n[machines.local.repositories.\"owner/repo\"]\npath = %q", path)); err == nil {
+			t.Fatalf("accepted repository path %q", path)
 		}
 	}
-	for _, field := range []string{`default_gitdir = "origin/main"`, `default_gitdir = "/absolute"`, `[repositories."owner/repo"]
-gitdir = "../escape"`, `[repositories."owner/repo"]
-base = "origin/main~1"`} {
-		if _, err := load(t, "agent_names = [\"runner\"]\n"+field+"\n[machines.local]\nrepositories = [\"owner/repo\"]"); err == nil {
-			t.Fatalf("accepted %s", field)
-		}
-	}
-}
-
-func TestConfigRejectsUnsafePaths(t *testing.T) {
 	for _, text := range []string{
+		`[machines.local.repositories."../escape"]
+path = "/repos/repo"`,
+		`[machines.local.repositories."owner/repo/extra"]
+path = "/repos/repo"`,
 		`[machines.local]
-repositories = ["../escape"]`,
-		`[machines.local]
-repositories = ["owner/repo/extra"]`,
-		`default_base = "../main"
-[machines.local]
-repositories = ["owner/repo"]`,
-		`[machines.local]
-repositories = []`,
+repositories = {}`,
+		`default_base = "origin/main"
+[machines.local.repositories."owner/repo"]
+path = "/repos/repo"`,
 	} {
 		if _, err := load(t, "agent_names = [\"runner\"]\n"+text); err == nil {
-			t.Errorf("accepted %s", text)
+			t.Fatalf("accepted invalid or retired configuration %s", text)
 		}
 	}
 }
@@ -181,8 +146,12 @@ func TestConfigAndHomePaths(t *testing.T) {
 
 func TestRepositoryNamesAreNotBranchNames(t *testing.T) {
 	c, err := load(t, `agent_names = ["runner"]
-[machines.local]
-repositories = ["owner/.github", "owner/repo.lock", "owner/repo..suffix"]`)
+[machines.local.repositories."owner/.github"]
+path = "/repos/one"
+[machines.local.repositories."owner/repo.lock"]
+path = "/repos/two"
+[machines.local.repositories."owner/repo..suffix"]
+path = "/repos/three"`)
 	if err != nil || len(c.RepositoryNames()) != 3 {
 		t.Fatal(c, err)
 	}
@@ -204,7 +173,7 @@ func TestConfigRequiresValidUniqueAgentNames(t *testing.T) {
 		`agent_names = ["Runner"]`, `agent_names = ["-runner"]`,
 		`agent_names = ["a/b"]`, `agent_names = ["bad name"]`, `agent_names = [""]`,
 	} {
-		if _, err := load(t, field+"\n[machines.local]\nrepositories = [\"owner/repo\"]"); err == nil {
+		if _, err := load(t, field+"\n[machines.local.repositories.\"owner/repo\"]\npath = \"/repos/repo.git\""); err == nil {
 			t.Fatalf("accepted %s", field)
 		}
 	}
@@ -218,8 +187,8 @@ func TestConfigRequiresValidUniqueAgentNames(t *testing.T) {
 
 func TestDaemonConfig(t *testing.T) {
 	base := `agent_names = ["runner"]
-[machines.local]
-repositories = ["owner/repo"]
+[machines.local.repositories."owner/repo"]
+path = "/repos/repo.git"
 `
 	c, err := load(t, base)
 	if err != nil || c.Daemon != DefaultDaemonConfig() {

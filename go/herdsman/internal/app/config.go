@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,18 +16,15 @@ import (
 )
 
 type Config struct {
-	Daemon        DaemonConfig                `toml:"daemon"`
-	Theme         themes.Config               `toml:"theme"`
-	AgentNames    []string                    `toml:"agent_names"`
-	TasksDir      string                      `toml:"tasks_dir"`
-	DefaultBase   string                      `toml:"default_base"`
-	DefaultGitdir string                      `toml:"default_gitdir"`
-	Machines      map[string]MachineConfig    `toml:"machines"`
-	Repositories  map[string]RepositoryConfig `toml:"repositories"`
+	Daemon     DaemonConfig             `toml:"daemon"`
+	Theme      themes.Config            `toml:"theme"`
+	AgentNames []string                 `toml:"agent_names"`
+	TasksDir   string                   `toml:"tasks_dir"`
+	Machines   map[string]MachineConfig `toml:"machines"`
 }
 
 type MachineConfig struct {
-	Repositories []string `toml:"repositories"`
+	Repositories map[string]RepositoryConfig `toml:"repositories"`
 }
 
 type DaemonConfig struct {
@@ -63,8 +61,8 @@ func (c DaemonConfig) Validate() error {
 }
 
 type RepositoryConfig struct {
-	Base   string `toml:"base"`
-	Gitdir string `toml:"gitdir"`
+	Path          string `toml:"path"`
+	DefaultBranch string `toml:"default_branch"`
 }
 
 var component = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
@@ -92,8 +90,8 @@ func validComponent(s string) bool {
 	return component.MatchString(s) && !strings.Contains(s, "..") && !strings.HasSuffix(s, ".lock") && !strings.HasSuffix(s, ".")
 }
 
-// Accept branch/ref names, not revision expressions, options, or filesystem paths.
-func validBase(s string) bool {
+// Accept branch names, not revision expressions, options, or filesystem paths.
+func validBranch(s string) bool {
 	for _, part := range strings.Split(s, "/") {
 		if !validComponent(part) {
 			return false
@@ -129,7 +127,7 @@ func LoadConfig(path string) (Config, error) {
 		return Config{}, fmt.Errorf("read config %s: %w", path, err)
 	}
 	c := Config{Daemon: DefaultDaemonConfig()}
-	if err := toml.Unmarshal(data, &c); err != nil {
+	if err := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields().Decode(&c); err != nil {
 		return c, fmt.Errorf("parse config: %w", err)
 	}
 	if err := c.Daemon.Validate(); err != nil {
@@ -145,18 +143,6 @@ func LoadConfig(path string) (Config, error) {
 	if c.TasksDir == "" {
 		c.TasksDir = "~/work/tasks"
 	}
-	if c.DefaultBase == "" {
-		c.DefaultBase = "origin/main"
-	}
-	if c.DefaultGitdir == "" {
-		c.DefaultGitdir = "main"
-	}
-	if !validBase(c.DefaultBase) {
-		return c, fmt.Errorf("invalid default_base %q: expected a branch/ref name", c.DefaultBase)
-	}
-	if !validComponent(c.DefaultGitdir) {
-		return c, fmt.Errorf("invalid default_gitdir %q: expected a source directory name", c.DefaultGitdir)
-	}
 	if len(c.Machines) == 0 {
 		return c, fmt.Errorf("config must declare at least one machine and repository")
 	}
@@ -164,15 +150,20 @@ func LoadConfig(path string) (Config, error) {
 		if strings.TrimSpace(label) == "" || len(m.Repositories) == 0 {
 			return c, fmt.Errorf("machine %q needs repositories", label)
 		}
-		for _, repo := range m.Repositories {
+		for repo, r := range m.Repositories {
 			if !validRepo(repo) {
 				return c, fmt.Errorf("invalid repository slug %q", repo)
 			}
-		}
-	}
-	for repo, r := range c.Repositories {
-		if !validRepo(repo) || (r.Base != "" && !validBase(r.Base)) || (r.Gitdir != "" && !validComponent(r.Gitdir)) {
-			return c, fmt.Errorf("invalid repository override %q", repo)
+			if !filepath.IsAbs(r.Path) || strings.ContainsAny(r.Path, "\x00\r\n") {
+				return c, fmt.Errorf("machine %q repository %q needs an absolute path to a checkout or bare repository", label, repo)
+			}
+			if r.DefaultBranch == "" {
+				r.DefaultBranch = "main"
+			}
+			if !validBranch(r.DefaultBranch) {
+				return c, fmt.Errorf("invalid default_branch %q for %s on %s", r.DefaultBranch, repo, label)
+			}
+			m.Repositories[repo] = r
 		}
 	}
 	c.TasksDir, err = ExpandHome(c.TasksDir)
@@ -193,24 +184,20 @@ func ExpandHome(path string) (string, error) {
 	return filepath.Abs(path)
 }
 
-func (c Config) Base(repo string) string {
-	if b := c.Repositories[repo].Base; b != "" {
-		return b
+func (r RepositoryConfig) BaseRef() string {
+	branch := r.DefaultBranch
+	if branch == "" {
+		branch = "main"
 	}
-	return c.DefaultBase
-}
-
-func (c Config) Gitdir(repo string) string {
-	if dir := c.Repositories[repo].Gitdir; dir != "" {
-		return dir
-	}
-	return c.DefaultGitdir
+	return "origin/" + branch
 }
 
 func (c Config) RepositoryNames() []string {
 	var names []string
 	for _, m := range c.Machines {
-		names = append(names, m.Repositories...)
+		for repo := range m.Repositories {
+			names = append(names, repo)
+		}
 	}
 	slices.Sort(names)
 	return slices.Compact(names)
@@ -230,12 +217,13 @@ func (c Config) ContextNames(includeOwners bool) []string {
 	return names
 }
 
-func supportsContext(repositories []string, name string) bool {
+func supportsContext(repositories map[string]RepositoryConfig, name string) bool {
 	if validRepo(name) {
-		return slices.Contains(repositories, name)
+		_, ok := repositories[name]
+		return ok
 	}
 	if validOwner(name) {
-		for _, repo := range repositories {
+		for repo := range repositories {
 			if strings.HasPrefix(repo, name+"/") {
 				return true
 			}

@@ -47,7 +47,6 @@ nix eval --impure --raw --expr '
       "fzf"
       "ghostty"
       "git"
-      "git-maintenance"
       "golang"
       "herdr"
       "herdsman"

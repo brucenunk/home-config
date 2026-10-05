@@ -99,9 +99,11 @@ func (f *fakeLauncher) Focus(_ context.Context, m herdr.Machine, name string) er
 var testAgentNames = []string{"runner", "helper", "quokka", "platypus"}
 
 func startConfig() Config {
-	return Config{AgentNames: testAgentNames, DefaultGitdir: "main", DefaultBase: "origin/main", Machines: map[string]MachineConfig{"local": {Repositories: []string{"owner/repo"}}, "remote": {Repositories: []string{"owner/repo"}}}}
+	return Config{AgentNames: testAgentNames, Machines: map[string]MachineConfig{
+		"local":  {Repositories: map[string]RepositoryConfig{"owner/repo": {Path: "/home/test/work/owner/repo/main", DefaultBranch: "main"}}},
+		"remote": {Repositories: map[string]RepositoryConfig{"owner/repo": {Path: "/srv/git/repo.git", DefaultBranch: "main"}}},
+	}}
 }
-
 func TestStartLocalRemoteAndEmpty(t *testing.T) {
 	for _, remote := range []bool{false, true} {
 		for _, withTask := range []bool{false, true} {
@@ -129,7 +131,7 @@ func TestStartLocalRemoteAndEmpty(t *testing.T) {
 			if !reflect.DeepEqual(f.calls, want) {
 				t.Fatal(f.calls, want)
 			}
-			if r.Branch != "jamesl/"+filepath.Base(r.Path) || f.worktree.Base != "origin/main" || f.worktree.Parent != "parent" || f.parentSource != "/home/test/work/owner/repo/main" {
+			if r.Branch != "jamesl/"+filepath.Base(r.Path) || f.worktree.Base != "origin/main" || f.worktree.Parent != "parent" || f.parentSource != startConfig().Machines[m.Label].Repositories["owner/repo"].Path {
 				t.Fatal(r, f.worktree)
 			}
 			if withTask {
@@ -256,32 +258,30 @@ func TestGlobalAgentNamesAreExcluded(t *testing.T) {
 	}
 }
 
-func TestLaunchUsesBaseOverride(t *testing.T) {
+func TestLaunchUsesDefaultBranch(t *testing.T) {
 	c := startConfig()
-	c.Repositories = map[string]RepositoryConfig{"owner/repo": {Base: "origin/train/first-pr"}}
+	c.Machines["local"].Repositories["owner/repo"] = RepositoryConfig{Path: "/home/test/work/owner/repo/main", DefaultBranch: "master"}
 	f := &fakeLauncher{sourceID: "ordinary", workspaces: []herdr.Workspace{{ID: "ordinary", Label: "owner/repo"}}}
 	_, err := start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
-	if err != nil || f.worktree.Base != "origin/train/first-pr" || f.requestedSource != "/home/test/work/owner/repo/main" {
+	if err != nil || f.worktree.Base != "origin/master" || f.requestedSource != "/home/test/work/owner/repo/main" {
 		t.Fatal(err, f.worktree)
 	}
 }
-
-func TestLaunchIndependentSourceAndBase(t *testing.T) {
+func TestLaunchIndependentPathAndDefaultBranch(t *testing.T) {
 	for _, m := range []herdr.Machine{herdr.Local(), {ID: "profile", Label: "remote", Target: "ssh-alias", Enabled: true}} {
-		for _, dir := range []string{"main", "master", "master.git"} {
+		for _, path := range []string{"/home/test/work/owner/repo/main", "/srv/checkouts/master", "/storage/repo.git"} {
 			for _, reuse := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s/%s/reuse=%t", m.Label, dir, reuse), func(t *testing.T) {
+				t.Run(fmt.Sprintf("%s/%s/reuse=%t", m.Label, path, reuse), func(t *testing.T) {
 					c := startConfig()
-					c.Repositories = map[string]RepositoryConfig{"owner/repo": {Gitdir: dir, Base: "origin/master"}}
+					c.Machines[m.Label].Repositories["owner/repo"] = RepositoryConfig{Path: path, DefaultBranch: "master"}
 					f := &fakeLauncher{profiles: []herdr.Machine{{ID: "profile", Label: "remote", Enabled: true}}}
 					if reuse {
 						f.sourceID = "existing"
 						f.workspaces = []herdr.Workspace{{ID: "existing", Label: "owner/repo"}}
 					}
-					// In particular, master.git needs no inventory entry or probe for master.
+					// Bare sources need no default-branch checkout or probe.
 					r, err := start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: m})
-					path := "/home/test/work/owner/repo/" + dir
-					if err != nil || f.requestedSource != path || f.worktree.Base != "origin/master" {
+					if err != nil || f.requestedSource != path || f.worktree.Base != "origin/master" || filepath.Dir(r.Path) != "/home/test/work/owner/repo" {
 						t.Fatal(r, err, f)
 					}
 					if reuse {
@@ -298,10 +298,10 @@ func TestLaunchIndependentSourceAndBase(t *testing.T) {
 }
 
 func TestLaunchRejectsDifferentSourceBeforeMutation(t *testing.T) {
-	for _, dir := range []string{"main", "master.git"} {
+	for _, path := range []string{"/home/test/work/owner/repo/main", "/storage/repo.git"} {
 		for _, resolved := range []string{"/home/test/work/other/repo/main", "/home/test/work/owner/repo/other.git", "/home/test/work/owner/repo/master"} {
 			c := startConfig()
-			c.Repositories = map[string]RepositoryConfig{"owner/repo": {Gitdir: dir, Base: "origin/master"}}
+			c.Machines["local"].Repositories["owner/repo"] = RepositoryConfig{Path: path, DefaultBranch: "master"}
 			f := &fakeLauncher{sourcePath: resolved, sourceID: "existing", workspaces: []herdr.Workspace{{ID: "existing", Label: "owner/repo"}}}
 			r, err := start(context.Background(), c, f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
 			if err == nil || !strings.Contains(err.Error(), "different source checkout") || len(r.Steps) != 0 || f.calls[len(f.calls)-1] != "local:source" {

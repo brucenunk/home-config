@@ -104,17 +104,18 @@ and platform boundaries.
 - `herdr` deploys the pinned upstream Herdr package, generated Doric light/dark
   theme policy, and release-matched Pi integration. Consumers may select only
   the typed `brucenunk.homeManager.herdr.ui.toast.delivery` host policy.
-- `herdsman` packages the Go companion launcher and manages inventory,
-  independent source directories and Git base refs, and named light/dark theme
-  selection through `brucenunk.homeManager.herdsman.config`. Generated Doric palettes are
-  deployed to the user config directory, not embedded in the binary. Machine/repository
-  policy belongs to hosts or downstream consumers; see [`herdsman.md`](herdsman.md).
+- `herdsman` packages the Go companion launcher. Hosts combine Git/Pi data under
+  `brucenunk.homeManager.herdsman.machines`; operational settings and themes
+  remain under `herdsman.config`. It generates TOML for the launcher and a small
+  JSON catalogue for Emacs. See [`herdsman.md`](herdsman.md).
 - `pi` exposes its deployment interface under
   `brucenunk.homeManager.pi`. Its public theme and extension directories are
   defaults, so provider or transport adapters can replace them without
   `mkForce`.
-- `git-maintenance` accepts consumer repository paths through
-  `brucenunk.homeManager.gitMaintenance.repositories`.
+- `git` owns repository definitions under `brucenunk.homeManager.git` and
+  derives source paths for native Home Manager maintenance on Linux and Darwin.
+  Its shared option declarations and Pi's model projection are exported through
+  `flake.lib`; combining machine data does not evaluate other complete hosts.
 - `doric-waybar-themes` deploys only the generated `doric-marble` and
   `doric-obsidian` Waybar theme pair. Consumers with a different bar layout or
   launcher can import it without the `waybar` module's Wampa policy. The full

@@ -14,7 +14,7 @@ import (
 )
 
 func config(t *testing.T) app.Config {
-	return app.Config{AgentNames: []string{"runner"}, TasksDir: t.TempDir(), DefaultGitdir: "main", DefaultBase: "origin/main", Machines: map[string]app.MachineConfig{"local": {Repositories: []string{"owner/one", "owner/two"}}}}
+	return app.Config{AgentNames: []string{"runner"}, TasksDir: t.TempDir(), Machines: map[string]app.MachineConfig{"local": {Repositories: map[string]app.RepositoryConfig{"owner/one": {Path: "/repos/owner/one"}, "owner/two": {Path: "/repos/owner/two"}}}}}
 }
 
 func newModel(t *testing.T, c app.Config, profiles []herdr.Machine) Model {
@@ -123,7 +123,7 @@ func TestChoiceNavigationBindings(t *testing.T) {
 		for _, bindings := range [][2]string{{"ctrl+n", "ctrl+p"}, {"down", "up"}, {"j", "k"}} {
 			t.Run(fmt.Sprintf("%d/%s/%s", picker, bindings[0], bindings[1]), func(t *testing.T) {
 				c := config(t)
-				c.Machines["remote"] = app.MachineConfig{Repositories: []string{"owner/one"}}
+				c.Machines["remote"] = app.MachineConfig{Repositories: map[string]app.RepositoryConfig{"owner/one": {Path: "/repos/owner/one"}}}
 				profiles := []herdr.Machine{{ID: "remote-profile", Label: "remote", Enabled: true}}
 				m, _ := key(newModel(t, c, profiles), "n")
 				m = describeSession(m)
@@ -217,7 +217,7 @@ func TestDescriptionInputResizeAndCancellation(t *testing.T) {
 
 func TestLocalDisplayDoesNotChangeMachineIdentity(t *testing.T) {
 	c := config(t)
-	c.Machines["Local"] = app.MachineConfig{Repositories: []string{"owner/one"}}
+	c.Machines["Local"] = app.MachineConfig{Repositories: map[string]app.RepositoryConfig{"owner/one": {Path: "/repos/owner/one"}}}
 	profiles := []herdr.Machine{{ID: "remote-profile", Label: "Local", Target: "ssh-alias", Enabled: true}}
 	m, _ := key(newModel(t, c, profiles), "n")
 	m = describeSession(m)
@@ -295,7 +295,7 @@ func TestTaskFileSelectionIgnoresLegacyRepo(t *testing.T) {
 
 func TestUnavailableMachineAndBackNavigation(t *testing.T) {
 	c := config(t)
-	c.Machines = map[string]app.MachineConfig{"missing": {Repositories: []string{"owner/one"}}}
+	c.Machines = map[string]app.MachineConfig{"missing": {Repositories: map[string]app.RepositoryConfig{"owner/one": {Path: "/repos/owner/one"}}}}
 	m := newModel(t, c, nil)
 	m, _ = key(m, "n")
 	m = describeSession(m)
@@ -397,7 +397,7 @@ func TestRepositorySelectionSurvivesResizeButNotFiltering(t *testing.T) {
 
 func TestSingleRepositoryStillRequiresSelection(t *testing.T) {
 	c := config(t)
-	c.Machines["local"] = app.MachineConfig{Repositories: []string{"owner/one"}}
+	c.Machines["local"] = app.MachineConfig{Repositories: map[string]app.RepositoryConfig{"owner/one": {Path: "/repos/owner/one"}}}
 	m, _ := key(newModel(t, c, nil), "n")
 	m = describeSession(m)
 	for i := 0; i < 2; i++ {

@@ -1,6 +1,14 @@
-{ inputs, mkPkgs, ... }:
+{
+  config,
+  inputs,
+  mkPkgs,
+  ...
+}:
 
 let
+  gitData = config.flake.lib.git;
+  piData = config.flake.lib.pi;
+
   packageFor =
     pkgs:
     pkgs.buildGoModule {
@@ -25,11 +33,19 @@ let
     {
       config,
       lib,
+      options,
       pkgs,
       ...
     }:
     let
       cfg = config.brucenunk.homeManager.herdsman.config;
+      machineName = config.brucenunk.homeManager.herdsman.machineName;
+      machines = config.brucenunk.homeManager.herdsman.machines;
+      localMachine = if machineName == null then null else machines.${machineName} or null;
+      catalogue.machines = lib.mapAttrs (_: machine: {
+        repositories = builtins.attrNames machine.repositories;
+        models = piData.projectModels machine.models;
+      }) machines;
       package = packageFor pkgs;
       herdrPackage = pkgs.llm-agents.herdr;
       format = pkgs.formats.toml { };
@@ -84,16 +100,19 @@ let
       managedConfig = format.generate "herdsman-config.toml" {
         agent_names = cfg.agentNames;
         tasks_dir = cfg.tasksDir;
-        default_base = cfg.defaultBase;
-        default_gitdir = cfg.defaultGitdir;
         daemon = {
           refresh_interval = cfg.daemon.refreshInterval;
           queue_capacity = cfg.daemon.queueCapacity;
           refresh_concurrency = cfg.daemon.refreshConcurrency;
         };
         theme = cfg.theme;
-        machines = lib.mapAttrs (_: repositories: { inherit repositories; }) cfg.machines;
-        repositories = cfg.repositories;
+        machines = lib.mapAttrs' (name: machine: {
+          name = if name == machineName then "local" else name;
+          value.repositories = lib.mapAttrs (_: repository: {
+            path = repository.path;
+            default_branch = repository.defaultBranch;
+          }) machine.repositories;
+        }) machines;
       };
       themeEntries = lib.mapAttrs' (name: _: {
         name = "herdsman/themes/${name}";
@@ -129,8 +148,25 @@ let
       };
     in
     {
+      options.brucenunk.homeManager.herdsman.machineName = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "This host's machine name; the current launcher renders it as local in TOML only.";
+      };
+      options.brucenunk.homeManager.herdsman.machines = lib.mkOption {
+        default = { };
+        description = "Git/Pi definitions keyed by machine name, shared with Emacs task metadata.";
+        type = lib.types.attrsOf (
+          lib.types.submodule {
+            options = {
+              repositories = gitData.repositoryOptions.repositories;
+              models = piData.modelsOption;
+            };
+          }
+        );
+      };
       options.brucenunk.homeManager.herdsman.config = lib.mkOption {
-        description = "Nix-managed Herdsman inventory, source directories, base refs and theme selection.";
+        description = "Nix-managed Herdsman operational settings; repositories and models come from machines.";
         default = { };
         type = lib.types.submodule {
           options = {
@@ -161,41 +197,6 @@ let
                   };
                 };
               };
-            };
-            defaultBase = lib.mkOption {
-              type = lib.types.str;
-              default = "origin/main";
-              description = "Default Git branch/ref, used as written without fetching.";
-            };
-            defaultGitdir = lib.mkOption {
-              type = lib.types.str;
-              default = "main";
-              description = "Default source directory under ~/work/owner/repo; an ordinary checkout or bare repository, not a literal .git directory.";
-            };
-            machines = lib.mkOption {
-              type = lib.types.attrsOf (lib.types.listOf lib.types.str);
-              default = { };
-              description = "Repository slugs by Herdr saved-machine label; local is reserved.";
-            };
-            repositories = lib.mkOption {
-              type = lib.types.attrsOf (
-                lib.types.submodule {
-                  options = {
-                    base = lib.mkOption {
-                      type = lib.types.str;
-                      default = cfg.defaultBase;
-                      description = "Git branch/ref for new worktrees; independent of the source directory.";
-                    };
-                    gitdir = lib.mkOption {
-                      type = lib.types.str;
-                      default = cfg.defaultGitdir;
-                      description = "Single source directory name under ~/work/owner/repo.";
-                    };
-                  };
-                }
-              );
-              default = { };
-              description = "Per-repository source directory and Git base ref overrides.";
             };
             tasksDir = lib.mkOption {
               type = lib.types.str;
@@ -234,6 +235,27 @@ let
       };
 
       config = {
+        assertions = [
+          {
+            assertion =
+              machines == { } || (machineName != null && machines ? ${machineName} && !(machines ? local));
+            message = "Set Herdsman's own machineName when supplying machines; local is reserved for the launcher TOML.";
+          }
+          {
+            assertion =
+              localMachine == null
+              || !(options.brucenunk.homeManager ? git)
+              || config.brucenunk.homeManager.git.repositories == localMachine.repositories;
+            message = "Herdsman and Git must share this machine's repository definition.";
+          }
+          {
+            assertion =
+              localMachine == null
+              || !(options.brucenunk.homeManager ? pi)
+              || config.brucenunk.homeManager.pi.models == localMachine.models;
+            message = "Herdsman and Pi must share this machine's model configuration.";
+          }
+        ];
         home.packages = [ package ];
         systemd.user.services.herdsman = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
           Unit.Description = "Herdsman cached discovery and execution daemon";
@@ -288,6 +310,9 @@ let
           ];
         };
         xdg.configFile = themeEntries // {
+          "herdsman/catalogue.json".source = pkgs.writeText "herdsman-catalogue.json" (
+            builtins.toJSON catalogue
+          );
           "herdsman/config.toml".source = managedConfig;
           "herdsman/plugin".source = plugin;
         };
@@ -302,6 +327,11 @@ in
     let
       pkgs = mkPkgs system;
       package = packageFor pkgs;
+      homeDirectory =
+        if pkgs.stdenv.hostPlatform.isDarwin then
+          "/Users/herdsman-module-check"
+        else
+          "/home/herdsman-module-check";
       home = inputs.home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         modules = [
@@ -309,30 +339,46 @@ in
           {
             home = {
               username = "herdsman-module-check";
-              homeDirectory =
-                if pkgs.stdenv.hostPlatform.isDarwin then
-                  "/Users/herdsman-module-check"
-                else
-                  "/home/herdsman-module-check";
+              inherit homeDirectory;
               stateVersion = "25.05";
             };
             programs.herdr.enable = true;
             programs.herdr.package = pkgs.llm-agents.herdr;
-            brucenunk.homeManager.herdsman.config = {
-              agentNames = [ "example-agent" ];
-              machines.local = [
-                "example/repo"
-                "example/bare"
-                "example/train"
-              ];
-              repositories = {
-                "example/bare" = {
-                  base = "origin/master";
-                  gitdir = "master.git";
+            brucenunk.homeManager.herdsman = {
+              machineName = "machine-a";
+              machines = {
+                "machine-a" = {
+                  repositories = {
+                    "example/repo".path = "${homeDirectory}/work/example/repo/main";
+                    "example/bare" = {
+                      path = "/srv/git/example.git";
+                      defaultBranch = "master";
+                    };
+                    "example/custom" = {
+                      path = "${homeDirectory}/work/example/custom/main";
+                      defaultBranch = "release/stable";
+                    };
+                  };
+                  models.providers.example = {
+                    api = "openai-responses";
+                    baseUrl = "https://private-endpoint.invalid";
+                    apiKey = "!private-credential-command";
+                    models = [
+                      {
+                        id = "vendor/model";
+                        reasoning = true;
+                        thinkingLevelMap.minimal = null;
+                      }
+                    ];
+                  };
                 };
-                "example/train".base = "refs/heads/train/first-pr";
+                "machine-b".repositories."example/repo" = {
+                  path = "/srv/git/remote/repo.git";
+                  defaultBranch = "master";
+                };
               };
             };
+            brucenunk.homeManager.herdsman.config.agentNames = [ "example-agent" ];
             home.sessionPath = [ "$HOME/.local/bin" ];
           }
         ];
@@ -485,13 +531,15 @@ in
           PY
           printf '%s\n' plugin pane open --plugin brucenunk.herdsman --entrypoint launcher >expected-args
           cmp shim-args expected-args
-          ${pkgs.python3}/bin/python - ${configFile.source} <<'PY'
+          ${pkgs.python3}/bin/python - ${configFile.source} ${
+            home.config.xdg.configFile."herdsman/catalogue.json".source
+          } <<'PY'
+          import json
           import sys
           import tomllib
           with open(sys.argv[1], "rb") as f:
               config = tomllib.load(f)
-          assert config["default_base"] == "origin/main"
-          assert config["default_gitdir"] == "main"
+          assert "default_base" not in config and "default_gitdir" not in config
           assert config["agent_names"] == ["example-agent"]
           assert config["daemon"] == {
               "refresh_interval": "30s", "queue_capacity": 32, "refresh_concurrency": 4,
@@ -499,15 +547,30 @@ in
           assert config["theme"] == {
               "mode": "auto", "light": "doric-marble", "dark": "doric-obsidian"
           }
-          assert config["machines"]["local"]["repositories"] == [
-              "example/repo", "example/bare", "example/train"
-          ]
-          assert config["repositories"]["example/bare"] == {
-              "base": "origin/master", "gitdir": "master.git"
+          assert set(config["machines"]["local"]["repositories"]) == {
+              "example/bare", "example/repo", "example/custom"
           }
-          assert config["repositories"]["example/train"] == {
-              "base": "refs/heads/train/first-pr", "gitdir": "main"
+          assert config["machines"]["local"]["repositories"]["example/bare"] == {
+              "path": "/srv/git/example.git", "default_branch": "master"
           }
+          assert config["machines"]["machine-b"]["repositories"]["example/repo"] == {
+              "path": "/srv/git/remote/repo.git", "default_branch": "master"
+          }
+          assert "repositories" not in config
+          with open(sys.argv[2]) as f:
+              text = f.read()
+          catalogue = json.loads(text)
+          assert set(catalogue) == {"machines"}
+          assert set(catalogue["machines"]) == {"machine-a", "machine-b"}
+          for name, destination in [("machine-a", "local"), ("machine-b", "machine-b")]:
+              machine = catalogue["machines"][name]
+              assert set(machine) == {"repositories", "models"}
+              assert machine["repositories"] == sorted(config["machines"][destination]["repositories"])
+          assert catalogue["machines"]["machine-a"]["models"] == [{
+              "name": "example/vendor/model", "thinkingLevels": ["off", "low", "medium", "high"]
+          }]
+          assert catalogue["machines"]["machine-b"]["models"] == []
+          assert "private-" not in text and "/srv/git" not in text and "default_branch" not in text
           PY
           ${pkgs.python3}/bin/python - \
             ${home.config.xdg.configFile."herdsman/themes/doric-marble.toml".source} \

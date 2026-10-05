@@ -118,7 +118,7 @@ func (f *fakeBackend) StartAgent(context.Context, herdr.Machine, string, string,
 }
 func (f *fakeBackend) Focus(context.Context, herdr.Machine, string) error { return f.record("focus") }
 func config() app.Config {
-	return app.Config{Daemon: app.DefaultDaemonConfig(), AgentNames: []string{"possum"}, Machines: map[string]app.MachineConfig{"local": {Repositories: []string{"owner/repo"}}}}
+	return app.Config{Daemon: app.DefaultDaemonConfig(), AgentNames: []string{"possum"}, Machines: map[string]app.MachineConfig{"local": {Repositories: map[string]app.RepositoryConfig{"owner/repo": {Path: "/repos/owner/repo"}}}}}
 }
 
 func testDaemon(t *testing.T, c app.Config, backend Backend, logger *slog.Logger) *Daemon {

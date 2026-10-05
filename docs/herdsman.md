@@ -83,10 +83,8 @@ rejected even if they happen to address the same socket.
 started with matching configuration.
 
 ```toml
-agent_names = ["bushturkey", "binchicken", "possum", "quokka"]
+agent_names = ["runner", "helper"]
 tasks_dir = "~/work/tasks"
-default_base = "origin/main"
-default_gitdir = "main"
 
 [daemon]
 refresh_interval = "30s"
@@ -98,36 +96,22 @@ mode = "auto"
 light = "doric-marble"
 dark = "doric-obsidian"
 
-[machines.local]
-repositories = ["brucenunk/home-config", "owner/legacy-repo"]
+[machines.local.repositories."example/project"]
+path = "/home/example/work/example/project/main"
+default_branch = "main"
 
-# Optional: must match an enabled saved Herdr machine label.
-[machines.devbox]
-repositories = ["brucenunk/home-config", "Canva/k8s"]
-
-[repositories."owner/legacy-repo"]
-base = "origin/master"
-gitdir = "master"
-
-[repositories."Canva/k8s"]
-base = "origin/master"
-gitdir = "master.git"
+# Must match an enabled saved Herdr label.
+[machines.machine-b.repositories."example/project"]
+path = "/srv/git/project.git"
+default_branch = "master"
 ```
 
-`tasks_dir`, `default_base` and `default_gitdir` default to the values above.
-The optional `[daemon]` fields also default to the example values.
-`refresh_interval` is a positive Go duration parsed with `time.ParseDuration`,
-such as `"30s"`, `"1m"`, or `"500ms"`; bare numbers and non-positive durations are
-rejected. Extremely large durations are rejected so twice the interval remains
-representable. `queue_capacity` accepts 1–1024 pending requests and
-`refresh_concurrency` accepts 1–64 simultaneous snapshot reads. Restart the daemon
-after changing these settings; the UI never changes policy on a running service.
-Per-repository `base` and `gitdir` override their respective defaults independently.
-`local` is reserved
-as the configuration/internal selector and is displayed as **Local** in the UI
-and launch output;
-other machine labels are case-sensitive Herdr labels. SSH targets, credentials,
-and session selection remain in Herdr/OpenSSH, not this file.
+`tasks_dir` and the optional daemon/theme fields retain the defaults above.
+Each machine's repository entry requires an absolute `path` on that machine;
+`default_branch` defaults to `main`. Unknown configuration fields are rejected.
+The source may be the primary checkout or a bare backing repository; a checked-out
+default branch is not required. Herdr resolves the repository parent, and Herdsman
+retains its check against unexpectedly resolving to another source.
 
 `agent_names` is required and must be non-empty, with no duplicates. Names must
 match Herdr's `[a-z][a-z0-9_-]{0,31}` rule. Wampa declares its twelve names;
@@ -166,72 +150,71 @@ enabled saved Herdr machines. There is no availability probing while navigating.
 For an owner, it shows eligible hosts configured with any repository under that
 owner. No additional owner configuration is required.
 
-Sources are `$HOME/work/{owner}/{repo}/{gitdir}` on the destination. Despite the
-name, `gitdir` identifies a source directory for Herdr, **not** necessarily a
-literal `.git` directory. It must be a single directory name, such as `main`,
-`master` or `master.git`, not an absolute path or a path containing `/`.
-Ordinary repositories use their primary checkout; bare-backed repositories can
-use their bare backing directory directly. A `master.git` source does not require
-a linked `master` checkout to exist. Personal repositories can retain `main`
-for their local merge workflow independently of the base used for new tasks.
+Source paths come directly from the selected machine's repository definition.
+The initial worktree base ref is `origin/${defaultBranch}`; Herdsman neither
+fetches nor changes the branch checked out at the source. Per-launch/task
+`base-ref` overrides belong to the follow-up metadata/selection work, not static
+repository policy. New task worktrees still use `$HOME/work/{owner}/{repo}/{stamp}`,
+and owner sessions still use `$HOME/work/{owner}`.
 
-`base` is a Git branch/ref name passed unchanged to Herdr. Names can contain
-slash-separated components, such as `origin/master`, `upstream/main` or
-`refs/heads/train/first-pr`. Components use ASCII letters, digits, `_`, `-` and
-`.`; they cannot start with `.` or `-`, contain `..`, or end with `.` or `.lock`.
-Revision expressions such as `main~1` are rejected. Herdsman does not prepend
-`origin/`, fetch, or resolve freshness: `origin/main` uses the locally cached
-remote-tracking ref. A missing ref fails through Herdr, with the normal
-inspect-before-retry guidance. Per-launch base overrides for PR trains remain
-deferred; configuring a branch/ref does not couple it to the source directory.
+### Shared machine data
 
-An external Home Manager consumer imports `modules.homeManager.herdsman` and
-declares its managed inventory with:
+Hosts reuse Git/Pi definitions under `brucenunk.homeManager.herdsman.machines`,
+keyed by machine name, without evaluating complete remote host configurations.
+Import Git, Pi, and Herdsman explicitly with the shared `llm-agents` overlay.
+For example, this fragment adds a synthetic second machine:
 
 ```nix
-brucenunk.homeManager.herdsman.config = {
-  agentNames = [ "runner" "helper" ];
-  daemon = {
-    refreshInterval = "30s";
-    queueCapacity = 32;
-    refreshConcurrency = 4;
-  };
-  defaultBase = "origin/main";
-  defaultGitdir = "main";
-  machines.local = [ "owner/repo" "owner/other-repo" ];
-  machines.devbox = [ "Canva/k8s" ];
-  repositories = {
-    "owner/other-repo" = {
-      base = "origin/master";
-      gitdir = "master";
-    };
-    "Canva/k8s" = {
-      base = "origin/master";
-      gitdir = "master.git";
+{ config, ... }:
+let
+  git = {
+    repositories."example/project" = {
+      path = "${config.home.homeDirectory}/work/example/project/main";
+      defaultBranch = "main";
     };
   };
-  tasksDir = "~/work/tasks";
-  theme = {
-    mode = "auto";
-    light = "doric-marble";
-    dark = "doric-obsidian";
+  piModels = { }; # Reuse the host's selected Pi models configuration here.
+in
+{
+  brucenunk.homeManager = {
+    inherit git;
+    pi.models = piModels;
+    herdsman = {
+      machineName = "machine-a";
+      machines = {
+        "machine-a" = { repositories = git.repositories; models = piModels; };
+        "machine-b".repositories."example/project" = {
+          path = "/srv/git/project.git";
+          defaultBranch = "master";
+        };
+      };
+      config.agentNames = [ "runner" "helper" ];
+    };
   };
-};
+}
 ```
 
-Like the other public modules, consumers must supply the shared `llm-agents`
-package overlay.
+`$XDG_CONFIG_HOME/herdsman/catalogue.json` is Emacs's generated view:
+`machines.<name> = { repositories: [slugs], models: [{name, thinkingLevels}] }`.
+Model names are exact `provider/model` references: split at the first slash only.
+Thinking levels follow Pi's maps; only configured chat models are included.
+There are no Git paths/policy, provider connection fields, credentials, display
+names, or schema version. These are configured choices, not readiness checks;
+task metadata provides defaults and Herdsman owns final selection.
 
-### Migration from writable configuration
+Only the current launcher TOML translates `machineName` to `local`; JSON keeps
+machine names for future Herdsman resolution. Remote names currently match saved
+Herdr labels. Repository paths and default branches are per machine: shared slugs
+may point to different checkouts or bare repositories.
 
-The former `brucenunk.homeManager.herdsman.initialConfig` option and its
-`repositoryBases` map are replaced by `config` and the `repositories` records
-above. Move host declarations to that interface. The old `base` served as both
-directory and ref: now declare `gitdir` separately. For example, an old
-`base = "master"` becomes `gitdir = "master"` / `base = "origin/master"` for an
-ordinary primary checkout, or `gitdir = "master.git"` / `base = "origin/master"`
-for the devbox bare layout. The default base also changes from `main` to
-`origin/main`; keep `base = "main"` explicitly if a local branch is intended.
+### Migration from writable or separately defined configuration
+
+Replace old source-directory/root declarations with absolute `path` values and
+static base refs with repository `defaultBranch` metadata. Move declarations to
+`herdsman.machines`; its records reuse Git's repositories and Pi's models.
+The removed `git-maintenance` module and `gitMaintenance.repositories` also move
+to Git, which uses these paths for native Linux/Darwin schedules. Operational
+Herdsman settings remain under `config`; no old-schema compatibility adapter is provided.
 
 Before the first managed-file activation, inspect the existing writable TOML
 and transfer any inventory, names, paths or theme edits into Nix. Preserve a

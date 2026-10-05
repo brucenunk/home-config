@@ -39,10 +39,10 @@ owns it:
 | --- | --- | --- |
 | `ghostty-home-manager-module` | Linux, Darwin | Package overrides remain effective, extra configuration remains appended, the two generated themes remain deployed, and disabling the canonical Linux service suppresses its link. |
 | `herdr-home-manager-module` | Linux, Darwin | The generated Herdr TOML remains parseable and retains terminal, Doric theme, sidebar, notification, SSH, update policy, and the Ctrl+Space prefix, and the matching Pi integration remains deployed. The native check realizes only the generated configuration needed to inspect that artifact. |
-| `herdsman`, `herdsman-home-manager-module` | Linux, Darwin | The Go package passes its tests; the isolated feature deploys Nix-managed TOML with independent source directories/base refs, retains normal file-collision protection, and installs the command. Plugin checks cover the Start/Finish popup manifest and bare-command runner, offline link/relink, shim routing, and `prefix+t` binding, not live popup/focus behavior. |
-| `pi-home-manager-module` | Linux, Darwin | Consumers can disable Pi and override its extension and theme directory defaults with `null`. |
+| `herdsman`, `herdsman-home-manager-module` | Linux, Darwin | The Go package passes its tests; the isolated feature derives matching TOML/Emacs JSON from two synthetic machines with per-machine repository paths/default branches, retains normal file-collision protection, and installs the command. Plugin checks cover the Start/Finish popup manifest and bare-command runner, offline link/relink, shim routing, and `prefix+t` binding, not live popup/focus behavior. |
+| `pi-home-manager-module` | Linux, Darwin | Disable/directory overrides remain effective; model/thinking projections match the pinned Pi loader and exclude private provider fields. |
 | `doric-waybar-themes-home-manager-module` | Linux, Darwin | The portable Waybar theme module continues to deploy its theme directory recursively. |
-| `git-maintenance-home-manager-module` | Darwin | A non-empty repository list enables Git maintenance settings and the launchd schedule. |
+| `git-home-manager-module` | Linux, Darwin | Repository defaults and derived paths enable native Git maintenance on both platforms. |
 | `emacs-home-manager-module` | Linux | The module defaults to `pkgs.emacs`, while ordinary consumer assignments can select `emacs31` or `emacs-nox`; this guards the `mkDefault` priority contract. |
 
 Run all checks for the invoking platform with:
@@ -85,7 +85,7 @@ The previous broad script's assertions were assigned as follows:
 - Emacs package-priority behavior moved to the Emacs feature check;
 - Ghostty configuration, themes, package override, and service control moved
   to the Ghostty feature check;
-- Git maintenance option behavior moved to its Darwin feature check;
+- Git repository and maintenance behavior is covered by its combined feature check;
 - Herdr generated settings and Pi integration moved to the Herdr feature
   check;
 - nullable Pi directory overrides moved to the Pi feature check;

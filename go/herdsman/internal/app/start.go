@@ -137,8 +137,9 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 		r.Workspace, r.Pane = created.Workspace.ID, created.RootPane.ID
 		r.Steps = append(r.Steps, "created owner session workspace "+r.Workspace+" at "+r.Path)
 	} else {
-		base := c.Base(req.Repo)
-		source := filepath.Join(home, "work", req.Repo, c.Gitdir(req.Repo))
+		repository := c.Machines[m.Label].Repositories[req.Repo]
+		base := repository.BaseRef()
+		source := repository.Path
 		stamp := time.Now().UTC().Format("20060102T150405.000000000Z")
 		r.Path = filepath.Join(home, "work", req.Repo, stamp)
 		r.Branch = "jamesl/" + stamp
@@ -146,7 +147,7 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 		if err != nil {
 			return r, fmt.Errorf("resolve parent: %w", err)
 		}
-		if filepath.Clean(resolved.CheckoutPath) != source {
+		if filepath.Clean(resolved.CheckoutPath) != filepath.Clean(source) {
 			return r, fmt.Errorf("Herdr resolved %s to a different source checkout: %s", source, resolved.CheckoutPath)
 		}
 		var parent *herdr.Workspace

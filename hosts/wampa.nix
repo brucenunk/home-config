@@ -13,6 +13,21 @@ let
     path = "/openai/v1";
     port = 18765;
   };
+
+  git = {
+    repositories = {
+      "brucenunk/cluster-api-x".path = "/home/james/work/brucenunk/cluster-api-x/main";
+      "brucenunk/home-config".path = "/home/james/work/brucenunk/home-config/main";
+      "brucenunk/nixos-config".path = "/home/james/work/brucenunk/nixos-config/main";
+      "brucenunk/playground".path = "/home/james/work/brucenunk/playground/main";
+      "brucenunk/tinkerbell-x".path = "/home/james/work/brucenunk/tinkerbell-x/main";
+      "brucenunk/zsa-voyager-keymap".path = "/home/james/work/brucenunk/zsa-voyager-keymap/main";
+    };
+  };
+  piModels = import ../config/pi/wampa-relay-models.nix {
+    bedrockBaseUrl = "http://127.0.0.1:18766/bedrock";
+    openAIBaseUrl = "http://127.0.0.1:18765/openai/v1";
+  };
 in
 {
   flake.homeConfigurations."james@wampa" = inputs.home-manager.lib.homeManagerConfiguration {
@@ -44,7 +59,6 @@ in
           config.flake.modules.homeManager.fzf
           config.flake.modules.homeManager.ghostty
           config.flake.modules.homeManager.git
-          config.flake.modules.homeManager.git-maintenance
           config.flake.modules.homeManager.golang
           config.flake.modules.homeManager.herdr
           config.flake.modules.homeManager.herdsman
@@ -80,10 +94,7 @@ in
 
         brucenunk.homeManager.pi = {
           localEndpoint = piRelayEndpoint;
-          models = import ../config/pi/wampa-relay-models.nix {
-            bedrockBaseUrl = "http://127.0.0.1:18766/bedrock";
-            openAIBaseUrl = "http://127.0.0.1:18765/openai/v1";
-          };
+          models = piModels;
           modelsFileName = "pi-models-wampa.json";
           settingsDefaults = ../config/pi/settings-wampa.json;
         };
@@ -105,14 +116,14 @@ in
           "cockatoo"
         ];
 
-        brucenunk.homeManager.herdsman.config.machines.local = [
-          "brucenunk/cluster-api-x"
-          "brucenunk/home-config"
-          "brucenunk/nixos-config"
-          "brucenunk/playground"
-          "brucenunk/tinkerbell-x"
-          "brucenunk/zsa-voyager-keymap"
-        ];
+        brucenunk.homeManager.git = git;
+        brucenunk.homeManager.herdsman = {
+          machineName = "wampa";
+          machines.wampa = {
+            repositories = git.repositories;
+            models = piModels;
+          };
+        };
 
         programs.emacs.package = pkgs.emacs-pgtk;
 

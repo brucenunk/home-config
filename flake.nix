@@ -55,6 +55,13 @@
         };
 
       imports = [
+        {
+          # Capability-owned data helpers compose without evaluating Home Manager.
+          options.flake.lib = inputs.nixpkgs.lib.mkOption {
+            type = inputs.nixpkgs.lib.types.lazyAttrsOf inputs.nixpkgs.lib.types.raw;
+            default = { };
+          };
+        }
         inputs.flake-parts.flakeModules.modules
         (inputs.import-tree ./flake-modules)
         inputs.home-manager.flakeModules.home-manager

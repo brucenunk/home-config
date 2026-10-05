@@ -13,8 +13,10 @@ import (
 
 func TestContextInventoryAndDestinations(t *testing.T) {
 	c := startConfig()
-	c.Machines["local"] = MachineConfig{Repositories: []string{"owner/one", "other/repo", "owner/two"}}
-	c.Machines["remote"] = MachineConfig{Repositories: []string{"owner/three"}}
+	c.Machines["local"] = MachineConfig{Repositories: map[string]RepositoryConfig{
+		"owner/one": {Path: "/repos/one"}, "other/repo": {Path: "/repos/other"}, "owner/two": {Path: "/repos/two"},
+	}}
+	c.Machines["remote"] = MachineConfig{Repositories: map[string]RepositoryConfig{"owner/three": {Path: "/remote/three.git"}}}
 	want := []string{"other", "other/repo", "owner", "owner/one", "owner/three", "owner/two"}
 	if got := c.ContextNames(true); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)

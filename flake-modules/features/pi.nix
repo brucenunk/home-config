@@ -1,6 +1,75 @@
-{ inputs, ... }:
+{ inputs, lib, ... }:
 
 let
+  modelsOption = lib.mkOption {
+    type = lib.types.attrsOf lib.types.anything;
+    default = { };
+    apply = models: builtins.deepSeq (projectModels models) models;
+    description = "Pi model configuration, including private provider connection fields.";
+  };
+
+  # Match Pi 1.0.0's pi-ai getSupportedThinkingLevels, not transport guesses.
+  thinkingLevels =
+    model:
+    if !(model.reasoning or false) then
+      [ "off" ]
+    else
+      lib.filter
+        (
+          level:
+          let
+            mapping = model.thinkingLevelMap or { };
+          in
+          if mapping ? ${level} then mapping.${level} != null else level != "xhigh" && level != "max"
+        )
+        [
+          "off"
+          "minimal"
+          "low"
+          "medium"
+          "high"
+          "xhigh"
+          "max"
+        ];
+
+  projectModels =
+    models:
+    let
+      references = lib.concatLists (
+        lib.mapAttrsToList (
+          provider: definition:
+          if provider == "" || lib.hasInfix "/" provider then
+            throw "Pi catalogue provider names must be non-empty and contain no slash"
+          else
+            map (
+              model:
+              let
+                override = (definition.modelOverrides or { }).${model.id} or { };
+                effective = model // {
+                  reasoning = override.reasoning or (model.reasoning or false);
+                  thinkingLevelMap = (model.thinkingLevelMap or { }) // (override.thinkingLevelMap or { });
+                };
+              in
+              if (model.type or "chat") != "chat" then
+                throw "Pi models.json definitions are chat-only; non-chat models require runtime extensions"
+              else if model.id == "" then
+                throw "Pi catalogue model IDs must be non-empty"
+              else
+                {
+                  name = "${provider}/${model.id}";
+                  thinkingLevels = thinkingLevels effective;
+                }
+            ) (definition.models or [ ])
+        ) (models.providers or { })
+      );
+    in
+    if
+      builtins.length references != builtins.length (lib.unique (map (model: model.name) references))
+    then
+      throw "Pi catalogue contains duplicate model references"
+    else
+      references;
+
   homeManagerModule =
     {
       config,
@@ -72,11 +141,7 @@ let
           );
         };
 
-        models = lib.mkOption {
-          type = lib.types.attrsOf lib.types.anything;
-          default = { };
-          description = "Pi model catalogue written to models.json.";
-        };
+        models = modelsOption;
 
         modelsFileName = lib.mkOption {
           type = lib.types.str;
@@ -139,6 +204,8 @@ let
     };
 in
 {
+  flake.lib.pi = { inherit modelsOption projectModels thinkingLevels; };
+
   perSystem =
     { pkgs, ... }:
     let
@@ -148,6 +215,32 @@ in
       };
       wampaOpenAIModels = wampaRelayModels.providers.openai-proxy.models;
       wampaBedrockModels = wampaRelayModels.providers.bedrock-proxy.models;
+      projectionModels.providers = wampaRelayModels.providers // {
+        example = {
+          api = "openai-responses";
+          baseUrl = "https://private-endpoint.invalid";
+          apiKey = "!private-credential-command";
+          headers.Secret = "private-header";
+          models = [
+            {
+              id = "vendor/model";
+              reasoning = false;
+            }
+          ];
+          modelOverrides."vendor/model" = {
+            reasoning = true;
+            thinkingLevelMap = {
+              off = null;
+              minimal = null;
+              xhigh = "xhigh";
+              max = "max";
+            };
+          };
+        };
+      };
+      projectedModels = projectModels projectionModels;
+      # Test the pinned loader directly, without changing the deployed Pi package.
+      piNode = home.config.brucenunk.homeManager.pi.package.override { useBun = false; };
       wampaSettings = builtins.fromJSON (builtins.readFile ../../config/pi/settings-wampa.json);
       gpt6ModelIds = [
         "gpt-6-astra"
@@ -174,20 +267,23 @@ in
           )
         ) wampaOpenAIModels
       ) gpt6ModelIds;
-      newBedrockModelsValid = builtins.all (
-        id:
-        builtins.any (
-          model:
-          model.id == id
-          && model.contextWindow == (if id == "global.xai.grok-4.7" then 500000 else 1000000)
-          && model.maxTokens == (if id == "global.xai.grok-4.7" then 500000 else 128000)
-          && builtins.elem "text" model.input
-          && model.reasoning == (id != "global.xai.grok-4.7")
-        ) wampaBedrockModels
-      ) [
-        "global.xai.grok-4.7"
-        "global.anthropic.claude-sonnet-5-5"
-      ];
+      newBedrockModelsValid =
+        builtins.all
+          (
+            id:
+            builtins.any (
+              model:
+              model.id == id
+              && model.contextWindow == (if id == "global.xai.grok-4.7" then 500000 else 1000000)
+              && model.maxTokens == (if id == "global.xai.grok-4.7" then 500000 else 128000)
+              && builtins.elem "text" model.input
+              && model.reasoning == (id != "global.xai.grok-4.7")
+            ) wampaBedrockModels
+          )
+          [
+            "global.xai.grok-4.7"
+            "global.anthropic.claude-sonnet-5-5"
+          ];
 
       home = inputs.home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
@@ -245,7 +341,43 @@ in
           assert !(builtins.elem home.config.brucenunk.homeManager.pi.package home.config.home.packages);
           assert home.config.brucenunk.homeManager.pi.extensionsDirectory == null;
           assert home.config.brucenunk.homeManager.pi.themesDirectory == null;
+          assert
+            thinkingLevels { reasoning = true; } == [
+              "off"
+              "minimal"
+              "low"
+              "medium"
+              "high"
+            ];
+          assert
+            !(builtins.tryEval (
+              builtins.deepSeq (projectModels {
+                providers.example.models = [
+                  {
+                    id = "image";
+                    type = "image";
+                  }
+                ];
+              }) true
+            )).success;
           pkgs.runCommand "pi-home-manager-module" { } ''
+            ${pkgs.nodejs}/bin/node --input-type=module - ${pkgs.writeText "pi-projection-fixture.json" (builtins.toJSON projectionModels)} ${pkgs.writeText "pi-projection-expected.json" (builtins.toJSON projectedModels)} <<'JS'
+            import assert from "node:assert/strict";
+            import { readFileSync } from "node:fs";
+            import { composeModelProvider } from "${piNode}/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/provider-composer.js";
+            import { getSupportedThinkingLevels } from "${piNode}/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/models.js";
+            const fixture = JSON.parse(readFileSync(process.argv[2], "utf8"));
+            const expected = JSON.parse(readFileSync(process.argv[3], "utf8"));
+            const config = { getProvider: provider => fixture.providers[provider] };
+            const actual = Object.keys(fixture.providers).sort().flatMap(provider =>
+              composeModelProvider(provider, undefined, config).getModels().map(model => ({
+                name: `''${provider}/''${model.id}`,
+                thinkingLevels: getSupportedThinkingLevels(model),
+              })));
+            assert.deepEqual(actual, expected);
+            assert(expected.every(model => Object.keys(model).sort().join(",") === "name,thinkingLevels"));
+            assert(!JSON.stringify(expected).includes("private-"));
+            JS
             touch "$out"
           '';
 
