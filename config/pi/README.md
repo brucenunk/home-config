@@ -63,8 +63,9 @@ queue must still be coordinated separately.
 
 ## Settings defaults
 
-Wampa's defaults explicitly select `tuiMode: "regular"` to retain terminal
-scrollback inside Herdr rather than adopting Pi 1.0's fullscreen default.
+Wampa's defaults explicitly select `tuiMode: "fullscreen"` to trial Pi 1.0's
+fullscreen UI inside Herdr. Keeping this explicit replaces any existing mutable
+`"regular"` setting during activation.
 `defaultTools: ["+codemode"]` adds codemode alongside the usual built-in tools
 and the auto-discovered `apply_patch` extension. Codemode remains in its default
 `on` mode: tools are still directly available to the model, and scripts can

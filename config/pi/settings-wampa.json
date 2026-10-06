@@ -1,7 +1,7 @@
 {
   "defaultProvider": "openai-proxy",
   "defaultModel": "gpt-6.1-sol",
-  "tuiMode": "regular",
+  "tuiMode": "fullscreen",
   "defaultTools": ["+codemode"],
   "terminal": {
     "showTerminalProgress": true

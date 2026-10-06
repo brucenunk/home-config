@@ -386,7 +386,7 @@ in
           '';
 
         pi-wampa-settings =
-          assert wampaSettings.tuiMode == "regular";
+          assert wampaSettings.tuiMode == "fullscreen";
           assert wampaSettings.defaultTools == [ "+codemode" ];
           assert wampaSettings.terminal.showTerminalProgress;
           pkgs.runCommand "pi-wampa-settings" { } ''
