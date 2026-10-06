@@ -418,31 +418,46 @@ A slash means **remote/ref**, split at the first slash:
 
 | Base ref | Queued execution |
 | --- | --- |
-| `origin/main` | Give Herdr `refs/remotes/origin/main`, using the existing remote-tracking ref. |
-| `upstream/train/next` | Give Herdr `refs/remotes/upstream/train/next`, using the existing remote-tracking ref. |
+| `origin/main` | Fetch `main` from `origin`, then give Herdr the refreshed `refs/remotes/origin/main`. |
+| `upstream/train/next` | Fetch `train/next` from `upstream`, then give Herdr the refreshed `refs/remotes/upstream/train/next`. |
 | `main` | Give Herdr `refs/heads/main`, using the existing local branch without upstream inference. |
 
-The form labels both local and remote refs as existing, unrefreshed choices. Slash-containing local
+The form labels remote refs as fetched before creation and local refs as used without fetching. Slash-containing local
 branch names, fully qualified `refs/...` forms, tags, commit IDs and revision
 expressions are not supported. Explicit refs are not interpreted as paths or
 used to name the new worktree. The field and daemon IPC value stay verbatim;
 only the worktree creation argument is qualified to the selected namespace,
 so a same-named tag or local branch cannot shadow a selected remote ref.
 
-Herdsman validates ref syntax before workspace mutations. Herdr resolves the
-qualified ref during worktree creation; Herdsman does not inspect its existence,
-commit, symbolic-alias target, configured remote, or freshness beforehand.
-A missing or unusable ref can therefore fail after parent workspace creation or
-rename. Launch stops without starting Pi; inspect Herdr before retrying. There
-is no automatic retry or cleanup.
+Herdsman validates ref syntax, resolves the source checkout, and checks parent
+workspace selection before fetching. A remote base adds exactly one destination
+command before parent creation/rename or worktree creation:
 
-Launch-time fetch, pre-mutation Git ref validation, and background “keep warm”
-fetching are deferred. Ensure refs are updated separately on the destination.
-Git maintenance prefetch warms `refs/prefetch/`; it does not update ordinary
-`refs/remotes/` tracking refs. Herdsman adds no Git subprocess, transport override,
-Git package dependency, or Git timeout setting. Source branch/files remain under
-the existing Herdr lifecycle boundary. Owner sessions have no base-ref field or
-base-ref launch argument.
+```sh
+git -C SOURCE fetch --no-tags --refmap= -- REMOTE '+refs/heads/BRANCH:refs/remotes/REMOTE/BRANCH'
+```
+
+The explicit refspec and empty refmap ignore configured fetch mappings and
+refresh only the selected tracking ref, including upstream
+rewinds, without moving the source checkout's branch or changing its files.
+Local launches execute Git directly; remote launches use one SSH invocation
+with shell-quoted arguments and the existing batch-mode/connection policy.
+Git uses the destination's existing authentication and configuration. There are
+no preliminary Git probes, retries, upstream inference, rebase/reset operations,
+background fetching, or new timeout settings. Fetch uses the existing 30-second
+subprocess timeout; failure stops launch without creating/renaming workspaces
+or starting Pi. A failed or timed-out fetch may still have updated Git metadata.
+
+Herdr then resolves the qualified ref during worktree creation. Local bases are
+not fetched or checked for existence beforehand; missing/unusable local refs can
+therefore fail after parent creation or rename. Launch stops without starting Pi;
+inspect Herdr before retrying. There is no automatic retry or cleanup.
+
+The Herdsman package includes Git for local fetches and its tests. Remote machines
+must provide Git on their command PATH. Direct Herdr launches are unchanged.
+Tests cover real Git over local file transport and simulated SSH shell execution,
+not live remote authentication, connectivity, or latency. Owner sessions have no
+base-ref field, fetch, or base-ref launch argument.
 
 ### Picker controls
 

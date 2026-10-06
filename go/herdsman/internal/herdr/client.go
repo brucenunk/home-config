@@ -287,6 +287,22 @@ func (c *Client) Home(ctx context.Context, m Machine) (string, error) {
 	return c.home(ctx, m, "")
 }
 
+// FetchBase refreshes exactly one remote-tracking ref in one destination command.
+// The caller supplies the validated remote/branch selection; no Git probes or retries.
+func (c *Client) FetchBase(ctx context.Context, m Machine, source, remote, branch string) error {
+	args := []string{"-C", source, "fetch", "--no-tags", "--refmap=", "--", remote, "+refs/heads/" + branch + ":refs/remotes/" + remote + "/" + branch}
+	if m.IsLocal() {
+		_, err := c.invoke(ctx, m, "git", "git", c.Timeout, args...)
+		return err
+	}
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
+	}
+	_, err := c.invoke(ctx, m, "ssh", c.SSH, c.Timeout, "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "--", m.Target, "git "+strings.Join(quoted, " "))
+	return err
+}
+
 // Validate the owner directory inside the existing HOME lookup: Herdr's PTY
 // launcher can silently fall back to HOME for a missing or non-directory cwd.
 func (c *Client) OwnerHome(ctx context.Context, m Machine, owner string) (string, error) {

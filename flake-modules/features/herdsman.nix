@@ -20,6 +20,7 @@ let
       src = ../../go/herdsman;
       vendorHash = "sha256-lq+G1UfBMiAbnD9jNWN1Tn67KYXk770N5cQI7jUqHWU=";
       nativeBuildInputs = [ pkgs.makeWrapper ];
+      nativeCheckInputs = [ pkgs.git ];
       preCheck = ''
         export HERDSMAN_MODEL_ARGUMENT_FIXTURE="$TMPDIR/herdsman-model-arguments.json"
       '';
@@ -74,6 +75,7 @@ let
             pkgs.lib.makeBinPath [
               pkgs.llm-agents.herdr
               pkgs.openssh
+              pkgs.git
             ]
           }
       '';

@@ -13,19 +13,20 @@ import (
 )
 
 type fakeLauncher struct {
-	profiles                      []herdr.Machine
-	agents                        map[string][]herdr.Agent
-	workspaces                    []herdr.Workspace
-	workspacesByMachine           map[string][]herdr.Workspace
-	sourceID                      string
-	sourcePath                    string
-	requestedSource, parentSource string
-	calls                         []string
-	fail                          string
-	worktree                      herdr.WorktreeRequest
-	title, prompt                 string
-	workspaceLabel                string
-	model, thinking               string
+	profiles                                    []herdr.Machine
+	agents                                      map[string][]herdr.Agent
+	workspaces                                  []herdr.Workspace
+	workspacesByMachine                         map[string][]herdr.Workspace
+	sourceID                                    string
+	sourcePath                                  string
+	requestedSource, parentSource               string
+	fetchedSource, fetchedRemote, fetchedBranch string
+	calls                                       []string
+	fail                                        string
+	worktree                                    herdr.WorktreeRequest
+	title, prompt                               string
+	workspaceLabel                              string
+	model, thinking                             string
 }
 
 func (f *fakeLauncher) call(m herdr.Machine, op string) error {
@@ -90,6 +91,10 @@ func (f *fakeLauncher) CreateParent(_ context.Context, m herdr.Machine, source, 
 func (f *fakeLauncher) RenameParent(_ context.Context, m herdr.Machine, id, label string) error {
 	return f.call(m, "rename")
 }
+func (f *fakeLauncher) FetchBase(_ context.Context, m herdr.Machine, source, remote, branch string) error {
+	f.fetchedSource, f.fetchedRemote, f.fetchedBranch = source, remote, branch
+	return f.call(m, "fetch")
+}
 func (f *fakeLauncher) CreateWorktree(_ context.Context, m herdr.Machine, r herdr.WorktreeRequest) (herdr.Created, error) {
 	f.worktree = r
 	return creation("task", "task:p1"), f.call(m, "worktree")
@@ -108,6 +113,48 @@ func (f *fakeLauncher) Focus(_ context.Context, m herdr.Machine, name string) er
 }
 
 var testAgentNames = []string{"runner", "helper", "quokka", "platypus"}
+
+func TestFetchBaseSelectionAndFailure(t *testing.T) {
+	for _, ref := range []string{"main", "origin/main", "upstream/train/next"} {
+		t.Run(ref, func(t *testing.T) {
+			f := &fakeLauncher{}
+			_, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local(), BaseRef: ref})
+			if err != nil {
+				t.Fatal(err)
+			}
+			remote, branch, fetch := strings.Cut(ref, "/")
+			if !fetch {
+				if slicesContain(f.calls, "local:fetch") {
+					t.Fatal("fetched local base", f.calls)
+				}
+				return
+			}
+			if f.fetchedSource != f.requestedSource || f.fetchedRemote != remote || f.fetchedBranch != branch {
+				t.Fatal("wrong fetch selection", f)
+			}
+			for _, call := range f.calls {
+				if call == "local:fetch" {
+					break
+				}
+				if call == "local:parent" || call == "local:rename" || call == "local:worktree" || call == "local:start" {
+					t.Fatal("mutation before fetch", f.calls)
+				}
+			}
+		})
+	}
+	for _, existing := range []bool{false, true} {
+		f := &fakeLauncher{fail: "fetch"}
+		if existing {
+			f.sourceID = "parent"
+			f.workspaces = []herdr.Workspace{{ID: "parent", Label: "old label"}}
+		}
+		_, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local()})
+		want := []string{"local:snapshot", "local:home", "local:source", "local:fetch"}
+		if err == nil || !strings.Contains(err.Error(), "fetch base origin/main") || !reflect.DeepEqual(f.calls, want) {
+			t.Fatal("fetch failure continued or retried", err, f.calls)
+		}
+	}
+}
 
 func startConfig() Config {
 	return Config{LocalMachineName: "machine-a", Catalogue: Catalogue{Machines: map[string]CatalogueMachine{
@@ -137,7 +184,7 @@ func TestStartLocalRemoteAndEmpty(t *testing.T) {
 			if r.Machine != m.DisplayName() {
 				t.Fatal(r.Machine, m.DisplayName())
 			}
-			want := []string{"local:snapshot", "remote:snapshot", m.Label + ":home", m.Label + ":source", m.Label + ":parent", m.Label + ":worktree", m.Label + ":start"}
+			want := []string{"local:snapshot", "remote:snapshot", m.Label + ":home", m.Label + ":source", m.Label + ":fetch", m.Label + ":parent", m.Label + ":worktree", m.Label + ":start"}
 			if withTask {
 				want = append(want, m.Label+":prompt")
 			}
@@ -185,7 +232,7 @@ func TestAgentNameAvailabilityAndExhaustion(t *testing.T) {
 }
 
 func TestLaunchFailureStopsWithoutRetry(t *testing.T) {
-	for _, failure := range []string{"snapshot", "home", "source", "parent", "worktree", "start", "prompt", "focus"} {
+	for _, failure := range []string{"snapshot", "home", "source", "fetch", "parent", "worktree", "start", "prompt", "focus"} {
 		t.Run(failure, func(t *testing.T) {
 			f := &fakeLauncher{fail: failure}
 			r, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner/repo", Machine: herdr.Local(), Task: &Task{Title: "Title", Skill: "review"}})
@@ -377,7 +424,7 @@ func TestStartReusesDestinationSnapshot(t *testing.T) {
 	if err != nil || r.Parent != "remote-parent" {
 		t.Fatal("did not reuse destination inventory", r, err)
 	}
-	want := []string{"local:snapshot", "remote:snapshot", "remote:home", "remote:source", "remote:worktree", "remote:start", "remote:focus"}
+	want := []string{"local:snapshot", "remote:snapshot", "remote:home", "remote:source", "remote:fetch", "remote:worktree", "remote:start", "remote:focus"}
 	if !reflect.DeepEqual(f.calls, want) {
 		t.Fatal("extra inventory calls or inspected disabled server", f.calls, want)
 	}

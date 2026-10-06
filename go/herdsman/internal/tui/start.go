@@ -519,7 +519,7 @@ func (m Model) View() string {
 		if m.baseExplicit {
 			kind = "Explicit override (ctrl+r resets to repository default)"
 		}
-		route := "Remote-tracking ref: uses the existing ref without fetching."
+		route := "Remote-tracking ref: fetches the selected branch before creating the worktree."
 		if !strings.Contains(m.base.Value(), "/") {
 			route = "Local branch: uses the existing branch without fetching."
 		}

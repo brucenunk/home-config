@@ -28,6 +28,7 @@ type Launcher interface {
 	OwnerHome(context.Context, herdr.Machine, string) (string, error)
 	Snapshot(context.Context, herdr.Machine) (herdr.Snapshot, error)
 	Source(context.Context, herdr.Machine, string) (herdr.Source, error)
+	FetchBase(context.Context, herdr.Machine, string, string, string) error
 	CreateParent(context.Context, herdr.Machine, string, string) (herdr.Created, error)
 	RenameParent(context.Context, herdr.Machine, string, string) error
 	CreateWorktree(context.Context, herdr.Machine, herdr.WorktreeRequest) (herdr.Created, error)
@@ -174,6 +175,11 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 		}
 		if resolved.WorkspaceID != "" && parent == nil {
 			return r, fmt.Errorf("source workspace is absent from the selected inventory; select again")
+		}
+		if remote, branch, ok := strings.Cut(req.BaseRef, "/"); ok {
+			if err := client.FetchBase(ctx, m, source, remote, branch); err != nil {
+				return r, fmt.Errorf("fetch base %s on %s: %w", req.BaseRef, m.DisplayName(), err)
+			}
 		}
 		if err := ctx.Err(); err != nil {
 			return r, err

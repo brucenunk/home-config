@@ -25,6 +25,14 @@ func TestMain(m *testing.M) {
 		if err := os.WriteFile(os.Getenv("HERDSMAN_ARGS"), data, 0600); err != nil {
 			panic(err)
 		}
+		if path := os.Getenv("HERDSMAN_INVOCATIONS"); path != "" {
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+			if err != nil {
+				panic(err)
+			}
+			_, _ = f.Write(append(data, '\n'))
+			_ = f.Close()
+		}
 		if os.Getenv("HERDSMAN_CHILD_MODE") == "1" {
 			file, err := os.OpenFile(os.Getenv("HERDSMAN_HEARTBEAT"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 			if err != nil {
@@ -95,6 +103,81 @@ func checkArgs(t *testing.T, path string, want []string) {
 	}
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("args=%q want=%q", args, want)
+	}
+}
+
+func TestFetchBaseRemoteCommand(t *testing.T) {
+	c, path := fakeCLI(t, "")
+	log := filepath.Join(t.TempDir(), "invocations")
+	t.Setenv("HERDSMAN_INVOCATIONS", log)
+	m := Machine{ID: "remote-id", Label: "remote", Target: "ssh-alias"}
+	if err := c.FetchBase(context.Background(), m, "/repo/it's $(not a command)", "upstream", "train/next"); err != nil {
+		t.Fatal(err)
+	}
+	checkArgs(t, path, []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "--", "ssh-alias", "git '-C' '/repo/it'\\''s $(not a command)' 'fetch' '--no-tags' '--refmap=' '--' 'upstream' '+refs/heads/train/next:refs/remotes/upstream/train/next'"})
+	data, err := os.ReadFile(log)
+	if err != nil || bytes.Count(data, []byte("\n")) != 1 {
+		t.Fatal("expected exactly one SSH invocation", string(data), err)
+	}
+	t.Setenv("HERDSMAN_STDERR", "fetch failed")
+	if err := c.FetchBase(context.Background(), m, "/repo", "origin", "main"); err == nil {
+		t.Fatal("ignored fetch failure")
+	}
+	data, err = os.ReadFile(log)
+	if err != nil || bytes.Count(data, []byte("\n")) != 2 {
+		t.Fatal("retried failed fetch", string(data), err)
+	}
+}
+
+func TestFetchBaseUpdatesWorktreeBase(t *testing.T) {
+	// Real Git, with local file transport; remote mode runs the identical command
+	// through a fake SSH shell. This does not measure or verify live SSH behavior.
+	for _, remote := range []bool{false, true} {
+		t.Run(fmt.Sprintf("remote=%t", remote), func(t *testing.T) {
+			git := func(args ...string) string {
+				t.Helper()
+				cmd := exec.Command("git", args...)
+				cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.invalid", "GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.invalid")
+				data, err := cmd.CombinedOutput()
+				if err != nil {
+					t.Fatalf("git %q: %v\n%s", args, err, data)
+				}
+				return strings.TrimSpace(string(data))
+			}
+			dir := t.TempDir()
+			upstream := filepath.Join(dir, "upstream")
+			source := filepath.Join(dir, "it's $(not a command)")
+			git("init", "--initial-branch=train/next", upstream)
+			git("-C", upstream, "commit", "--allow-empty", "-m", "initial")
+			git("clone", "--origin", "up'stream", upstream, source)
+			// A configured mapping must not move (or try to update) the checked-out
+			// source branch alongside our explicit tracking-ref destination.
+			git("-C", source, "config", "remote.up'stream.fetch", "+refs/heads/train/next:refs/heads/train/next")
+			old := git("-C", source, "rev-parse", "HEAD")
+			git("-C", upstream, "commit", "--allow-empty", "-m", "new upstream")
+			want := git("-C", upstream, "rev-parse", "HEAD")
+			c := New()
+			m := Local()
+			if remote {
+				c, _ = fakeCLI(t, "")
+				t.Setenv("HERDSMAN_SSH_SHELL", "1")
+				m = Machine{ID: "remote-id", Label: "remote", Target: "ssh-alias"}
+			}
+			if err := c.FetchBase(context.Background(), m, source, "up'stream", "train/next"); err != nil {
+				t.Fatal(err)
+			}
+			if got := git("-C", source, "rev-parse", "refs/remotes/up'stream/train/next"); got != want || got == old {
+				t.Fatal("tracking ref not refreshed", got, want, old)
+			}
+			worktree := filepath.Join(dir, "task")
+			git("-C", source, "worktree", "add", "-b", "task", worktree, "refs/remotes/up'stream/train/next")
+			if got := git("-C", worktree, "rev-parse", "HEAD"); got != want {
+				t.Fatal("worktree started from stale base", got, want)
+			}
+			if got := git("-C", source, "rev-parse", "HEAD"); got != old {
+				t.Fatal("source branch moved", got, old)
+			}
+		})
 	}
 }
 

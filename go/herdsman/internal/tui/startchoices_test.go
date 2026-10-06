@@ -394,7 +394,7 @@ func TestBaseFormUsesExistingRefsWithoutFetching(t *testing.T) {
 	m := taskChoices(t, &app.Task{Title: "Task", Repo: "owner/one"})
 	m, _ = key(m, "enter")
 	m, _ = key(m, "enter")
-	if m.stage != editBase || !strings.Contains(m.View(), "Remote-tracking ref: uses the existing ref without fetching.") {
+	if m.stage != editBase || !strings.Contains(m.View(), "Remote-tracking ref: fetches the selected branch before creating the worktree.") {
 		t.Fatal(m.View())
 	}
 	m.base.SetValue("main")
