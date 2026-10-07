@@ -85,7 +85,7 @@ let
             };
 
             core = {
-              editor = "emacsclient";
+              editor = "emacsclient -c";
               fsmonitor = true;
               untrackedcache = true;
             };
@@ -172,6 +172,7 @@ in
     in
     {
       checks.git-home-manager-module =
+        assert home.config.programs.git.settings.core.editor == "emacsclient -c";
         assert
           git.repositories."example/repo" == {
             path = "/test-repositories/checkouts/main";
@@ -201,6 +202,7 @@ in
             ${pkgs.gnused}/bin/sed "s|/test-repositories|$PWD/work|g" \
               ${home.config.xdg.configFile."git/config".source} > "$GIT_CONFIG_GLOBAL"
             git() { ${lib.getExe home.config.programs.git.package} -c core.fsmonitor=false "$@"; }
+            test "$(git config --get core.editor)" = "emacsclient -c"
             bare="$PWD/work/backing/repo.git"
             source="$PWD/work/checkouts/main"
             git init --bare -q "$bare"

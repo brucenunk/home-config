@@ -94,6 +94,13 @@ let
       themeEntries = directoryEntries ".pi/agent/themes" cfg.themesDirectory "regular";
       extensionEntries = directoryEntries ".pi/agent/extensions" cfg.extensionsDirectory "directory";
       modelsJson = pkgs.writeText cfg.modelsFileName (builtins.toJSON cfg.models);
+      settingsDefaultsJson = pkgs.writeText "pi-settings-defaults.json" (
+        builtins.toJSON (
+          lib.recursiveUpdate (builtins.fromJSON (builtins.readFile ../../config/pi/settings.json)) (
+            builtins.fromJSON (builtins.readFile cfg.settingsDefaults)
+          )
+        )
+      );
     in
     {
       options.brucenunk.homeManager.pi = {
@@ -151,9 +158,11 @@ let
 
         settingsDefaults = lib.mkOption {
           type = lib.types.nullOr lib.types.path;
-          default = null;
+          default = ../../config/pi/settings.json;
           description = ''
-            JSON defaults recursively merged into mutable Pi settings during activation.
+            JSON defaults layered over shared Pi defaults, then recursively merged
+            into mutable Pi settings during activation. Host defaults take precedence
+            over shared defaults. Set null to disable settings activation.
             Activation fails without modifying an existing settings file when it is invalid JSON.
           '';
         };
@@ -189,7 +198,7 @@ let
             lib.hm.dag.entryAfter [ "writeBoundary" ] ''
               ${pkgs.bash}/bin/bash ${../../config/pi/merge-settings-defaults.sh} \
                 "$HOME/.pi/agent/settings.json" \
-                "${cfg.settingsDefaults}" \
+                "${settingsDefaultsJson}" \
                 ${pkgs.jq}/bin/jq \
                 ${pkgs.coreutils}/bin/cp \
                 ${pkgs.coreutils}/bin/chmod \
@@ -285,30 +294,63 @@ in
             "global.anthropic.claude-sonnet-5-5"
           ];
 
-      home = inputs.home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
-        modules = [
-          homeManagerModule
-          {
-            home = {
-              username = "pi-module-check";
-              homeDirectory =
-                if pkgs.stdenv.hostPlatform.isDarwin then "/Users/pi-module-check" else "/home/pi-module-check";
-              stateVersion = "25.05";
-            };
+      mkHome =
+        piConfig:
+        inputs.home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
+          modules = [
+            homeManagerModule
+            {
+              home = {
+                username = "pi-module-check";
+                homeDirectory =
+                  if pkgs.stdenv.hostPlatform.isDarwin then "/Users/pi-module-check" else "/home/pi-module-check";
+                stateVersion = "25.05";
+              };
 
-            brucenunk.homeManager.pi = {
-              enable = false;
-
-              extensionsDirectory = null;
-              themesDirectory = null;
-            };
-          }
-        ];
+              brucenunk.homeManager.pi = piConfig;
+            }
+          ];
+        };
+      home = mkHome {
+        enable = false;
+        extensionsDirectory = null;
+        themesDirectory = null;
       };
+      defaultsHome = mkHome { };
+      hostDefaultsHome = mkHome {
+        settingsDefaults = ../../config/pi/settings-wampa.json;
+      };
+      disabledDefaultsHome = mkHome { settingsDefaults = null; };
+      overriddenDefaultsHome = mkHome {
+        settingsDefaults = builtins.toFile "pi-settings-override.json" ''{"tuiMode":"fullscreen"}'';
+      };
+      expectedDefaults = pkgs.writeText "pi-settings-defaults.json" (
+        builtins.toJSON { tuiMode = "regular"; }
+      );
+      expectedHostDefaults = pkgs.writeText "pi-settings-defaults.json" (
+        builtins.toJSON (wampaSettings // { tuiMode = "regular"; })
+      );
+      expectedOverride = pkgs.writeText "pi-settings-defaults.json" (
+        builtins.toJSON { tuiMode = "fullscreen"; }
+      );
+      usesDefaults =
+        expected: configuration:
+        pkgs.lib.hasInfix (builtins.unsafeDiscardStringContext (toString expected)) configuration.config.home.activation.piSettingsDefaults.data;
     in
     {
       checks = {
+        pi-settings-policy =
+          assert usesDefaults expectedDefaults defaultsHome;
+          assert usesDefaults expectedHostDefaults hostDefaultsHome;
+          assert !(disabledDefaultsHome.config.home.activation ? piSettingsDefaults);
+          assert usesDefaults expectedOverride overriddenDefaultsHome;
+          pkgs.runCommand "pi-settings-policy" { nativeBuildInputs = [ pkgs.jq ]; } ''
+            jq -e '.tuiMode == "regular" and (has("externalEditor") | not)' ${expectedDefaults}
+            jq -e '.tuiMode == "regular" and .defaultProvider == "openai-proxy" and .defaultModel == "gpt-6.1-sol"' ${expectedHostDefaults}
+            touch "$out"
+          '';
+
         pi-apply-patch-tests =
           pkgs.runCommand "pi-apply-patch-tests" { nativeBuildInputs = [ pkgs.nodejs ]; }
             ''
@@ -386,7 +428,6 @@ in
           '';
 
         pi-wampa-settings =
-          assert wampaSettings.tuiMode == "fullscreen";
           assert wampaSettings.defaultTools == [ "+codemode" ];
           assert wampaSettings.terminal.showTerminalProgress;
           pkgs.runCommand "pi-wampa-settings" { } ''

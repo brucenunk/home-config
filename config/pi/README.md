@@ -63,15 +63,28 @@ queue must still be coordinated separately.
 
 ## Settings defaults
 
-Wampa's defaults explicitly select `tuiMode: "fullscreen"` to trial Pi 1.0's
-fullscreen UI inside Herdr. Keeping this explicit replaces any existing mutable
-`"regular"` setting during activation.
-`defaultTools: ["+codemode"]` adds codemode alongside the usual built-in tools
-and the auto-discovered `apply_patch` extension. Codemode remains in its default
-`on` mode: tools are still directly available to the model, and scripts can
-orchestrate calls and filter their results. This does not configure MCP servers,
-image models, or additional provider credentials.
-`terminal.showTerminalProgress: true` enables OSC 9;4 terminal progress reporting.
+Shared defaults select `tuiMode: "regular"`, leaving transcript scrolling and
+selection with the terminal or Herdr instead of Pi's alternate-screen UI.
+Host `settingsDefaults` are layered over these defaults and may override them;
+setting the option to `null` disables settings activation altogether.
+
+The Emacs capability sets both `EDITOR` and `VISUAL` to `emacsclient -c`, and
+the Git capability uses the same command. Pi inherits `VISUAL` unless its
+`externalEditor` setting overrides it. `-c` explicitly requests a GUI frame on
+the selected Emacs server, not necessarily an independently launched GUI Emacs.
+The client waits: finish a Pi prompt with `C-x #` (`server-edit`) to return it
+to Pi. GUI access is required; use `emacsclient -t` explicitly for terminal
+editing over SSH or in a headless session. Existing processes need the updated
+environment, and Pi needs a restart to pick up the changed TUI default.
+
+Wampa inherits the shared regular-mode default, replacing any mutable
+`"fullscreen"` setting during activation. `defaultTools: ["+codemode"]` adds
+codemode alongside the usual built-in tools and the auto-discovered
+`apply_patch` extension. Codemode remains in its default `on` mode: tools are
+still directly available to the model, and scripts can orchestrate calls and
+filter their results. This does not configure MCP servers, image models, or
+additional provider credentials. `terminal.showTerminalProgress: true` enables
+OSC 9;4 terminal progress reporting.
 
 When configured, settings defaults are merged into mutable
 `~/.pi/agent/settings.json` during Home Manager activation. Missing settings

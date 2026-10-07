@@ -90,8 +90,8 @@ let
         # Enchant's Hunspell provider must also find dictionaries when Emacs
         # is launched without a system-wide Hunspell installation.
         DICPATH = lib.makeSearchPath "share/hunspell" spellingDictionaries;
-        EDITOR = "emacsclient";
-        VISUAL = "emacsclient";
+        EDITOR = "emacsclient -c";
+        VISUAL = "emacsclient -c";
       };
 
       xdg.configFile."emacs/early-init.el".source = ../../config/emacs/early-init.el;
@@ -130,6 +130,8 @@ in
         in
         {
           emacs-home-manager-module =
+            assert defaultHome.config.home.sessionVariables.EDITOR == "emacsclient -c";
+            assert defaultHome.config.home.sessionVariables.VISUAL == "emacsclient -c";
             assert defaultHome.config.programs.emacs.package.drvPath == pkgs.emacs.drvPath;
             assert emacs31Home.config.programs.emacs.package.drvPath == pkgs.emacs31.drvPath;
             assert emacsNoxHome.config.programs.emacs.package.drvPath == pkgs.emacs-nox.drvPath;
