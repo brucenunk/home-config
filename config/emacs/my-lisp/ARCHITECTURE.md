@@ -26,10 +26,12 @@ my-task-list.el subscribes to the note-created hook
 - New captures retain the `todo` filename signature solely to match the existing
   default `==todo--` regex. There is no transition API or status validation.
 - `skill` is optional downstream metadata. Capture always selects a repository,
-  then writes `repo`, named `machine`, exact `base-ref`, `model`, and `thinking`.
-  Ordinary capture uses the Nix-generated Herdsman catalogue defaults. Prefix
-  capture exposes machine/base-ref/model/thinking choices in Herdsman's order,
-  skipping the machine prompt when only one destination is eligible. Thinking
+  then writes `repo`, named `machine`, `model`, and `thinking`.
+  Both capture forms prompt for machine when multiple destinations qualify,
+  skipping the machine prompt when only one destination is eligible. Ordinary
+  capture uses the Nix-generated Herdsman catalogue's model/thinking defaults;
+  prefix capture exposes those choices. Base ref is gathered only by Herdsman
+  at launch, and legacy task-file `base-ref` metadata is ignored. Thinking
   prompts even in ordinary capture when no supported default exists. Templates
   have no Dependencies section.
 - The generated catalogue is the sole choice/default source; no cached inventory,

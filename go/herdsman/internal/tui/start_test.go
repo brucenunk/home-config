@@ -290,12 +290,8 @@ func TestTaskFileSelectionUsesRepoHint(t *testing.T) {
 	}
 	next, _ = m.Update(cmd())
 	m = next.(Model)
-	if m.stage != pickRepo || m.Request.Task == nil || !m.repoSelected || m.list.SelectedItem().(item) != "owner/two" {
+	if m.stage != pickMachine || m.Request.Task == nil || m.Request.Repo != "owner/two" {
 		t.Fatalf("stage=%v task=%+v", m.stage, m.Request.Task)
-	}
-	m, _ = key(m, "enter")
-	if m.stage != pickMachine || m.Request.Repo != "owner/two" {
-		t.Fatal(m.Request)
 	}
 	m, _ = key(m, "enter")
 	m = confirmOptions(m)

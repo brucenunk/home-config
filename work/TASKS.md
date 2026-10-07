@@ -46,7 +46,6 @@ identifier: "20260304T153250"
 skill:      task-workflow-v3
 repo:       "example/project"
 machine:    "machine-a"
-base-ref:   "origin/main"
 model:      "example-provider/vendor/model"
 thinking:   "medium"
 ---
@@ -86,38 +85,41 @@ launch hints.
 ## Capture Choices and Launch Hints
 
 `C-c t a` (`my/task-add`) asks for an optional epic/subdirectory, title, and
-repository. It uses `task-workflow-v3` and the shared catalogue's destination,
-base-ref, model, and thinking defaults. `C-u C-c t a` additionally offers skill
+repository and, when multiple destinations qualify, machine. It uses
+`task-workflow-v3` and the shared catalogue's model and thinking defaults.
+`C-u C-c t a` additionally offers skill
 selection and the launch choices in Herdsman's order:
 
 1. Repository (always selected explicitly).
 2. Machine (eligible destinations for that repository; skip with one choice).
-3. Base ref (free text, initially `origin/${defaultBranch}` for that destination).
-4. Model (`provider/model`, with additional slashes preserved in the model ID).
-5. Thinking (only levels supported by that model).
+3. Model (`provider/model`, with additional slashes preserved in the model ID).
+4. Thinking (only levels supported by that model).
 
-The default destination is the local named machine when eligible, otherwise the
-first named eligible destination. The model uses that machine's effective default.
+Both capture forms prompt for machine when multiple destinations qualify. The
+initial selection is the local named machine when eligible, otherwise the first
+named eligible destination. The model uses that machine's effective default.
 Thinking defaults to `medium` when supported, otherwise `off`; if neither is
 supported, even ordinary capture asks for an explicit supported choice.
 
 Every captured value is written after `skill` in front matter, in the order
-above—including the accepted base-ref default. Machine values are catalogue
-keys, never the display label `Local` or routing key `local`. A base-ref override
-is written exactly: another remote's branch, a local branch, or a PR-train ref
-does not receive an automatic `origin/` prefix.
+above. Machine values are catalogue keys, never the display label `Local` or
+routing key `local`. Capture neither prompts for nor writes `base-ref`;
+Herdsman gathers it at launch, defaulting to `origin/${defaultBranch}`.
 
 Capture reads `$XDG_CONFIG_HOME/herdsman/catalogue.json` (falling back to
 `~/.config/herdsman/catalogue.json`). Missing/invalid catalogue data or unusable
 required choices stop capture with an actionable error; cancellation creates no
 note. Listing and existing notes do not require the catalogue.
 
-These fields remain optional defaults to Herdsman, not launch authorization.
-Herdsman owns final repository/destination/model/thinking/ref selection and
+These fields remain optional hints to Herdsman, not launch authorization.
+Herdsman skips a usable repository hint and an eligible local machine hint;
+remote destinations, model, thinking, and base ref still require confirmation.
+Missing/unavailable hints require selection or deliberate replacement, and
+back-navigation can revisit skipped choices. Herdsman owns final selection and
 local/remote resolution. Emacs neither checks live Git refs nor probes hosts or
 changes running Pi settings. Existing or manually authored notes may omit hints;
-removing `base-ref` lets Herdsman use `origin/${defaultBranch}` at launch. Capture
-does not migrate or automatically change existing notes.
+legacy `base-ref` metadata is ignored. Capture does not migrate or automatically
+change existing notes.
 
 ## Managing Files
 

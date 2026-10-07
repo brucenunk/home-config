@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	listkey "github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -20,10 +21,42 @@ func (m *Model) seedHints() {
 	m.machineName, m.baseExplicit, m.thinkingExplicit = "", false, false
 	m.base.SetValue("")
 	if task := m.Request.Task; task != nil {
-		m.Request.Repo, m.Request.Model, m.Request.Thinking, m.Request.BaseRef = task.Repo, task.Model, task.Thinking, task.BaseRef
-		m.machineName, m.baseExplicit, m.thinkingExplicit = task.Machine, task.BaseRef != "", task.Thinking != ""
-		m.base.SetValue(task.BaseRef)
+		m.Request.Repo, m.Request.Model, m.Request.Thinking = task.Repo, task.Model, task.Thinking
+		m.machineName, m.thinkingExplicit = task.Machine, task.Thinking != ""
 	}
+}
+
+// Skip stable, usable task hints only on the forward route. Back-navigation
+// opens the actual pickers so the user can reconsider those choices.
+func (m *Model) beginTaskChoices() tea.Cmd {
+	m.seedHints()
+	if indexName(m.config.ContextNames(false), m.Request.Repo) >= 0 &&
+		len(m.config.Destinations(m.Request.Repo, m.profiles)) > 0 {
+		return m.beginMachines()
+	}
+	m.repositories()
+	return nil
+}
+
+func (m *Model) beginMachines() tea.Cmd {
+	m.machines()
+	if m.Request.Task != nil && m.machineName != "" && m.choiceSelected {
+		selected := m.list.SelectedItem().(machineItem).machine
+		if selected.IsLocal() {
+			m.Request.Machine = selected
+			return m.afterMachine()
+		}
+	}
+	return nil
+}
+
+func (m *Model) afterMachine() tea.Cmd {
+	if strings.Contains(m.Request.Repo, "/") {
+		return m.beginBase()
+	}
+	m.Request.BaseRef = ""
+	m.models()
+	return nil
 }
 
 // An incompatible explicit value leaves the list unselected. Only navigation

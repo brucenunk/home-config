@@ -166,7 +166,7 @@ owner. No additional owner configuration is required.
 
 Source paths come directly from the selected machine's repository definition.
 The initial worktree base ref is `origin/${defaultBranch}` for the selected
-machine/repository. The base-ref form supports per-launch/task overrides;
+machine/repository. The base-ref form supports per-launch overrides;
 they are not static repository policy. Herdsman never changes the branch or
 files checked out at the source. New task worktrees still use `$HOME/work/{owner}/{repo}/{stamp}`,
 and owner sessions still use `$HOME/work/{owner}`.
@@ -220,11 +220,12 @@ they contain no live reachability information. There are no Git paths, provider 
 names, or schema version. These are configured choices, not readiness checks;
 task metadata provides defaults and Herdsman owns final selection.
 
-Emacs `my/task-add` prompts for a repository and writes all five launch hints,
-using catalogue defaults for ordinary capture. Prefix capture exposes choices
-in the same order as Herdsman: repository, machine, base ref, model, thinking.
-It skips a single eligible machine; thinking always uses the selected model's
-supported levels. Missing/invalid catalogue data blocks capture, not listing.
+Emacs `my/task-add` prompts for a repository and writes four launch hints:
+repository, machine, model, and thinking. Both capture forms prompt for machine
+when multiple destinations qualify, skipping a single eligible machine.
+Ordinary capture uses catalogue model/thinking defaults; prefix capture exposes
+those choices. Base ref is gathered only at launch. Thinking always uses the
+selected model's supported levels. Missing/invalid catalogue data blocks capture, not listing.
 See `work/TASKS.md` for capture details. Existing notes are not migrated.
 
 The catalogue's effective model is the configured machine default, otherwise
@@ -347,8 +348,11 @@ these styles. Ordinary filenames and terminal-native fallback are unchanged.
 ### Optional task hints and precedence
 
 The start sequence is task/description → context → destination → base ref
-(repositories only) → model → thinking. Every screen requires confirmation;
-hints do not skip screens, trigger automatic launches, or edit task notes.
+(repositories only) → model → thinking. A usable task repository hint skips
+context confirmation; an eligible local machine hint skips destination
+confirmation. Remote destinations, base ref, model, and thinking still require
+confirmation. Missing or unavailable hints do not skip their screens. Launches
+without task files retain the full sequence. Herdsman never edits task notes.
 
 Start session uses a step trail as its top row, in place of a separate launcher
 heading. The current step is bracketed and accented, earlier steps use normal
@@ -363,30 +367,32 @@ current label, truncated to fit. The trail is informational: it adds no
 navigation keys or confirmation screens and does not indicate daemon execution
 progress. End session retains its existing single-screen picker without a trail.
 
-All five front-matter hints are optional:
+All four front-matter hints are optional:
 
 ```yaml
 repo: example/project
 machine: machine-a
 model: example-provider/vendor/model
 thinking: high
-base-ref: upstream/train/next
 ```
 
 Explicit final selections win over hints; hints win over initial launcher
 defaults. Unknown or incompatible hints are shown at the affected screen, with
-no selected replacement. Navigate to deliberately replace a list hint, or edit
-the base-ref form; Enter alone does not silently accept a fallback. Hints with
+no selected replacement. Navigate to deliberately replace a list hint;
+Enter alone does not silently accept a fallback. Hints with
 unsafe control characters or oversized/non-UTF-8 values are rejected when read.
 Old notes with no hints still work.
 
-- `repo` preselects a configured repository. Without it, select a context by
-  navigation. Owner contexts remain available for launches without a task file.
-- `machine` preselects an eligible destination supporting that context. Without
+- `repo` skips confirmation for a configured repository with an eligible
+  destination. Without it, select a context by navigation. Owner contexts remain
+  available for launches without a task file.
+- `machine` skips confirmation for an eligible local destination supporting that
+  context; an eligible remote hint is preselected but must be confirmed. Without
   it, prefer Local when eligible, otherwise retain the existing first-destination
   default. Catalogue membership does not imply reachability or authentication.
-- `base-ref` initializes the form **verbatim**, without prepending `origin/`.
-  Without it, use `origin/${defaultBranch}`. Editing makes the field an explicit
+- Base ref is gathered only in Herdsman, initially `origin/${defaultBranch}`.
+  Legacy task-file `base-ref` metadata is ignored without rewriting the note.
+  Editing makes the field an explicit
   override; **Ctrl+R** resets it to the selected repository's default. Automatic
   defaults recompute on repository/destination changes; explicit overrides remain
   unchanged for correction or confirmation on the new destination.
@@ -406,7 +412,8 @@ Old notes with no hints still work.
   changing model. There are no “Pi default” model/thinking entries: final choices
   are passed explicitly.
 
-Back-navigation preserves compatible choices. Repository/destination/model
+Back-navigation can revisit skipped repository and machine pickers, and
+preserves compatible choices. Repository/destination/model
 changes revalidate dependent selections; incompatible explicit values remain
 visible until corrected. Task hints are not re-applied over final selections.
 The daemon validates final model, thinking, context and base-ref choices again,

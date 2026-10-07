@@ -268,7 +268,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = result.err.Error()
 		} else {
 			m.Request.Task = result.task
-			m.repositories()
+			return m, m.beginTaskChoices()
 		}
 		return m, nil
 	}
@@ -450,15 +450,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.message = "No enabled Herdr machines configured for this context."
 					return m, nil
 				}
-				m.machines()
+				return m, m.beginMachines()
 			} else if m.stage == pickMachine {
 				m.Request.Machine = selected.(machineItem).machine
 				m.machineName = m.config.MachineName(m.Request.Machine)
-				if strings.Contains(m.Request.Repo, "/") {
-					return m, m.beginBase()
-				}
-				m.Request.BaseRef = ""
-				m.models()
+				return m, m.afterMachine()
 			} else if m.stage == pickModel {
 				m.Request.Model = selected.(item).Title()
 				m.thinking()

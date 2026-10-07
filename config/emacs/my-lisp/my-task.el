@@ -12,7 +12,7 @@
 ;;   - my/task-add — create a task note with optional skill metadata
 ;;   - my/task-directory — return the shared task root
 ;;   - my/task-file-p — test whether the current buffer visits a task note
-;; Capture writes repository, machine, base-ref, model and thinking hints from
+;; Capture writes repository, machine, model and thinking hints from
 ;; the Nix-generated Herdsman catalogue.  Herdsman owns final launch selection.
 ;; `my/tasks-map' provides capture/list bindings.  `my/task-workflows' supplies
 ;; capture choices; `my/task-note-created-hook' refreshes lists after saving.
@@ -151,12 +151,10 @@ skill metadata, and other choices write their name as the skill.")
                                  collect (symbol-name name)) #'string<))
          (local (alist-get 'localMachine catalogue))
          (destination (if (member local eligible) local (car eligible)))
-         (machine-name (if (and extended-p (cdr eligible))
+         (machine-name (if (cdr eligible)
                            (my/task--choice-read "Machine: " eligible destination)
                          destination))
          (machine (alist-get (intern machine-name) machines))
-         (base-default (alist-get (intern repo) (alist-get 'defaultBaseRefs machine)))
-         (base (if extended-p (read-string "Base ref: " base-default) base-default))
          (models (alist-get 'models machine))
          (model-default (alist-get 'defaultModel machine))
          (model-name (if extended-p
@@ -173,9 +171,9 @@ skill metadata, and other choices write their name as the skill.")
                        (my/task--choice-read "Thinking: " levels
                                              (unless (equal thinking-default "") thinking-default))
                      thinking-default)))
-    (unless (and (my/task--hint-p base) model (member thinking levels))
-      (user-error "Cannot capture task: destination needs a base ref, model and supported thinking level"))
-    `((repo . ,repo) (machine . ,machine-name) (base-ref . ,base)
+    (unless (and model (member thinking levels))
+      (user-error "Cannot capture task: destination needs a model and supported thinking level"))
+    `((repo . ,repo) (machine . ,machine-name)
       (model . ,model-name) (thinking . ,thinking))))
 
 (defun my/task--metadata-insert (metadata)
@@ -228,8 +226,8 @@ skill metadata, and other choices write their name as the skill.")
   "Create a task note with TITLE and WORKFLOW.
 Interactively, prompt for the title and optional epic subdirectory.  A prefix
 argument enables skill and launch-hint choices; otherwise use task-workflow-v3
-and catalogue defaults.  Repository is always prompted.  Every captured hint
-is written, including the exact base ref.  Herdsman owns final launch selection.
+and catalogue defaults.  Repository is always prompted, as is machine when
+multiple destinations qualify.  Herdsman alone gathers the base ref at launch.
 The `todo' filename signature is retained only to match the existing default
 list filter.  No status lifecycle is managed."
   (interactive (list nil nil current-prefix-arg))

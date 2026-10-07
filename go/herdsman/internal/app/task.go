@@ -18,7 +18,6 @@ type Task struct {
 	Machine  string `yaml:"machine"`
 	Model    string `yaml:"model"`
 	Thinking string `yaml:"thinking"`
-	BaseRef  string `yaml:"base-ref"`
 	Title    string `yaml:"title"`
 	Skill    string `yaml:"skill"`
 	Body     string `yaml:"-"`
@@ -94,7 +93,7 @@ const maxAgentArgumentBytes = 120 * 1024
 const maxTaskFileBytes = 256 * 1024
 
 func (t *Task) ValidateTransport() error {
-	for _, hint := range []string{t.Repo, t.Machine, t.Model, t.Thinking, t.BaseRef} {
+	for _, hint := range []string{t.Repo, t.Machine, t.Model, t.Thinking} {
 		if !safeHint(hint) {
 			return fmt.Errorf("task hints must be bounded, single-line UTF-8 without control characters")
 		}

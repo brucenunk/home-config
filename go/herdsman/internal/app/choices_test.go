@@ -17,7 +17,7 @@ func TestOptionalTaskHints(t *testing.T) {
 		if err != nil || task.Prompt() != "Body\n" {
 			t.Fatal(task, err)
 		}
-		if strings.Contains(header, "base-ref") && (task.BaseRef != "upstream/train/one" || task.Model != "example/vendor/model" || task.Machine != "machine-a" || task.Thinking != "high" || task.Repo != "owner/repo") {
+		if strings.Contains(header, "base-ref") && (task.Model != "example/vendor/model" || task.Machine != "machine-a" || task.Thinking != "high" || task.Repo != "owner/repo") {
 			t.Fatal(task)
 		}
 	}
@@ -26,9 +26,18 @@ func TestOptionalTaskHints(t *testing.T) {
 	if err != nil || task.Model != "missing" {
 		t.Fatal(task, err)
 	}
-	for _, field := range []string{"repo", "machine", "model", "thinking", "base-ref"} {
+	for _, field := range []string{"repo", "machine", "model", "thinking"} {
 		if _, err := ParseTask([]byte("---\ntitle: Task\n" + field + ": \"bad\\u001bvalue\"\n---\n")); err == nil {
 			t.Fatal("accepted control in", field)
+		}
+	}
+}
+
+func TestLegacyTaskBaseRefIsIgnored(t *testing.T) {
+	for _, value := range []string{"upstream/train/next", "origin/main~1", "\"bad\\u001bvalue\"", "[not, a, scalar]"} {
+		task, err := ParseTask([]byte("---\ntitle: Task\nbase-ref: " + value + "\n---\nBody\n"))
+		if err != nil || task.Prompt() != "Body\n" {
+			t.Fatal(task, err)
 		}
 	}
 }
@@ -56,7 +65,7 @@ func TestFinalChoicesValidationBeforeCommands(t *testing.T) {
 		}
 	}
 	// Task hints are never launch instructions after the user has replaced them.
-	good.Task = &Task{Title: "Task", Repo: "unknown/repo", Machine: "missing", Model: "wrong/model", Thinking: "max", BaseRef: "wrong/ref"}
+	good.Task = &Task{Title: "Task", Repo: "unknown/repo", Machine: "missing", Model: "wrong/model", Thinking: "max"}
 	for base, qualified := range map[string]string{"origin/main": "refs/remotes/origin/main", "upstream/train/next": "refs/remotes/upstream/train/next", "main": "refs/heads/main"} {
 		good.BaseRef = base
 		f := &fakeLauncher{}

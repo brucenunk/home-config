@@ -24,19 +24,20 @@ func taskChoices(t *testing.T, task *app.Task) Model {
 	return m
 }
 
-func TestAllHintsAreConfirmableDefaultsAndForwarded(t *testing.T) {
-	task := &app.Task{Title: "Task", Repo: "owner/one", Machine: "remote", Model: "other/vendor/model", Thinking: "off", BaseRef: "upstream/train/next"}
+func TestRemoteHintsSkipRepositoryButConfirmLaunchChoices(t *testing.T) {
+	task := &app.Task{Title: "Task", Repo: "owner/one", Machine: "remote", Model: "other/vendor/model", Thinking: "off"}
 	m := taskChoices(t, task)
-	for _, want := range []stage{pickRepo, pickMachine, editBase, pickModel, pickThinking} {
+	m.beginTaskChoices()
+	for _, want := range []stage{pickMachine, editBase, pickModel, pickThinking} {
 		if m.stage != want || m.Ready {
 			t.Fatal("skipped screen", m.stage, want)
 		}
-		if want == editBase && (m.base.Value() != task.BaseRef || !m.baseExplicit) {
+		if want == editBase && (m.base.Value() != "origin/master" || m.baseExplicit) {
 			t.Fatal(m.base.Value())
 		}
 		m, _ = key(m, "enter")
 	}
-	if !m.Ready || m.Request.Machine.ID != "r" || m.Request.Model != task.Model || m.Request.Thinking != task.Thinking || m.Request.BaseRef != task.BaseRef {
+	if !m.Ready || m.Request.Machine.ID != "r" || m.Request.Model != task.Model || m.Request.Thinking != task.Thinking || m.Request.BaseRef != "origin/master" {
 		t.Fatal(m.Request)
 	}
 	if *task != *m.Request.Task {
@@ -44,11 +45,98 @@ func TestAllHintsAreConfirmableDefaultsAndForwarded(t *testing.T) {
 	}
 }
 
+func TestLocalHintsSkipRepositoryAndMachineWithBackNavigation(t *testing.T) {
+	task, err := app.ParseTask([]byte("---\ntitle: Task\nrepo: owner/one\nmachine: machine-a\nmodel: example/vendor/model\nthinking: high\nbase-ref: upstream/old-train\n---\nBody"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := taskChoices(t, task)
+	m.beginTaskChoices()
+	if m.stage != editBase || !m.Request.Machine.IsLocal() || m.base.Value() != "origin/main" || m.baseExplicit || m.Ready {
+		t.Fatal(m.stage, m.Request)
+	}
+	m, _ = key(m, "esc")
+	if m.stage != pickMachine {
+		t.Fatal("cannot revisit skipped machine", m.stage)
+	}
+	m, _ = key(m, "esc")
+	if m.stage != pickRepo {
+		t.Fatal("cannot revisit skipped repository", m.stage)
+	}
+	m, _ = key(m, "down")
+	m, _ = key(m, "enter")
+	if m.stage != editBase || m.Request.Repo != "owner/two" {
+		t.Fatal("task hint overwrote user repository", m.stage, m.Request)
+	}
+	for _, want := range []stage{editBase, pickModel, pickThinking} {
+		if m.stage != want || m.Ready {
+			t.Fatal(m.stage, want)
+		}
+		m, _ = key(m, "enter")
+	}
+	if !m.Ready || m.Request.Thinking != "high" || task.Repo != "owner/one" {
+		t.Fatal(m.Request)
+	}
+}
+
+func TestMissingAndUnavailableStableHintsStillPrompt(t *testing.T) {
+	for _, tc := range []struct {
+		repo, machine string
+		want          stage
+	}{
+		{"", "machine-a", pickRepo},
+		{"missing/repo", "machine-a", pickRepo},
+		{"owner/one", "", pickMachine},
+		{"owner/one", "missing", pickMachine},
+		{"owner/two", "remote", pickMachine},
+	} {
+		m := taskChoices(t, &app.Task{Title: "Task", Repo: tc.repo, Machine: tc.machine})
+		m.beginTaskChoices()
+		if m.stage != tc.want || m.Ready {
+			t.Fatal(tc, m.stage)
+		}
+		if tc.machine == "missing" || tc.machine == "remote" || tc.repo == "missing/repo" {
+			m, _ = key(m, "enter")
+			if m.stage != tc.want || m.Ready {
+				t.Fatal("silently replaced invalid hint", tc, m.stage)
+			}
+		}
+	}
+}
+
+func TestTaskReadAdvancesToBaseForLocalHints(t *testing.T) {
+	m := newModel(t, config(t), nil)
+	m.stage, m.taskLoading, m.readID = pickTask, true, 7
+	task := &app.Task{Title: "Task", Repo: "owner/one", Machine: "machine-a"}
+	next, cmd := m.Update(taskReadMsg{id: 7, task: task})
+	m = next.(Model)
+	if m.stage != editBase || m.taskLoading || cmd == nil || m.Ready || m.base.Value() != "origin/main" {
+		t.Fatal(m.stage, m.Request)
+	}
+}
+
+func TestRepositoryWithoutEligibleDestinationsDoesNotSkip(t *testing.T) {
+	m := taskChoices(t, &app.Task{Title: "Task", Repo: "owner/one", Machine: "machine-a"})
+	delete(m.config.Machines, "local")
+	m.profiles = nil
+	m.beginTaskChoices()
+	if m.stage != pickRepo || m.Ready {
+		t.Fatal(m.stage)
+	}
+	m, _ = key(m, "enter")
+	if m.stage != pickRepo || !strings.Contains(m.message, "No enabled Herdr machines") {
+		t.Fatal(m.stage, m.message)
+	}
+}
+
 func TestInvalidHintsRequireDeliberateCorrection(t *testing.T) {
-	m := taskChoices(t, &app.Task{Title: "Task", Repo: "missing/repo", Machine: "missing", Model: "missing/model", Thinking: "max", BaseRef: "origin/main~1"})
+	m := taskChoices(t, &app.Task{Title: "Task", Repo: "missing/repo", Machine: "missing", Model: "missing/model", Thinking: "max"})
 	for _, want := range []stage{pickRepo, pickMachine, editBase, pickModel, pickThinking} {
 		if m.stage != want {
 			t.Fatal(m.stage, want)
+		}
+		if want == editBase {
+			m.base.SetValue("origin/main~1")
 		}
 		m, _ = key(m, "enter")
 		if m.stage != want || m.Ready {
@@ -152,23 +240,20 @@ func TestBackNavigationRevalidatesDestinationModelAndExplicitThinking(t *testing
 }
 
 func TestBaseOverridesSurviveBackAndResetRecomputes(t *testing.T) {
-	for _, hint := range []string{"", "main", "upstream/train/next"} {
-		m := taskChoices(t, &app.Task{Title: "Task", Repo: "owner/one", BaseRef: hint})
+	for _, override := range []string{"mybranch", "main", "upstream/train/next"} {
+		m := taskChoices(t, &app.Task{Title: "Task", Repo: "owner/one"})
 		m, _ = key(m, "enter")
 		m, _ = key(m, "enter")
-		if hint == "" {
-			// Edit the form using its normal input path, not a launch instruction.
-			m.base.SetValue("")
-			m, _ = key(m, "mybranch")
-			hint = "mybranch"
-		}
-		if !m.baseExplicit || m.base.Value() != hint {
+		// Edit the form using its normal input path, not task metadata.
+		m.base.SetValue("")
+		m, _ = key(m, override)
+		if !m.baseExplicit || m.base.Value() != override {
 			t.Fatal(m.base.Value())
 		}
 		m, _ = key(m, "esc")
 		m, _ = key(m, "down")
 		m, _ = key(m, "enter")
-		if m.base.Value() != hint {
+		if m.base.Value() != override {
 			t.Fatal("explicit base changed with destination", m.base.Value())
 		}
 		m, _ = key(m, "ctrl+r")
@@ -187,7 +272,7 @@ func TestBaseOverridesSurviveBackAndResetRecomputes(t *testing.T) {
 func TestDestinationOnlyIncludesSelectedContextAndNamedLocalHint(t *testing.T) {
 	m := taskChoices(t, &app.Task{Title: "Task", Repo: "owner/two", Machine: "machine-a"})
 	m, _ = key(m, "enter")
-	if m.stage != pickMachine || len(m.list.Items()) != 1 || !m.choiceSelected || !m.list.SelectedItem().(machineItem).machine.IsLocal() {
+	if m.stage != editBase || !m.Request.Machine.IsLocal() {
 		t.Fatal(m.View())
 	}
 	// A destination configured for another repo is not silently substituted.

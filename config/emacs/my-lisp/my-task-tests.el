@@ -53,11 +53,13 @@
        (should (search-forward "## Context" nil t))
        (goto-char (point-min))
        (dolist (line '("repo: \"example/project\"" "machine: \"machine-a\""
-                       "base-ref: \"origin/main\"" "model: \"provider/vendor/model\""
+                       "model: \"provider/vendor/model\""
                        "thinking: \"medium\""))
          (goto-char (point-min))
          (should (search-forward line nil t)))
-       (should-not (search-forward "## Dependencies" nil t))))))
+       (should-not (search-forward "## Dependencies" nil t))
+       (goto-char (point-min))
+       (should-not (re-search-forward "^base-ref:" nil t))))))
 
 (ert-deftest my/task-add-named-skill-uses-an-empty-template ()
   (my/task-test--with-directory
@@ -116,7 +118,28 @@
        (goto-char (point-min))
        (should (search-forward "skill:      bump-nix" nil t)))
      (should (equal (nreverse prompts)
-                    '("Title: " "Workflow: " "Repository: " "Base ref: " "Model: " "Thinking: "))))))
+                    '("Title: " "Workflow: " "Repository: " "Model: " "Thinking: "))))))
+
+(ert-deftest my/task-add-both-interactive-forms-prompt-for-multiple-machines ()
+  (my/task-test--with-directory
+   (with-temp-file my/task-catalogue-file (insert my/task-test--two-machines))
+   (dolist (prefix '(nil (4)))
+     (let (prompts)
+       (cl-letf (((symbol-function 'called-interactively-p) (lambda (&rest _) t))
+                 ((symbol-function 'denote-subdirectory-prompt) (lambda () nil))
+                 ((symbol-function 'read-string)
+                  (lambda (prompt &rest _)
+                    (should (equal prompt "Title: ")) "Multiple destinations"))
+                 ((symbol-function 'completing-read)
+                  (lambda (prompt choices &optional _p _r _i _h default &rest _)
+                    (push prompt prompts)
+                    (or default (car choices)))))
+         (let ((current-prefix-arg prefix))
+           (call-interactively #'my/task-add)))
+       (should (equal (nreverse prompts)
+                      (if prefix
+                          '("Workflow: " "Repository: " "Machine: " "Model: " "Thinking: ")
+                        '("Repository: " "Machine: "))))))))
 
 (ert-deftest my/task-file-p-recognizes-existing-notes-without-mutating-them ()
   (my/task-test--with-directory
@@ -148,7 +171,7 @@
                     "provider/vendor/model"))
      (should (equal (my/task--metadata-read nil)
                     '((repo . "example/project") (machine . "machine-a")
-                      (base-ref . "origin/main") (model . "provider/vendor/model")
+                      (model . "provider/vendor/model")
                       (thinking . "medium")))))))
 
 (ert-deftest my/task-catalogue-empty-xdg-uses-home-fallback ()
@@ -179,11 +202,25 @@
     (should (string-match-p "machine: \"máquina-🦊\"" (buffer-string)))
     (should (string-match-p "base-ref: \"upstream/déploiement\"" (buffer-string)))))
 
-(ert-deftest my/task-capture-two-machines-defaults-local-and-filters-by-repo ()
+(ert-deftest my/task-capture-two-machines-prompts-and-filters-by-repo ()
   (my/task-test--with-directory
    (with-temp-file my/task-catalogue-file (insert my/task-test--two-machines))
-   (let ((metadata (my/task--metadata-read nil)))
-     (should (equal (alist-get 'machine metadata) "machine-a")))
+   (let (prompts)
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (prompt choices &optional _p _r _i _h default &rest _)
+                  (push prompt prompts)
+                  (pcase prompt
+                    ("Repository: " "example/project")
+                    ("Machine: "
+                     (should (equal default "machine-a"))
+                     (should (equal choices '("machine-a" "machine-b")))
+                     "machine-b")
+                    ("Thinking: " "high")
+                    (_ (ert-fail "Unexpected prompt"))))))
+       (should (equal (my/task--metadata-read nil)
+                      '((repo . "example/project") (machine . "machine-b")
+                        (model . "other/reasoner") (thinking . "high")))))
+     (should (equal (nreverse prompts) '("Repository: " "Machine: " "Thinking: "))))
    (let (prompts)
      (cl-letf (((symbol-function 'completing-read)
                 (lambda (prompt choices &rest _)
@@ -197,19 +234,16 @@
                     (_ (ert-fail "Streamlined capture must use defaults"))))))
        (should (equal (my/task--metadata-read nil)
                       '((repo . "remote/only") (machine . "machine-b")
-                        (base-ref . "origin/release/stable") (model . "other/reasoner")
+                        (model . "other/reasoner")
                         (thinking . "high")))))
      (should (equal (nreverse prompts) '("Repository: " "Thinking: "))))))
 
-(ert-deftest my/task-capture-extended-filters-model-and-thinking-and-keeps-exact-ref ()
+(ert-deftest my/task-capture-extended-filters-model-and-thinking ()
   (my/task-test--with-directory
    (with-temp-file my/task-catalogue-file (insert my/task-test--two-machines))
    (let (prompts)
      (cl-letf (((symbol-function 'read-string)
-                (lambda (prompt initial &rest _)
-                  (push prompt prompts)
-                  (should (equal initial "origin/master"))
-                  "upstream/train/next"))
+                (lambda (&rest _) (ert-fail "Capture must not ask for a base ref")))
                ((symbol-function 'completing-read)
                 (lambda (prompt choices &optional _p _r _i _h default &rest _)
                   (push prompt prompts)
@@ -226,17 +260,17 @@
                      (should (equal choices '("off"))) "off")))))
        (should (equal (my/task--metadata-read t)
                       '((repo . "example/project") (machine . "machine-b")
-                        (base-ref . "upstream/train/next") (model . "other/off")
+                        (model . "other/off")
                         (thinking . "off")))))
      (should (equal (nreverse prompts)
-                    '("Repository: " "Machine: " "Base ref: " "Model: " "Thinking: "))))))
+                    '("Repository: " "Machine: " "Model: " "Thinking: "))))))
 
-(ert-deftest my/task-capture-base-ref-is-free-text-with-no-git-dependency ()
+(ert-deftest my/task-capture-does-not-gather-base-ref-or-call-git ()
   (my/task-test--with-directory
-   (dolist (ref '("origin/main" "upstream/branch" "local-branch" "pr/train/next"))
-     (cl-letf (((symbol-function 'read-string) (lambda (&rest _) ref))
+   (dolist (extended '(nil t))
+     (cl-letf (((symbol-function 'read-string) (lambda (&rest _) (ert-fail "No base-ref prompt")))
                ((symbol-function 'process-file) (lambda (&rest _) (ert-fail "No Git calls"))))
-       (should (equal (alist-get 'base-ref (my/task--metadata-read t)) ref))))))
+       (should-not (assq 'base-ref (my/task--metadata-read extended)))))))
 
 (ert-deftest my/task-catalogue-invalid-or-missing-stops-before-note-creation ()
   (my/task-test--with-directory
@@ -262,10 +296,8 @@
        (insert (string-replace (car change) (cdr change) my/task-test--catalogue)))
      (should-error (my/task--catalogue-read) :type 'user-error))))
 
-(ert-deftest my/task-capture-rejects-empty-base-and-cancellation-without-files ()
+(ert-deftest my/task-capture-cancellation-creates-no-files ()
   (my/task-test--with-directory
-   (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "")))
-     (should-error (my/task-add "Empty base" "task" t) :type 'user-error))
    (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) (signal 'quit nil))))
      (should (eq (condition-case nil (my/task-add "Cancelled") (quit 'cancelled)) 'cancelled)))
    (should-not (directory-files root nil "\\.md\\'"))))
