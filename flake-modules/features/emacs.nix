@@ -45,6 +45,7 @@ let
           rego-mode
           spacious-padding
           terraform-mode
+          (import ../../pkgs/tramp-rpc.nix { inherit inputs pkgs epkgs; })
           vertico
           wgrep
           ws-butler
@@ -106,7 +107,32 @@ in
     { lib, pkgs, ... }:
 
     {
-      checks = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+      checks = {
+        emacs-tramp-rpc =
+          let
+            emacsWithRpc = pkgs.emacs.pkgs.emacsWithPackages (epkgs: [
+              (import ../../pkgs/tramp-rpc.nix { inherit inputs pkgs epkgs; })
+              epkgs.use-package
+              epkgs.magit
+              epkgs.envrc
+            ]);
+          in
+          pkgs.runCommand "emacs-tramp-rpc-check"
+            {
+              nativeBuildInputs = [
+                emacsWithRpc
+                pkgs.git
+              ];
+            }
+            ''
+              export HOME="$TMPDIR"
+              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+                --load my-emacs-remote-tests \
+                --funcall ert-run-tests-batch-and-exit
+              touch "$out"
+            '';
+      }
+      // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
         let
           mkHome =
             package:

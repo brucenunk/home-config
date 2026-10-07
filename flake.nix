@@ -6,6 +6,8 @@
     import-tree.url = "git+https://github.com/vic/import-tree.git";
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
+    emacs-tramp-rpc.url = "github:ArthurHeymans/emacs-tramp-rpc/v0.15.0";
+    emacs-tramp-rpc.inputs.nixpkgs.follows = "nixpkgs";
     llm-agents.url = "github:numtide/llm-agents.nix";
     # Keep llm-agents on a separate nixpkgs input so it can move independently.
     llm-agents.inputs.nixpkgs.follows = "llm-agents-nixpkgs";

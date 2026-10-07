@@ -11,7 +11,7 @@
 ;;
 ;; - my-emacs-modules/  Package configuration (use-package, keybindings)
 ;;                      my-emacs-ui.el, my-emacs-completion.el, my-emacs-editing.el,
-;;                      my-emacs-denote.el
+;;                      my-emacs-denote.el, my-emacs-remote.el
 ;;
 ;; Package Management:
 ;; - Nix provides Emacs, external packages, and tree-sitter grammars (see
@@ -43,6 +43,7 @@
 (require 'my-emacs-ui)
 (require 'my-emacs-completion)
 (require 'my-emacs-editing)
+(require 'my-emacs-remote)
 
 ;; ============================================================================
 ;; Startup Hooks
@@ -160,33 +161,6 @@
 ;; Remote Access & Shell
 ;; ============================================================================
 
-(defvar my/tramp-connection-properties nil
-  "Additional TRAMP connection properties configured by host adapters.")
-
-(defvar my/tramp-remote-paths nil
-  "Additional remote executable paths configured by host adapters.")
-
-(use-package tramp
-  :defer t
-  :ensure nil
-  :custom
-  (tramp-default-method "sshx")
-  (tramp-ssh-controlmaster-options (concat
-  "-o ControlPath=/tmp/ssh-ControlPath-%%r@%%h:%%p "
-  "-o ControlMaster=auto -o ControlPersist=yes") "Use ssh connection sharing")
-  :config
-  (dolist (property my/tramp-connection-properties)
-    (add-to-list 'tramp-connection-properties property))
-  (add-to-list 'backup-directory-alist
-               (cons tramp-file-name-regexp nil))
-  (dolist (path my/tramp-remote-paths)
-    (add-to-list 'tramp-remote-path path))
-  (add-to-list 'tramp-remote-path 'tramp-own-remote-path)
-  (setq remote-file-name-inhibit-locks t)
-  (setq remote-file-name-inhibit-cache nil)
-  (setq remote-file-name-inhibit-delete-by-moving-to-trash t)
-  (setq tramp-verbose 2))
-
 (use-package dired
   :ensure nil
   :hook ((dired-mode . dired-hide-details-mode)
@@ -216,20 +190,6 @@
 ;; ============================================================================
 ;; VCS & Projects
 ;; ============================================================================
-
-(use-package envrc
-  :ensure nil
-  :custom
-  (envrc-remote t)
-  (envrc-supported-tramp-methods '(scp scpx ssh sshx))
-  :config
-  (add-hook 'envrc-mode-on-hook
-            (lambda ()
-              (when (eq envrc--status 'on)
-                (setq-local process-environment
-                            (cons (format "TMPDIR=%s" (temporary-file-directory))
-                                  (cl-remove-if (lambda (s) (string-prefix-p "TMPDIR=" s))
-                                                process-environment)))))))
 
 (use-package magit
   :ensure nil

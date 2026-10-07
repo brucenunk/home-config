@@ -44,6 +44,7 @@ owns it:
 | `doric-waybar-themes-home-manager-module` | Linux, Darwin | The portable Waybar theme module continues to deploy its theme directory recursively. |
 | `git-home-manager-module` | Linux, Darwin | Repository defaults and derived paths enable native Git maintenance on both platforms. |
 | `emacs-home-manager-module` | Linux | The module defaults to `pkgs.emacs`, while ordinary consumer assignments can select `emacs31` or `emacs-nox`; this guards the `mkDefault` priority contract. |
+| `emacs-tramp-rpc` | Linux, Darwin | The actual TRAMP configuration loads RPC and its Magit integration, retains `sshx`, selects bundled Linux release servers without downloading/building, and cannot run Cargo even after download failure. See [the trial guide](emacs-tramp-rpc.md). |
 
 Run all checks for the invoking platform with:
 
