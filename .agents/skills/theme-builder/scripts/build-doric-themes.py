@@ -224,7 +224,8 @@ def herdr_theme_text(theme: dict[str, str]) -> str:
         "surface0": theme["bg_shadow_subtle"],
         "surface1": theme["bg_neutral"],
         "surface_dim": theme["bg_shadow_intense"],
-        "overlay0": theme["border"],
+        # Herdr also uses overlay0 for agent names and other secondary text.
+        "overlay0": theme["fg_neutral"],
         "overlay1": theme["fg_shadow_subtle"],
         "text": theme["fg_main"],
         "subtext0": theme["fg_neutral"],
