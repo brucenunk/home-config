@@ -438,7 +438,7 @@ func (d *Daemon) execute(ctx context.Context, job queued) error {
 			}
 			return fmt.Errorf("finish %q on %q: %d completed, %d unattempted: %w", t.Agent.Name, t.Machine.DisplayName(), i, len(r.Finish)-i-1, err)
 		}
-		d.logger.Info("session ended", "request", job.id, "machine", m.DisplayName(), "agent", t.Agent.Name, "workspace", t.Workspace.ID, "label", t.Workspace.Label, "owner_session", t.OwnerSession())
+		d.logger.Info("session ended", "request", job.id, "machine", m.DisplayName(), "agent", t.Agent.Name, "workspace", t.Workspace.ID, "label", t.Workspace.Label, "ordinary_session", t.OrdinarySession())
 	}
 	return nil
 }

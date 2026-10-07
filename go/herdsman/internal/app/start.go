@@ -48,7 +48,7 @@ func ChooseAgentName(names []string, occupied map[string]bool) (string, error) {
 			return names[i], nil
 		}
 	}
-	return "", fmt.Errorf("all configured agent names are unavailable; end an existing session or inspect leftover owner workspaces first")
+	return "", fmt.Errorf("all configured agent names are unavailable; end an existing session first")
 }
 
 func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Machine, req StartRequest) (r StartResult, err error) {
@@ -93,17 +93,6 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 			occupied[a.Name] = true
 		}
 	}
-	if validOwner(req.Repo) {
-		// A normal quit or failed startup can leave an agentless workspace. Its
-		// label must not collide with the next session's discoverability label.
-		for _, w := range workspaces {
-			for _, name := range c.AgentNames {
-				if owner, ok := ownerFromSessionLabel(w.Label, name); ok && owner == req.Repo {
-					occupied[name] = true
-				}
-			}
-		}
-	}
 	r.AgentName, err = ChooseAgentName(c.AgentNames, occupied)
 	if err != nil {
 		return r, err
@@ -111,10 +100,6 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 	r.Title = strings.TrimSpace(req.Description)
 	if req.Task != nil {
 		r.Title = req.Task.Title
-	}
-	ownerLabel := r.Title + " · " + ownerSessionLabel(req.Repo, r.AgentName)
-	if validOwner(req.Repo) && len(ownerLabel) > maxAgentArgumentBytes {
-		return r, fmt.Errorf("owner workspace label exceeds the supported CLI argument size of %d bytes; shorten the session description", maxAgentArgumentBytes)
 	}
 	var home string
 	if validOwner(req.Repo) {
@@ -137,7 +122,7 @@ func Start(ctx context.Context, c Config, client Launcher, profiles []herdr.Mach
 			return r, err
 		}
 		mutating = true
-		created, e := client.CreateParent(ctx, m, r.Path, ownerLabel)
+		created, e := client.CreateParent(ctx, m, r.Path, r.Title)
 		if e != nil {
 			return r, fmt.Errorf("create owner session workspace: %w", e)
 		}

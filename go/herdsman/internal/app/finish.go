@@ -24,8 +24,14 @@ type FinishTarget struct {
 	Workspace herdr.Workspace
 }
 
-func (t FinishTarget) OwnerSession() bool {
-	return ownerSessionWorkspace(t.Workspace, t.Agent.Name)
+func (t FinishTarget) OrdinarySession() bool {
+	return ordinarySessionWorkspace(t.Workspace)
+}
+
+// Ordinary sessions need no ownership marker: ending one closes runtime state
+// only, never its working directory. Agent/session identity is checked separately.
+func ordinarySessionWorkspace(w herdr.Workspace) bool {
+	return w.Worktree == nil && w.PaneCount == 1 && w.TabCount == 1
 }
 
 // FinishTargets is a read-only snapshot. Checkouts used by multiple agents are
@@ -65,9 +71,8 @@ func FinishTargetsFromSnapshot(m herdr.Machine, snapshot herdr.Snapshot) ([]Fini
 	agents, workspaces := snapshot.Agents, snapshot.Workspaces
 	paths := workspacePaths(workspaces)
 	names, occupants, workspaceOccupants := map[string]int{}, map[string]int{}, map[string]int{}
-	labels, ids := map[string]int{}, map[string]int{}
+	ids := map[string]int{}
 	for _, w := range workspaces {
-		labels[w.Label]++
 		ids[w.ID]++
 	}
 	for _, a := range agents {
@@ -82,8 +87,8 @@ func FinishTargetsFromSnapshot(m herdr.Machine, snapshot herdr.Snapshot) ([]Fini
 		}
 		for _, a := range agents {
 			worktree := w.Worktree != nil && w.Worktree.Linked && w.Worktree.CheckoutPath != "" && occupants[w.Worktree.CheckoutPath] == 1
-			owner := ownerSessionWorkspace(w, a.Name) && workspaceOccupants[w.ID] == 1 && labels[w.Label] == 1 && ids[w.ID] == 1
-			if (worktree || owner) && a.WorkspaceID == w.ID && a.Name != "" && a.PaneID != "" && a.Session != nil && a.Session.Kind != "" && a.Session.Value != "" && names[a.Name] == 1 && a.Kind == "pi" && (a.Status == "idle" || a.Status == "done") {
+			ordinary := ordinarySessionWorkspace(w) && workspaceOccupants[w.ID] == 1 && ids[w.ID] == 1
+			if (worktree || ordinary) && a.WorkspaceID == w.ID && a.Name != "" && a.PaneID != "" && a.Session != nil && a.Session.Kind != "" && a.Session.Value != "" && names[a.Name] == 1 && a.Kind == "pi" && (a.Status == "idle" || a.Status == "done") {
 				targets = append(targets, FinishTarget{m, a, w})
 			}
 		}
@@ -113,10 +118,10 @@ func RevalidateFinish(ctx context.Context, client Finisher, target FinishTarget)
 		return err
 	}
 	for _, current := range targets {
-		if len(agentIdentityChanges(current.Agent, target.Agent)) != 0 || current.Workspace.ID != target.Workspace.ID || current.Workspace.Label != target.Workspace.Label || current.OwnerSession() != target.OwnerSession() {
+		if len(agentIdentityChanges(current.Agent, target.Agent)) != 0 || current.Workspace.ID != target.Workspace.ID || current.Workspace.Label != target.Workspace.Label || current.OrdinarySession() != target.OrdinarySession() {
 			continue
 		}
-		if target.OwnerSession() || (current.Workspace.Worktree != nil && target.Workspace.Worktree != nil && current.Workspace.Worktree.CheckoutPath == target.Workspace.Worktree.CheckoutPath) {
+		if target.OrdinarySession() || (current.Workspace.Worktree != nil && target.Workspace.Worktree != nil && current.Workspace.Worktree.CheckoutPath == target.Workspace.Worktree.CheckoutPath) {
 			return nil
 		}
 	}
@@ -127,7 +132,7 @@ func RevalidateFinish(ctx context.Context, client Finisher, target FinishTarget)
 // mutation. Exit confirmation (wait plus snapshots) has one deadline, separate
 // from removal, so a slow shutdown cannot consume the removal timeout.
 func Finish(ctx context.Context, client Finisher, target FinishTarget) error {
-	if !target.OwnerSession() && (target.Workspace.Worktree == nil || !target.Workspace.Worktree.Linked || target.Workspace.Worktree.CheckoutPath == "") {
+	if !target.OrdinarySession() && (target.Workspace.Worktree == nil || !target.Workspace.Worktree.Linked || target.Workspace.Worktree.CheckoutPath == "") {
 		return fmt.Errorf("ineligible session; no changes made")
 	}
 	if err := client.Prompt(ctx, target.Machine, target.Agent.Name, "/quit"); err != nil {
@@ -139,7 +144,7 @@ func Finish(ctx context.Context, client Finisher, target FinishTarget) error {
 	if err != nil {
 		return fmt.Errorf("after /quit; state is uncertain, no removal attempted; inspect Herdr before retrying: %w", err)
 	}
-	if target.OwnerSession() {
+	if target.OrdinarySession() {
 		if err := client.CloseWorkspace(ctx, target.Machine, target.Workspace.ID); err != nil {
 			return fmt.Errorf("could not confirm workspace closure; state is uncertain, closure was not retried; directory contents retained; inspect Herdr: %w", err)
 		}
@@ -184,7 +189,7 @@ func confirmQuit(ctx context.Context, client Finisher, target FinishTarget) erro
 
 func originalStillPresent(snapshot herdr.Snapshot, target FinishTarget) (bool, error) {
 	workspaces, agents := snapshot.Workspaces, snapshot.Agents
-	owner := target.OwnerSession()
+	ordinary := target.OrdinarySession()
 	valid := false
 	matches := 0
 	for _, w := range workspaces {
@@ -193,8 +198,8 @@ func originalStillPresent(snapshot herdr.Snapshot, target FinishTarget) (bool, e
 			if matches > 1 {
 				return false, fmt.Errorf("ambiguous workspace after /quit")
 			}
-			if owner {
-				valid = w.Label == target.Workspace.Label && ownerSessionWorkspace(w, target.Agent.Name)
+			if ordinary {
+				valid = w.Label == target.Workspace.Label && ordinarySessionWorkspace(w)
 			} else {
 				valid = w.Worktree != nil && w.Worktree.Linked && w.Worktree.CheckoutPath == target.Workspace.Worktree.CheckoutPath
 			}
@@ -206,7 +211,7 @@ func originalStillPresent(snapshot herdr.Snapshot, target FinishTarget) (bool, e
 	paths := workspacePaths(workspaces)
 	present := false
 	for _, a := range agents {
-		sameCheckout := !owner && paths[a.WorkspaceID] == target.Workspace.Worktree.CheckoutPath
+		sameCheckout := !ordinary && paths[a.WorkspaceID] == target.Workspace.Worktree.CheckoutPath
 		if a.WorkspaceID == target.Workspace.ID || sameCheckout || a.Name == target.Agent.Name || a.PaneID == target.Agent.PaneID {
 			if present {
 				return false, fmt.Errorf("additional checkout occupant after /quit")

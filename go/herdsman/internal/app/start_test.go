@@ -83,7 +83,7 @@ func creation(id, pane string) herdr.Created {
 func (f *fakeLauncher) CreateParent(_ context.Context, m herdr.Machine, source, label string) (herdr.Created, error) {
 	f.parentSource = source
 	f.workspaceLabel = label
-	if label != "owner/repo" && !strings.Contains(label, " · herdsman: ") {
+	if label == "" {
 		return herdr.Created{}, errors.New("bad parent arguments")
 	}
 	return creation("parent", "parent:p1"), f.call(m, "parent")

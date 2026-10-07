@@ -506,21 +506,17 @@ are retained for reading files.
 
 Task-based Pi sessions use the task title. Sessions without a task file use the
 entered description as the Pi title; repository workspaces use that same label.
-Owner workspace labels put the description first, followed by the cleanup marker:
-`{description} · herdsman: {agent} · {owner}`. This keeps sessions readable and
-distinct while retaining snapshot-only cleanup discovery. All sessions without
+Owner workspace labels also use only the description. Cleanup discovery uses
+workspace structure and agent/session identity, not a naming marker. All sessions without
 a task file receive no initial prompt. Descriptions must be valid UTF-8, contain
-no control characters, and fit the same 120 KiB CLI argument limit as task titles;
-owner descriptions must also leave room for the marker in the workspace label.
+no control characters, and fit the same 120 KiB CLI argument limit as task titles.
 Agent names are picked randomly from `agent_names`,
 excluding names on Local and **every enabled saved Herdr server**, including
 servers absent from this inventory. An unreachable server stops launch because
 global availability cannot be established. This policy is not a distributed
 lock: simultaneous launchers can race; Herdr enforces names on its own server.
-Owner launches also exclude names whose owner-session marker remains
-in the destination's workspace inventory, even if that workspace has no agent.
-If those leftovers exhaust the pool, inspect and close them manually; Herdsman
-does not automatically remove abandoned workspaces.
+Agentless workspaces do not reserve agent names, regardless of their labels.
+Herdsman does not automatically remove abandoned workspaces.
 
 The picker uses cached machine profiles. When a queued start executes, the daemon
 reloads profiles and verifies the selected machine ID, label, SSH target, remote
@@ -580,25 +576,25 @@ when entering a repository during research.
 Run `herdsman [--config PATH]` from an ordinary terminal or a Herdr
 pane and choose **End session**. Both operations share configuration and themes. The sorted picker
 lists workspace labels (the task title, or description for sessions without task files,
-with owner sessions retaining their cleanup marker)
+with older sessions retaining their existing labels)
 across Local and every enabled saved Herdr machine, including machines absent
 from the configured repository inventory. Duplicate labels gain an agent/machine
 prefix. An unreachable server retains its last successful cached inventory with
 a stale/error warning; other machines remain visible. A machine with no successful
 refresh is reported as loading/unavailable, not as having no sessions.
 
-Only idle/done Pi agents in eligible linked-worktree workspaces or recognizable
-Herdsman owner-session workspaces are offered. Owner workspaces must retain the
-intact `herdsman: {agent} · {owner}` marker after the description, have no Git worktree metadata, contain
-one pane in one tab, and have exactly one agent. Duplicate workspace IDs/labels
-are excluded for owner sessions. Changing the agent name, removing/changing the
-marker, or adding panes/tabs makes the owner session ineligible; close it manually
-instead. Existing sessions with the older marker-only workspace label remain eligible.
-Changing any selected owner's workspace label after selection stops cleanup.
-The label is a discoverability convention, not a security or ownership token;
-do not assign this pattern to unrelated workspaces. The pinned snapshot exposes
-no stable ordinary-workspace root path, so owner classification does not rely
-on current shell directories or additional remote lookups.
+Only idle/done Pi agents in eligible linked-worktree workspaces or eligible
+ordinary workspaces are offered, including ordinary sessions started outside
+Herdsman. Ordinary workspaces must have no Git worktree metadata, contain one
+pane in one tab, and have exactly one agent. The agent name and workspace ID
+must each be unique in that server's snapshot, and the agent must have a valid
+Pi session reference. Duplicate descriptions are allowed; the picker distinguishes
+them by agent and machine. Existing sessions with older Herdsman naming markers
+remain eligible without being renamed. Adding panes, tabs, or agents makes an
+ordinary session ineligible; close it manually instead. Changing a selected
+session's label or agent/session identity after selection stops cleanup.
+Ordinary-session classification does not rely on current shell directories,
+additional remote lookups, or transient display metadata.
 
 The daemon cache supplies agents and workspaces together. Opening the picker
 does not query any remote server. The status check uses this cached inventory. Checkouts reported as shared by multiple agents are excluded; the
@@ -650,16 +646,16 @@ discards uncommitted checkout contents and removes the task workspace. The
 parent repository workspace, Git branch, and saved Pi transcript remain.
 Finish runs no direct SSH commands; saved-machine routing belongs to Herdr.
 
-For owner sessions, the same final snapshot must confirm the workspace still
+For ordinary sessions, the same final snapshot must confirm the workspace still
 has its original label, no worktree metadata, and one pane in one tab, and that
 no agent uses the selected workspace, agent name, or pane. Original/draining
-agent records permit the same bounded read retries. Other owner sessions in
+agent records permit the same bounded read retries. Other ordinary sessions in
 separate workspaces do not block cleanup, even when rooted in the same directory.
 Herdsman then calls `herdr workspace close ID`, never group closure or worktree
 removal. This drops workspace/pane runtime state while retaining all directory
 contents and the saved Pi transcript. Closure is sent at most once, with a
 separate timeout; uncertainty requires manual inspection before retrying.
-The owner end path uses the same pre-quit revalidation, then quit, wait, final
+The ordinary-session end path uses the same pre-quit revalidation, then quit, wait, final
 snapshot, and close.
 
 Herdr submits `/quit` through Pi's editor without clearing it. An existing draft

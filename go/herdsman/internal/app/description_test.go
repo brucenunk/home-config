@@ -29,39 +29,25 @@ func TestDescriptionValidationBeforeLaunch(t *testing.T) {
 
 func TestDescriptionOwnerLabelTransportLimit(t *testing.T) {
 	f := &fakeLauncher{}
-	_, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner", Machine: herdr.Local(), Description: strings.Repeat("x", maxAgentArgumentBytes)})
-	if err == nil || len(f.calls) != 1 || f.calls[0] != "local:snapshot" {
-		t.Fatal("oversized composite label reached mutation", err, f.calls)
+	description := strings.Repeat("x", maxAgentArgumentBytes)
+	r, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner", Machine: herdr.Local(), Description: description})
+	if err != nil || r.Title != description || f.workspaceLabel != description || f.title != description {
+		t.Fatal("valid maximum-length description rejected or changed", r, err)
 	}
 }
 
 func TestDescribedOwnerLabelsAndLegacyCleanup(t *testing.T) {
-	marker := ownerSessionLabel("owner", "possum")
-	for _, label := range []string{marker, "Research · " + marker, "Research · with separators · " + marker, marker + " · " + marker} {
+	marker := "herdsman: possum · owner"
+	for _, label := range []string{"Research", "Research · with separators", marker, "Research · " + marker} {
 		f, target := ownerFinishFixture(herdr.Local())
 		target.Workspace.Label = label
 		f.workspaces[0] = target.Workspace
 		targets, err := FinishTargets(context.Background(), f, nil)
-		if err != nil || len(targets) != 1 || !targets[0].OwnerSession() {
+		if err != nil || len(targets) != 1 || !targets[0].OrdinarySession() {
 			t.Fatal("label not recognized", label, targets, err)
 		}
 		if err := Finish(context.Background(), f, target); err != nil || f.calls[len(f.calls)-1] != "Local:close:task" {
 			t.Fatal(label, err, f.calls)
 		}
-	}
-	for _, label := range []string{"Research", " · " + marker, "Research · " + ownerSessionLabel("owner/repo", "possum"), "Research · " + ownerSessionLabel("owner", "quokka"), "Research · " + marker + " suffix"} {
-		if _, ok := ownerFromSessionLabel(label, "possum"); ok {
-			t.Fatal("recognized invalid marker", label)
-		}
-	}
-}
-
-func TestDescribedOwnerLeftoversReserveNames(t *testing.T) {
-	c := startConfig()
-	c.AgentNames = []string{"possum", "quokka"}
-	f := &fakeLauncher{workspaces: []herdr.Workspace{{ID: "leftover", Label: "Previous research · " + ownerSessionLabel("owner", "possum")}}}
-	r, err := start(context.Background(), c, f, StartRequest{Repo: "owner", Machine: herdr.Local(), Description: "New research"})
-	if err != nil || r.AgentName != "quokka" || r.Title != "New research" {
-		t.Fatal("reused described leftover marker", r, err)
 	}
 }

@@ -48,7 +48,7 @@ func TestStartOwnerLocalAndRemote(t *testing.T) {
 	for _, machine := range []herdr.Machine{herdr.Local(), remote} {
 		f := &fakeLauncher{profiles: []herdr.Machine{remote}}
 		r, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner", Machine: machine})
-		if err != nil || r.Path != "/home/test/work/owner" || r.Branch != "" || r.Parent != "" || r.Title != "Investigate deploy latency" || f.workspaceLabel != r.Title+" · "+ownerSessionLabel("owner", r.AgentName) || f.prompt != "" || f.parentSource != r.Path {
+		if err != nil || r.Path != "/home/test/work/owner" || r.Branch != "" || r.Parent != "" || r.Title != "Investigate deploy latency" || f.workspaceLabel != r.Title || f.prompt != "" || f.parentSource != r.Path {
 			t.Fatal(r, err, f)
 		}
 		want := []string{"local:snapshot", "remote:snapshot", machine.Label + ":home", machine.Label + ":parent", machine.Label + ":start", machine.Label + ":focus"}
@@ -61,7 +61,7 @@ func TestStartOwnerLocalAndRemote(t *testing.T) {
 		f.agents = map[string][]herdr.Agent{machine.Label: {{Name: r.AgentName}}}
 		f.calls = nil
 		second, err := start(context.Background(), startConfig(), f, StartRequest{Repo: "owner", Machine: machine})
-		if err != nil || second.AgentName == r.AgentName || f.workspaceLabel == firstLabel || second.Title != r.Title || second.Path != r.Path || !reflect.DeepEqual(f.calls, want) {
+		if err != nil || second.AgentName == r.AgentName || f.workspaceLabel != firstLabel || second.Title != r.Title || second.Path != r.Path || !reflect.DeepEqual(f.calls, want) {
 			t.Fatal("did not create an independent session", second, err, f.calls)
 		}
 	}
@@ -85,7 +85,7 @@ func TestOwnerTaskAndLaunchFailureBoundaries(t *testing.T) {
 	}
 }
 
-func TestOwnerLaunchReservesAgentlessWorkspaceLabels(t *testing.T) {
+func TestOwnerLaunchIgnoresAgentlessWorkspaceLabels(t *testing.T) {
 	for _, remote := range []bool{false, true} {
 		m := herdr.Local()
 		if remote {
@@ -94,24 +94,24 @@ func TestOwnerLaunchReservesAgentlessWorkspaceLabels(t *testing.T) {
 		c := startConfig()
 		c.AgentNames = []string{"possum", "quokka"}
 		f := &fakeLauncher{profiles: []herdr.Machine{{ID: "remote", Label: "remote", Enabled: true}}, workspacesByMachine: map[string][]herdr.Workspace{
-			m.Label: {{ID: "leftover", Label: ownerSessionLabel("owner", "possum")}},
+			m.Label: {{ID: "leftover", Label: "Previous research · herdsman: possum · owner"}},
 		}}
 		r, err := start(context.Background(), c, f, StartRequest{Repo: "owner", Machine: m})
-		if err != nil || r.AgentName != "quokka" || len(f.calls) != 6 {
-			t.Fatal("reused leftover label or added requests", r, err, f.calls)
+		if err != nil || len(f.calls) != 6 {
+			t.Fatal("leftover label blocked launch or added requests", r, err, f.calls)
 		}
 		c.AgentNames = []string{"possum"}
 		f.calls = nil
-		_, err = start(context.Background(), c, f, StartRequest{Repo: "owner", Machine: m})
-		if err == nil || len(f.calls) != 2 {
-			t.Fatal("exhausted pool mutated state", err, f.calls)
+		r, err = start(context.Background(), c, f, StartRequest{Repo: "owner", Machine: m})
+		if err != nil || r.AgentName != "possum" || len(f.calls) != 6 {
+			t.Fatal("agentless workspace reserved an available name", r, err, f.calls)
 		}
 	}
 }
 
 func ownerFinishFixture(m herdr.Machine) (*fakeFinisher, FinishTarget) {
 	f, target := finishFixture(m)
-	target.Workspace = herdr.Workspace{ID: "task", Label: ownerSessionLabel("owner", target.Agent.Name), PaneCount: 1, TabCount: 1}
+	target.Workspace = herdr.Workspace{ID: "task", Label: "Investigate deploy latency", PaneCount: 1, TabCount: 1}
 	f.workspaces = []herdr.Workspace{target.Workspace}
 	return f, target
 }
@@ -121,7 +121,7 @@ func TestOwnerEndLocalRemoteAndIsolation(t *testing.T) {
 		f, target := ownerFinishFixture(m)
 		other := target.Agent
 		other.Name, other.WorkspaceID, other.PaneID = "quokka", "second", "second-pane"
-		second := herdr.Workspace{ID: "second", Label: ownerSessionLabel("owner", other.Name), PaneCount: 1, TabCount: 1}
+		second := herdr.Workspace{ID: "second", Label: target.Workspace.Label, PaneCount: 1, TabCount: 1}
 		f.workspaces = append(f.workspaces, second)
 		f.agents[m.DisplayName()] = append(f.agents[m.DisplayName()], other)
 		f.after = []herdr.Agent{other}
@@ -143,17 +143,15 @@ func TestOwnerEndLocalRemoteAndIsolation(t *testing.T) {
 }
 
 func TestOwnerEndEligibility(t *testing.T) {
-	for _, reason := range []string{"valid", "renamed", "wrong-name", "invalid-owner", "extra-pane", "extra-tab", "missing-counts", "git-workspace", "shared", "duplicate-label", "duplicate-id", "working", "not-pi"} {
+	for _, reason := range []string{"valid", "renamed", "legacy-label", "extra-pane", "extra-tab", "missing-counts", "git-workspace", "shared", "duplicate-label", "duplicate-id", "duplicate-name", "missing-name", "missing-pane", "missing-session", "working", "not-pi"} {
 		t.Run(reason, func(t *testing.T) {
 			f, target := ownerFinishFixture(herdr.Local())
 			w := &f.workspaces[0]
 			switch reason {
 			case "renamed":
 				w.Label = "Research"
-			case "wrong-name":
-				w.Label = ownerSessionLabel("owner", "quokka")
-			case "invalid-owner":
-				w.Label = ownerSessionLabel("owner/repo", "possum")
+			case "legacy-label":
+				w.Label = "Research · herdsman: possum · owner"
 			case "extra-pane":
 				w.PaneCount = 2
 			case "extra-tab":
@@ -170,17 +168,83 @@ func TestOwnerEndEligibility(t *testing.T) {
 				f.workspaces = append(f.workspaces, herdr.Workspace{ID: "other", Label: w.Label})
 			case "duplicate-id":
 				f.workspaces = append(f.workspaces, *w)
+			case "duplicate-name":
+				other := target.Agent
+				other.WorkspaceID, other.PaneID = "other", "other-pane"
+				f.agents["Local"] = append(f.agents["Local"], other)
+			case "missing-name":
+				f.agents["Local"][0].Name = ""
+			case "missing-pane":
+				f.agents["Local"][0].PaneID = ""
+			case "missing-session":
+				f.agents["Local"][0].Session = nil
 			case "working":
 				f.agents["Local"][0].Status = "working"
 			case "not-pi":
 				f.agents["Local"][0].Kind = "codex"
 			}
 			targets, err := FinishTargets(context.Background(), f, nil)
-			if err != nil || (len(targets) == 1) != (reason == "valid") {
+			eligible := reason == "valid" || reason == "renamed" || reason == "legacy-label" || reason == "duplicate-label"
+			if (err != nil && reason != "missing-pane") || (len(targets) == 1) != eligible {
 				t.Fatal(reason, targets, err)
 			}
 			if len(f.calls) != 1 {
 				t.Fatal("extra discovery request", f.calls)
+			}
+		})
+	}
+}
+
+func TestOrdinarySessionRevalidation(t *testing.T) {
+	for _, reason := range []string{"valid", "done", "duplicate-description", "renamed", "name", "pane", "workspace", "session", "working", "extra-pane", "extra-tab", "worktree", "shared", "duplicate-name", "duplicate-id"} {
+		t.Run(reason, func(t *testing.T) {
+			f, target := ownerFinishFixture(herdr.Local())
+			a := &f.agents["Local"][0]
+			w := &f.workspaces[0]
+			switch reason {
+			case "done":
+				a.Status = "done"
+			case "duplicate-description":
+				other := *a
+				other.Name, other.PaneID, other.WorkspaceID = "quokka", "other-pane", "other"
+				f.agents["Local"] = append(f.agents["Local"], other)
+				second := *w
+				second.ID = "other"
+				f.workspaces = append(f.workspaces, second)
+			case "renamed":
+				w.Label = "Renamed"
+			case "name":
+				a.Name = "quokka"
+			case "pane":
+				a.PaneID = "replacement"
+			case "workspace":
+				a.WorkspaceID = "replacement"
+			case "session":
+				a.Session = &herdr.AgentSession{Kind: "path", Value: "/sessions/replacement.jsonl"}
+			case "working":
+				a.Status = "working"
+			case "extra-pane":
+				w.PaneCount = 2
+			case "extra-tab":
+				w.TabCount = 2
+			case "worktree":
+				w.Worktree = finishWorkspace("", "", "/repo/task", true).Worktree
+			case "shared", "duplicate-name":
+				other := *a
+				other.PaneID = "other-pane"
+				if reason == "shared" {
+					other.Name = "quokka"
+				} else {
+					other.WorkspaceID = "other"
+				}
+				f.agents["Local"] = append(f.agents["Local"], other)
+			case "duplicate-id":
+				f.workspaces = append(f.workspaces, *w)
+			}
+			err := RevalidateFinish(context.Background(), f, target)
+			valid := reason == "valid" || reason == "done" || reason == "duplicate-description"
+			if (err == nil) != valid || !reflect.DeepEqual(f.calls, []string{"Local:snapshot"}) {
+				t.Fatal("incorrect pre-quit revalidation or unexpected mutation", reason, err, f.calls)
 			}
 		})
 	}
