@@ -1,8 +1,9 @@
 # Emacs spell checking
 
 Jinx checks prose in `text-mode` buffers (including Markdown and Org) and
-comments, docstrings, and strings in `prog-mode` buffers. Ordinary code
-identifiers are not checked. YAML uses Jinx's comment/string-only policy even
+comments and separately highlighted docstrings in `prog-mode` buffers.
+Ordinary strings (`font-lock-string-face`) and code identifiers are not checked.
+YAML retains Jinx's comment/string-only policy even
 though its major mode derives from `text-mode`. Other buffer types are not
 automatically opted in; use `M-x jinx-mode` to toggle checking in a buffer.
 
@@ -86,9 +87,10 @@ regions, source blocks, and links use its separate built-in exclusions.
 Regression checks exercise real fontification and the packaged spelling
 backend in Markdown/GFM, Org, plain text, Emacs Lisp, Python (classic and
 Tree-sitter), Nix, Go, and YAML. This is not a guarantee for every major mode:
-unrecognised comment/string faces can cause prose to be skipped, and unmarked
-non-prose regions in text modes can still be checked. Strings in code can
-contain non-prose too; use local/session accepted words or toggle Jinx if needed.
+unrecognised comment/docstring faces can cause prose to be skipped, and unmarked
+non-prose regions in text modes can still be checked. The programming-string
+exclusion is face-based: docstrings highlighted as strings are also skipped,
+while strings using unrelated faces may still be checked.
 
 ## Isolated regression check
 

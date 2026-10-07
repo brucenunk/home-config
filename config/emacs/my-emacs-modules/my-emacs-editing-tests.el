@@ -70,11 +70,11 @@
       (should (equal (my/editing-test-misspellings)
                      '("zqxaftertypo" "zqxmarkdowntypo"))))))
 
-(ert-deftest my/jinx-programming-comments-and-strings-only ()
+(ert-deftest my/jinx-programming-string-exclusions ()
   (require 'nix-ts-mode)
   (require 'yaml-mode)
   (dolist (fixture '((emacs-lisp-mode .
-                      "(defun zqxidentifiertypo () \"zqxstringtypo\" nil)\n;; zqxcommenttypo\n")
+                      "(setq zqxidentifiertypo \"zqxstringtypo\")\n(defun example () \"zqxdocstringtypo\" nil)\n;; zqxcommenttypo\n")
                      (python-mode .
                       "zqxidentifiertypo = \"zqxstringtypo\"\n# zqxcommenttypo\n")
                      (python-ts-mode .
@@ -90,7 +90,10 @@
       (funcall (car fixture))
       (should jinx-mode)
       (should (equal (my/editing-test-misspellings)
-                     '("zqxcommenttypo" "zqxstringtypo"))))))
+                     (pcase (car fixture)
+                       ('emacs-lisp-mode '("zqxcommenttypo" "zqxdocstringtypo"))
+                       ('yaml-mode '("zqxcommenttypo" "zqxstringtypo"))
+                       (_ '("zqxcommenttypo"))))))))
 
 (ert-deftest my/jinx-dictionaries-and-language-switching ()
   (with-temp-buffer

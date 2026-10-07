@@ -83,6 +83,8 @@ configured external opener to Markdown's default link handler."
   :custom
   (jinx-languages "en_AU")
   :config
+  ;; Check programming comments and docstrings, but not ordinary strings.
+  (cl-pushnew 'font-lock-string-face (alist-get 'prog-mode jinx-exclude-faces))
   ;; Indented Markdown code uses this face rather than markdown-code-face.
   ;; Preserve Jinx's other per-mode exclusions, including native fenced code.
   (cl-pushnew 'markdown-pre-face (alist-get 'markdown-mode jinx-exclude-faces)))
