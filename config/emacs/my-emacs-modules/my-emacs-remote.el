@@ -58,7 +58,7 @@ Only RPC connections match; unrelated hosts retain automatic deployment."
   :defer t
   :ensure nil
   :custom
-  (tramp-default-method "sshx")
+  (tramp-default-method "rpc")
   (tramp-ssh-controlmaster-options
    (concat "-o ControlPath=/tmp/ssh-ControlPath-%%r@%%h:%%p "
            "-o ControlMaster=auto -o ControlPersist=yes")
@@ -81,6 +81,9 @@ Only RPC connections match; unrelated hosts retain automatic deployment."
   :after tramp
   :demand t
   :init
+  ;; RPC's direnv loader is independent of envrc and shell direnv enablement.
+  (setq tramp-rpc-use-direnv nil
+        tramp-rpc-magit-optimize nil)
   ;; Nil source-directory disables Cargo, including download-failure fallback.
   (setq tramp-rpc-deploy-source-directory nil
         tramp-rpc-deploy-prefer-build nil
@@ -89,12 +92,17 @@ Only RPC connections match; unrelated hosts retain automatic deployment."
         tramp-rpc-deploy-local-cache-directory
         (expand-file-name "~/.cache/emacs/tramp-rpc-binaries"))
   :config
+  ;; Setting the option alone does not unregister already-installed handlers.
+  (tramp-rpc-magit-disable)
   (my/tramp-rpc-configure-managed-servers my/tramp-rpc-managed-servers))
 
 (use-package envrc
   :ensure nil
   :custom
-  (envrc-remote t)
+  ;; Temporary opt-out: the pinned envrc export starts a local process without
+  ;; remote file handling. Success does not prove a remote environment import.
+  ;; Revisit when upstream supports remote exporting; local envrc stays enabled.
+  (envrc-remote nil)
   (envrc-supported-tramp-methods '("scp" "scpx" "ssh" "sshx" "rpc"))
   :config
   (add-hook 'envrc-mode-on-hook

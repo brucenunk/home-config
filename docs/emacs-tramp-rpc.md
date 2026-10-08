@@ -1,13 +1,41 @@
 # TRAMP-RPC trial
 
-The exported `emacs` Home Manager module installs TRAMP-RPC and its Magit
-optimizations. Existing SSH paths and the `sshx` default are unchanged.
+The exported `emacs` Home Manager module installs TRAMP-RPC and selects `rpc`
+as the default TRAMP method. The shared Lisp owns this policy; consumers do not
+need options or procedural `programs.emacs.extraConfig` overrides. Consumers
+updating from the earlier trial policy should remove overrides for the four
+settings described below.
 
 Use `C-x C-f` with `/rpc:user@host:/path/to/repository/` to trial the RPC
-backend. Dired's directory listings and file operations use RPC automatically;
-run `M-x magit-status` from that directory to exercise the Git optimizations.
+backend. With TRAMP 2.8.2's default syntax, `/-:host:/path/to/repository/`
+selects the configured default method; plain `/host:/path/` is not valid in that
+syntax. Dired's directory listings and file operations use RPC automatically;
+run `M-x magit-status` from that directory to exercise remote Git operations.
 Compare with `/sshx:user@host:/path/to/repository/` against the same repository.
-RPC is also included in the configured envrc remote-method allowlist.
+Explicit `/sshx:` is a manual alternative, not automatic fallback. This policy
+does not repair consumer-specific SSHX shell-path adapters.
+
+## Shared client policy
+
+- `tramp-default-method` is `"rpc"`.
+- `envrc-remote` is nil, temporarily. The pinned envrc export starts a local
+  process without remote file handling; success does not prove that a remote
+  environment was imported. Revisit this opt-out when upstream supports remote
+  exporting. The envrc package and local envrc behavior remain configured, and
+  RPC remains in the remote-method allowlist for a future revisit.
+- `tramp-rpc-use-direnv` is nil. RPC's own direnv loader is independent of
+  Emacs envrc and Home Manager's shell direnv enablement. Turning it off avoids
+  independently loading repository environments and changing remote Git
+  selection; shell direnv ownership and whitelists are unchanged.
+- `tramp-rpc-magit-optimize` is nil, and the shared configuration calls the
+  supported `tramp-rpc-magit-disable` function to remove any installed handlers.
+  Assigning the option alone does not unregister them. Normal Magit remains
+  installed and usable over RPC.
+
+These settings apply both before and after package loading. The pinned optional
+Magit-handler installer respects the opt-out. The choice follows a bounded
+consumer trial, not a general performance claim; public checks do not establish
+private client pickup or performance.
 
 ## Release-only servers
 
@@ -89,7 +117,7 @@ the host spelling from the TRAMP path, including `#port` if present. Omit `user`
 (or set it to `null`) to match all users on that host. Duplicate selectors and
 mixing all-users with user-specific entries for the same host are rejected.
 The default list is empty: unrelated hosts retain automatic deployment and
-the global TRAMP method remains `sshx`.
+the global TRAMP method is `rpc`, independently of the managed-server list.
 
 Use an absolute path that exists on the **remote**, preferably its stable
 Home Manager profile path. Do not interpolate the Darwin client's
@@ -118,8 +146,10 @@ evaluation is not a native build or execution test.
 
 `nix build .#checks.aarch64-darwin.emacs-tramp-rpc` (or the x86_64 Linux check)
 loads `my-emacs-remote-tests.el` alongside the real `my-emacs-remote.el` module
-in isolated batch Emacs, checks bundled
-Linux binary selection, retains `sshx`, and verifies Cargo cannot run after a
+in isolated batch Emacs with both early and already-loaded package orders,
+checks the shared client policy, default-method marker parsing, explicit SSHX
+selection, and the Magit opt-out after optional handler installation. It checks
+bundled Linux binary selection and verifies Cargo cannot run after a
 simulated download failure. It also loads the module-generated managed-server
 configuration, checks exact host/user/method scoping, and exercises upstream's
 connection branch with a mocked installed or missing executable. Binary
@@ -132,8 +162,9 @@ A public Wampa build establishes composition/build evidence without activation.
 The downstream consumer owns input updates, host composition, remote activation,
 and client activation under its own deployment procedure. A restarted client
 and a live connection using the installed remote executable are still needed to
-prove runtime pickup. A live devbox trial remains necessary to verify remote
-envrc, Dired, and Magit behavior and measure performance in Canva/k8s. Home
+prove runtime pickup. A live consumer trial remains necessary to verify file,
+Dired, and Magit behavior and measure performance. Remote envrc importing is
+currently disabled, not verified by these checks. Home
 Manager build success is neither activation nor runtime-pickup evidence.
 
 After building the staged Wampa configuration on x86_64 Linux, the adjacent
@@ -148,6 +179,9 @@ HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" \
   -L "$PWD/config/emacs/my-emacs-modules" \
   -l my-emacs-remote-tests -f ert-run-tests-batch-and-exit
 ```
+
+Repeat with `MY_TRAMP_RPC_PRELOADED_TEST=1` in the environment to exercise
+already-loaded packages and previously installed Magit handlers.
 
 This loads only the remote-access module, not `init.el`, and neither contacts
 the user's Emacs server nor connects to the devbox.

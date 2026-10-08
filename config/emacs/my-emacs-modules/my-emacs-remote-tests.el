@@ -9,6 +9,22 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'use-package)
+;; A separate batch run proves policy also removes handlers installed before
+;; the shared module loads, rather than only preventing initial installation.
+(when (getenv "MY_TRAMP_RPC_PRELOADED_TEST")
+  (require 'tramp-rpc)
+  (require 'magit)
+  (require 'envrc)
+  (setq tramp-default-method "sshx"
+        envrc-remote t
+        tramp-rpc-use-direnv t
+        tramp-rpc-magit-optimize t)
+  (tramp-rpc-magit-install-optional-handlers)
+  (unless (and tramp-rpc-magit--magit-enabled
+               (tramp-external-operation-p 'magit-status-setup-buffer 'tramp-rpc)
+               (advice-member-p #'tramp-rpc-magit--section-show-advice
+                                'magit-section-show))
+    (error "Preloaded test did not install RPC Magit handlers")))
 (require 'my-emacs-remote)
 ;; Trigger the real module's deferred RPC setup, as a remote visit does.
 (require 'tramp)
@@ -18,13 +34,15 @@
 (ert-deftest my/tramp-rpc-loads-with-linux-release-binaries ()
   (should (featurep 'tramp-rpc))
   (should (featurep 'tramp-rpc-magit))
-  (should tramp-rpc-magit--magit-enabled)
+  (should-not tramp-rpc-magit--magit-enabled)
   ;; Match envrc's remote-buffer predicate using TRAMP's parsed method string.
-  (should envrc-remote)
+  (should-not envrc-remote)
   (should (seq-contains-p envrc-supported-tramp-methods
                           (file-remote-p "/rpc:user@example.invalid:/repo/" 'method)))
   (should (assoc "rpc" tramp-methods))
-  (should (equal tramp-default-method "sshx"))
+  (should (equal tramp-default-method "rpc"))
+  (should-not tramp-rpc-use-direnv)
+  (should-not tramp-rpc-magit-optimize)
   (should tramp-rpc-deploy-auto-deploy)
   (should (eq tramp-rpc-deploy-git-build-policy 'release))
   (should-not tramp-rpc-deploy-prefer-build)
@@ -38,6 +56,21 @@
                  (lambda (&rest _) (ert-fail "Bundled binary attempted build"))))
         (should (equal binary (tramp-rpc-deploy--ensure-local-binary arch))))))
   (should-not (tramp-rpc-deploy--bundled-binary-path "aarch64-darwin")))
+
+(ert-deftest my/tramp-default-marker-and-explicit-sshx-selection ()
+  ;; TRAMP 2.8.2's default syntax uses /-:, not plain /host:.
+  (should (equal (file-remote-p "/-:example.invalid:/repo/" 'method) "rpc"))
+  (should (equal (file-remote-p "/sshx:example.invalid:/repo/" 'method) "sshx"))
+  (should-not (file-remote-p "/example.invalid:/repo/")))
+
+(ert-deftest my/tramp-rpc-magit-opt-out-survives-optional-installation ()
+  (tramp-rpc-magit-install-optional-handlers)
+  (should-not tramp-rpc-magit-optimize)
+  (should-not tramp-rpc-magit--magit-enabled)
+  (dolist (operation '(magit-status-setup-buffer magit-status-refresh-buffer))
+    (should-not (tramp-external-operation-p operation 'tramp-rpc)))
+  (should-not (advice-member-p #'tramp-rpc-magit--section-show-advice
+                              'magit-section-show)))
 
 (ert-deftest my/tramp-rpc-cannot-run-cargo-even-after-download-failure ()
   (let ((cargo-called nil)

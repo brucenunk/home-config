@@ -244,6 +244,11 @@ in
                 -L ${../../config/emacs/my-emacs-modules} \
                 --load my-emacs-remote-tests \
                 --funcall ert-run-tests-batch-and-exit
+              MY_TRAMP_RPC_PRELOADED_TEST=1 \
+                emacs --batch -Q --eval "(setq user-emacs-directory \"$TMPDIR/emacs/\")" \
+                -L ${../../config/emacs/my-emacs-modules} \
+                --load my-emacs-remote-tests \
+                --funcall ert-run-tests-batch-and-exit
               touch "$out"
             '';
       }
