@@ -57,5 +57,108 @@
           (should-not cargo-called))
       (delete-directory tramp-rpc-deploy-local-cache-directory t))))
 
+(defconst my/tramp-rpc-test-managed-servers
+  '((:host "managed.example.invalid" :user "rpc-user"
+     :remoteBinaryPath "/home/rpc-user/.nix-profile/bin/tramp-rpc-server")
+    (:host "all-users.example.invalid" :user nil
+     :remoteBinaryPath "/opt/rpc/bin/tramp-rpc-server")))
+
+(ert-deftest my/tramp-rpc-home-manager-managed-config-loads ()
+  "The Nix check supplies the actual module-generated configuration."
+  (skip-unless (getenv "MY_TRAMP_RPC_MANAGED_SERVERS_TEST"))
+  (should (= (length my/tramp-rpc-managed-servers) 2))
+  (dolist (entry my/tramp-rpc-test-managed-servers)
+    (let ((actual (seq-find (lambda (server)
+                              (equal (plist-get server :host)
+                                     (plist-get entry :host)))
+                            my/tramp-rpc-managed-servers)))
+      (should actual)
+      (should (equal (plist-get actual :user) (plist-get entry :user)))
+      (should (equal (plist-get actual :remoteBinaryPath)
+                     (plist-get entry :remoteBinaryPath)))))
+  (let ((plan (tramp-rpc-deploy-plan
+               (tramp-dissect-file-name "/rpc:rpc-user@managed.example.invalid:/"))))
+    (should (eq (tramp-rpc-deploy-plan-mode plan) 'never))))
+
+(ert-deftest my/tramp-rpc-managed-policy-is-host-user-and-method-scoped ()
+  (let ((connection-local-profile-alist nil)
+        (connection-local-criteria-alist nil))
+    (my/tramp-rpc-configure-managed-servers my/tramp-rpc-test-managed-servers)
+    (dolist (name '("/rpc:rpc-user@managed.example.invalid:/"
+                    "/rpc:other@all-users.example.invalid:/"))
+      (let ((plan (tramp-rpc-deploy-plan (tramp-dissect-file-name name))))
+        (should (eq (tramp-rpc-deploy-plan-mode plan) 'never))
+        (should-not (tramp-rpc-deploy-plan-binary-id plan))
+        (should-not (tramp-rpc-deploy-plan-source-directory plan))
+        (should-not (tramp-rpc-deploy-plan-prefer-build plan))
+        (should (eq (tramp-rpc-deploy-plan-git-build-policy plan) 'release))))
+    (dolist (name '("/rpc:other@managed.example.invalid:/"
+                    "/rpc:rpc-user@managedXexample.invalid:/"
+                    "/rpc:rpc-user@unrelated.example.invalid:/"
+                    "/sshx:rpc-user@managed.example.invalid:/"))
+      (let ((plan (tramp-rpc-deploy-plan (tramp-dissect-file-name name))))
+        (should (eq (tramp-rpc-deploy-plan-mode plan) 'auto))
+        (should (equal (tramp-rpc-deploy-plan-binary-id plan) "0.15.0"))))
+    (should-not tramp-rpc-deploy-never-deploy)
+    (should-not tramp-rpc-deploy-remote-binary-path)))
+
+(ert-deftest my/tramp-rpc-managed-connect-never-acquires-or-transfers ()
+  "Exercise upstream's real connect branch, including a missing server."
+  (let ((connection-local-profile-alist nil)
+        (connection-local-criteria-alist nil)
+        (tramp-rpc-use-controlmaster nil)
+        (vec (tramp-dissect-file-name "/rpc:rpc-user@managed.example.invalid:/"))
+        attempted-path)
+    (my/tramp-rpc-configure-managed-servers my/tramp-rpc-test-managed-servers)
+    (cl-letf (((symbol-function 'tramp-rpc--ensure-controlmaster-directory) #'ignore)
+              ((symbol-function 'tramp-rpc--detect-sudo-elevation) (lambda (&rest _) nil))
+              ((symbol-function 'tramp-rpc--cleanup-bootstrap-connection) #'ignore)
+              ((symbol-function 'tramp-rpc--cleanup-failed-connection) #'ignore)
+              ((symbol-function 'tramp-rpc-deploy--ensure-local-binary)
+               (lambda (&rest _) (ert-fail "Managed host acquired a binary")))
+              ((symbol-function 'tramp-rpc-deploy--download-binary)
+               (lambda (&rest _) (ert-fail "Managed host downloaded a binary")))
+              ((symbol-function 'tramp-rpc-deploy--build-binary)
+               (lambda (&rest _) (ert-fail "Managed host built a binary")))
+              ((symbol-function 'copy-file)
+               (lambda (&rest _) (ert-fail "Managed host transferred a binary"))))
+      (cl-letf (((symbol-function 'tramp-rpc--start-server-process)
+                 (lambda (_vec path &rest _)
+                   (setq attempted-path path))))
+        (tramp-rpc--connect vec)
+        (should (equal attempted-path "/home/rpc-user/.nix-profile/bin/tramp-rpc-server")))
+      (cl-letf (((symbol-function 'tramp-rpc--start-server-process)
+                 (lambda (_vec path &rest _)
+                   (setq attempted-path path)
+                   (signal 'tramp-rpc-server-unavailable '("Missing server")))))
+        (let ((err (should-error (tramp-rpc--connect vec) :type 'remote-file-error)))
+          (should (string-match-p "no deployment attempted" (error-message-string err))))
+        (should (equal attempted-path "/home/rpc-user/.nix-profile/bin/tramp-rpc-server"))))))
+
+(ert-deftest my/tramp-rpc-managed-buffer-does-not-leak-policy-to-other-targets ()
+  (let ((connection-local-profile-alist nil)
+        (connection-local-criteria-alist nil))
+    (my/tramp-rpc-configure-managed-servers my/tramp-rpc-test-managed-servers)
+    (with-temp-buffer
+      (setq default-directory "/rpc:rpc-user@managed.example.invalid:/")
+      (hack-connection-local-variables-apply
+       (connection-local-criteria-for-default-directory))
+      (should tramp-rpc-deploy-never-deploy)
+      (dolist (name '("/rpc:rpc-user@unrelated.example.invalid:/"
+                      "/rpc:other@managed.example.invalid:/"))
+        (let* ((vec (tramp-dissect-file-name name))
+               (plan (tramp-rpc-deploy-plan vec)))
+          (should (eq (tramp-rpc-deploy-plan-mode plan) 'auto))
+          (should (equal (tramp-rpc-deploy-plan-binary-id plan) "0.15.0"))
+          (should-not (equal (tramp-rpc-deploy-plan-remote-localname plan)
+                             "/home/rpc-user/.nix-profile/bin/tramp-rpc-server"))))
+      ;; The source buffer keeps its own policy after resolving other targets.
+      (should tramp-rpc-deploy-never-deploy)
+      (let ((plan (tramp-rpc-deploy-plan
+                   (tramp-dissect-file-name "/rpc:other@all-users.example.invalid:/"))))
+        (should (eq (tramp-rpc-deploy-plan-mode plan) 'never))
+        (should (equal (tramp-rpc-deploy-plan-remote-localname plan)
+                       "/opt/rpc/bin/tramp-rpc-server"))))))
+
 (provide 'my-emacs-remote-tests)
 ;;; my-emacs-remote-tests.el ends here

@@ -2,9 +2,15 @@
 
 let
   homeManagerModule =
-    { lib, pkgs, ... }:
+    {
+      config,
+      lib,
+      pkgs,
+      ...
+    }:
 
     let
+      managedServers = config.brucenunk.homeManager.emacs.trampRpc.managedServers;
       spellingDictionaries = with pkgs.hunspellDicts; [
         en_AU
         en_US
@@ -76,36 +82,118 @@ let
         ];
     in
     {
-      programs.emacs = {
-        enable = true;
-
-        extraPackages =
-          epkgs: emacsPackages epkgs ++ [ (epkgs.treesit-grammars.with-grammars treeSitterGrammars) ];
-
-        package = lib.mkDefault pkgs.emacs;
+      options.brucenunk.homeManager.emacs.trampRpc.managedServers = lib.mkOption {
+        default = [ ];
+        description = "RPC hosts with a preinstalled server; never acquire or transfer binaries for these connections.";
+        type = lib.types.listOf (
+          lib.types.submodule {
+            options = {
+              host = lib.mkOption {
+                type = lib.types.nonEmptyStr;
+                description = "Exact host name used in the RPC TRAMP path (including #port if specified).";
+              };
+              remoteBinaryPath = lib.mkOption {
+                # Upstream v0.15.0 passes this directly to the remote shell.
+                type = lib.types.strMatching "/[A-Za-z0-9_./+@=-]+";
+                description = "Absolute executable path on the remote host, using only shell-safe ASCII letters, digits and _ . / + @ = - (no whitespace or shell metacharacters).";
+              };
+              user = lib.mkOption {
+                type = lib.types.nullOr lib.types.nonEmptyStr;
+                default = null;
+                description = "Exact RPC user; null applies to any user on this host.";
+              };
+            };
+          }
+        );
       };
 
-      home.packages = [ pkgs.enchant ] ++ spellingDictionaries;
+      config = {
+        assertions = [
+          {
+            assertion =
+              lib.length (lib.unique (map (server: { inherit (server) host user; }) managedServers))
+              == lib.length managedServers;
+            message = "Emacs TRAMP-RPC managedServers must have unique host/user selectors";
+          }
+          {
+            assertion = lib.all (
+              server:
+              server.user != null
+              || lib.length (lib.filter (other: other.host == server.host) managedServers) == 1
+            ) managedServers;
+            message = "Emacs TRAMP-RPC managedServers must not mix an all-users selector with user-specific selectors for the same host";
+          }
+        ];
 
-      home.sessionVariables = {
-        # Enchant's Hunspell provider must also find dictionaries when Emacs
-        # is launched without a system-wide Hunspell installation.
-        DICPATH = lib.makeSearchPath "share/hunspell" spellingDictionaries;
-        EDITOR = "emacsclient -c";
-        VISUAL = "emacsclient -c";
+        programs.emacs = {
+          enable = true;
+
+          extraPackages =
+            epkgs: emacsPackages epkgs ++ [ (epkgs.treesit-grammars.with-grammars treeSitterGrammars) ];
+
+          package = lib.mkDefault pkgs.emacs;
+        };
+
+        home.packages = [ pkgs.enchant ] ++ spellingDictionaries;
+
+        home.sessionVariables = {
+          # Enchant's Hunspell provider must also find dictionaries when Emacs
+          # is launched without a system-wide Hunspell installation.
+          DICPATH = lib.makeSearchPath "share/hunspell" spellingDictionaries;
+          EDITOR = "emacsclient -c";
+          VISUAL = "emacsclient -c";
+        };
+
+        xdg.configFile."emacs/early-init.el".source = ../../config/emacs/early-init.el;
+        xdg.configFile."emacs/init.el".source = ../../config/emacs/init.el;
+        xdg.configFile."emacs/my-lisp".source = ../../config/emacs/my-lisp;
+        xdg.configFile."emacs/my-emacs-modules".source = ../../config/emacs/my-emacs-modules;
+        xdg.configFile."emacs/tramp-rpc-managed-servers.json".text = builtins.toJSON managedServers;
+        xdg.configFile."mermaid/themes".source = ../../config/mermaid/themes;
       };
-
-      xdg.configFile."emacs/early-init.el".source = ../../config/emacs/early-init.el;
-      xdg.configFile."emacs/init.el".source = ../../config/emacs/init.el;
-      xdg.configFile."emacs/my-lisp".source = ../../config/emacs/my-lisp;
-      xdg.configFile."emacs/my-emacs-modules".source = ../../config/emacs/my-emacs-modules;
-      xdg.configFile."mermaid/themes".source = ../../config/mermaid/themes;
     };
 in
 {
   perSystem =
     { lib, pkgs, ... }:
 
+    let
+      mkManagedHome =
+        servers:
+        inputs.home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
+          modules = [
+            homeManagerModule
+            {
+              home.username = "emacs-module-check";
+              home.homeDirectory =
+                if pkgs.stdenv.hostPlatform.isDarwin then
+                  "/Users/emacs-module-check"
+                else
+                  "/home/emacs-module-check";
+              home.stateVersion = "25.05";
+              brucenunk.homeManager.emacs.trampRpc.managedServers = servers;
+            }
+          ];
+        };
+      testServers = [
+        {
+          host = "managed.example.invalid";
+          user = "rpc-user";
+          remoteBinaryPath = "/home/rpc-user/.nix-profile/bin/tramp-rpc-server";
+        }
+        {
+          host = "all-users.example.invalid";
+          remoteBinaryPath = "/opt/rpc/bin/tramp-rpc-server";
+        }
+      ];
+      managedHome = mkManagedHome testServers;
+      managedConfig = managedHome.config.xdg.configFile."emacs/tramp-rpc-managed-servers.json";
+      rejects = servers: !(builtins.tryEval (mkManagedHome servers).activationPackage.drvPath).success;
+      pathType =
+        (managedHome.options.brucenunk.homeManager.emacs.trampRpc.managedServers.type.getSubOptions [ ])
+        .remoteBinaryPath.type;
+    in
     {
       checks = {
         emacs-tramp-rpc =
@@ -117,6 +205,29 @@ in
               epkgs.envrc
             ]);
           in
+          assert
+            (mkManagedHome [ ]).config.xdg.configFile."emacs/tramp-rpc-managed-servers.json".text == "[]";
+          assert rejects [
+            (builtins.head testServers)
+            (builtins.head testServers)
+          ];
+          assert rejects [
+            (builtins.head testServers)
+            ((builtins.head testServers) // { user = null; })
+          ];
+          assert lib.all pathType.check [
+            "/home/rpc-user/.nix-profile/bin/tramp-rpc-server"
+            "/nix/store/abc-server-0.15.0/bin/tramp-rpc-server"
+          ];
+          assert lib.all (path: !pathType.check path) [
+            "relative/server"
+            "/opt/RPC Servers/server"
+            "/opt/rpc;touch /tmp/file"
+            "/opt/$USER/server"
+            "/opt/server\ncommand"
+            "/opt/'server'"
+            "/opt/`command`"
+          ];
           pkgs.runCommand "emacs-tramp-rpc-check"
             {
               nativeBuildInputs = [
@@ -126,7 +237,11 @@ in
             }
             ''
               export HOME="$TMPDIR"
-              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+              mkdir -p "$TMPDIR/emacs"
+              cp ${managedConfig.source} "$TMPDIR/emacs/tramp-rpc-managed-servers.json"
+              export MY_TRAMP_RPC_MANAGED_SERVERS_TEST=1
+              emacs --batch -Q --eval "(setq user-emacs-directory \"$TMPDIR/emacs/\")" \
+                -L ${../../config/emacs/my-emacs-modules} \
                 --load my-emacs-remote-tests \
                 --funcall ert-run-tests-batch-and-exit
               touch "$out"

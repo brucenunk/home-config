@@ -21,7 +21,7 @@ external consumers must provide the same overlay. The script checks that:
 - options added by exported modules use the
   `brucenunk.homeManager.<capability>` namespace.
 
-`darkman`, `niri`, and `waybar` are Linux-only and are deliberately omitted
+`darkman`, `niri`, `tramp-rpc-server`, and `waybar` are Linux-only and are deliberately omitted
 from the Darwin evaluation. All other exports are evaluated on both Linux and
 Darwin. The script only evaluates derivation paths; it does not realize a
 foreign-platform derivation.
@@ -44,7 +44,8 @@ owns it:
 | `doric-waybar-themes-home-manager-module` | Linux, Darwin | The portable Waybar theme module continues to deploy its theme directory recursively. |
 | `git-home-manager-module` | Linux, Darwin | Repository defaults and derived paths enable native Git maintenance on both platforms. |
 | `emacs-home-manager-module` | Linux | The module defaults to `pkgs.emacs`, while ordinary consumer assignments can select `emacs31` or `emacs-nox`; this guards the `mkDefault` priority contract. |
-| `emacs-tramp-rpc` | Linux, Darwin | The actual TRAMP configuration loads RPC and its Magit integration, retains `sshx`, selects bundled Linux release servers without downloading/building, and cannot run Cargo even after download failure. See [the trial guide](emacs-tramp-rpc.md). |
+| `emacs-tramp-rpc` | Linux, Darwin | The actual TRAMP configuration loads RPC and its Magit integration, retains `sshx`, selects bundled Linux releases without downloading/building, and cannot run Cargo even after download failure. Generated managed-server settings are exact-host/user/method scoped; installed and missing-server connection paths never acquire or copy binaries. See [the trial guide](emacs-tramp-rpc.md). |
+| `tramp-rpc-server` | Linux, Darwin | Both release archives unpack; the overlay selects the native server on both supported Linux architectures and is absent on Darwin/unsupported architectures. The standalone Linux module installs it without Emacs, prefers the overlay package, works without the overlay, and rejects unsupported platforms. Foreign-platform module evaluation is not realization or execution. |
 
 Run all checks for the invoking platform with:
 
@@ -78,7 +79,7 @@ The previous broad script's assertions were assigned as follows:
 
 - isolated activation derivations and custom-option namespace checks remain in
   the exported-module contract script;
-- the three Linux-only export-presence assertions are superseded by checking
+- the Linux-only export-presence assertions are superseded by checking
   the complete public export name set and by the explicit Darwin exclusion
   list;
 - historical negative checks for `programs.gitMaintenance` and

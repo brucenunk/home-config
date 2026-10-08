@@ -58,11 +58,13 @@ nix eval --impure --raw --expr '
       "python"
       "ripgrep"
       "rust"
+      "tramp-rpc-server"
       "waybar"
     ];
     linuxOnlyModuleNames = [
       "darkman"
       "niri"
+      "tramp-rpc-server"
       "waybar"
     ];
     exportedModules = flake.modules.homeManager;
