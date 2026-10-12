@@ -15,10 +15,60 @@ agent. The source lives in `go/herdsman/`.
 The launcher can run outside Herdr, including an ordinary terminal or Emacs
 terminal. A local Herdr server and any selected saved-machine server must
 already be running. Hosts are managed: Git, Pi, Herdr and the normal repository
-layout are assumed. Herdsman does not install tools, clone repositories, fetch,
-or change project trust. Launch-time fetching is deferred.
+layout are assumed. Herdsman does not install tools, clone repositories,
+or change project trust. Repository launches fetch the selected remote base
+before creating a task checkout.
 
 ## Configuration
+
+### Pinned Herdr compatibility patch
+
+The public Herdr and Herdsman features use a patched Herdr 0.9.3 package from
+`flake.lib.herdr.packageFor pkgs`. The underlying `pkgs.llm-agents.herdr` remains
+upstream; private consumers with custom package wiring must select the helper's
+result consistently. Herdsman's executable wrapper prefers that patched CLI.
+
+The carried patch is [pkgs/patches/herdr-worktree-config.patch](../pkgs/patches/herdr-worktree-config.patch).
+It fixes bare discovery when `extensions.worktreeConfig=true` and `core.bare`
+lives in `config.worktree`, with worktree-specific values taking precedence.
+Without the extension, existing discovery behavior is preserved, including
+Git's handling of legacy bare-backed linked checkouts. This is a valid Git
+layout; no shared Git configuration is rewritten or migration/self-heal disabled.
+
+Repository `path` continues to name a checkout or bare backing repository
+accepted by `git -C`. No inventory schema migration or default-checkout anchor
+is required. Herdsman still delegates discovery, parent grouping, task creation,
+metadata and worktree removal to Herdr; it has no new receipts or Git lifecycle
+adapter. Herdr's restriction on creating tasks from linked sources is unchanged:
+configure the bare backing directory itself for bare-backed repositories.
+
+The package runs the targeted Rust discovery tests. The `herdr-worktree-config`
+flake check uses an isolated real server to exercise discovery, parent
+creation/reuse, task creation from a freshly fetched remote ref, and forced
+cleanup for ordinary, legacy-bare and migrated bare repositories. Existing
+checkout contents/branches and the bare-layout settings remain unchanged; task
+branch history is retained. These are isolated local checks, not live SSH or
+Canva-launch evidence. Standalone reproduction:
+
+```sh
+./scripts/check-herdr-worktree-config /absolute/path/to/herdr
+```
+
+The package helper deliberately rejects versions other than 0.9.3. On an
+upgrade, reassess the patch against upstream and remove it once the fix is
+present, keeping the regression check. Do not merely relax the version guard.
+No Herdr checkout is vendored, and the patch adds no dependency or lockfile bump.
+`nix build .#herdr` builds the patched binary directly.
+
+Deployment requires the source/target procedure in [activation.md](activation.md)
+for Wampa, or the downstream host's own procedure. A new CLI/package is not proof
+that a long-lived Herdr server has loaded it. When deployment is approved,
+coordinate the Herdr server restart without discarding active sessions, verify
+its executable/version provenance, and run a disposable bare-source launch and
+End session through the deployed Herdsman daemon. Restart and verify that daemon
+too, because its executable wrapper changes. Do not stop shared processes merely
+to perform an isolated build check. Private input delivery and real Canva
+launch/pickup verification remain downstream work.
 
 ### Herdr integration
 
@@ -533,7 +583,8 @@ never authorize launch mutations.
 
 For repository contexts, Herdsman uses Herdr's source resolver to select an existing non-linked source
 workspace, renaming it to `owner/repo`, or creates that parent at the configured
-`gitdir`. The resolved source path must match the configured source directory;
+repository `path` (a `git -C` directory, not necessarily a literal Git directory).
+The resolved source path must match the configured source directory;
 an unrelated source or a linked checkout resolving to a different backing
 repository is rejected before launch mutations. Configure the backing repository
 itself for bare-backed layouts. This anchors the repository group independently

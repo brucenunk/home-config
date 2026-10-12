@@ -101,9 +101,13 @@ and platform boundaries.
   `brucenunk.homeManager.ghostty.package`, append `extraConfig`, and control
   `canonicalLinuxService.enable`. A consumer that disables the canonical
   service owns its replacement service and session environment.
-- `herdr` deploys the pinned upstream Herdr package, generated Doric light/dark
+- `herdr` deploys the pinned Herdr package with the temporary worktree-config
+  discovery patch, generated Doric light/dark
   theme policy, and release-matched Pi integration. Consumers may select only
   the typed `brucenunk.homeManager.herdr.ui.toast.delivery` host policy.
+  `flake.lib.herdr.packageFor` supplies the same patched variant to Herdsman
+  and any downstream custom package wiring; `packages.<system>.herdr` exposes it
+  directly. See [the compatibility-patch notes](herdsman.md#pinned-herdr-compatibility-patch).
 - `herdsman` packages the Go companion launcher. Hosts combine Git/Pi data under
   `brucenunk.homeManager.herdsman.machines`; operational settings and themes
   remain under `herdsman.config`. It generates TOML for the launcher and a small

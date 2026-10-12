@@ -1,6 +1,28 @@
 { inputs, mkPkgs, ... }:
 
 let
+  packageFor =
+    pkgs:
+    let
+      upstream = pkgs.llm-agents.herdr;
+    in
+    assert pkgs.lib.assertMsg (
+      upstream.version == "0.9.3"
+    ) "Reassess or retire the Herdr worktreeConfig patch when upgrading beyond 0.9.3";
+    upstream.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [ ../../pkgs/patches/herdr-worktree-config.patch ];
+      doCheck = true;
+      nativeCheckInputs = (old.nativeCheckInputs or [ ]) ++ [ pkgs.git ];
+      cargoTestFlags = [
+        "--bin"
+        "herdr"
+        "workspace::git::discovery::tests::"
+      ];
+      preCheck = (old.preCheck or "") + ''
+        export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+      '';
+    });
+
   homeManagerModule =
     {
       config,
@@ -12,7 +34,7 @@ let
     let
       cfg = config.brucenunk.homeManager.herdr;
 
-      herdrPackage = pkgs.llm-agents.herdr;
+      herdrPackage = packageFor pkgs;
 
       configReference = builtins.fromJSON (
         builtins.readFile "${herdrPackage.src}/docs/next/website/src/data/config-reference.json"
@@ -158,9 +180,25 @@ in
       herdrConfig = home.config.xdg.configFile."herdr/config.toml".source;
     in
     {
+      packages.herdr = packageFor (mkPkgs system);
       checks = {
+        herdr-worktree-config =
+          pkgs.runCommand "herdr-worktree-config" { nativeBuildInputs = [ pkgs.git ]; }
+            ''
+              # Exercise clearing inherited routing before Git/server startup.
+              export GIT_DIR="$PWD/caller.git" GIT_WORK_TREE="$PWD/caller-worktree"
+              export GIT_COMMON_DIR="$PWD/caller-common" GIT_INDEX_FILE="$PWD/caller-index"
+              export GIT_CONFIG="$PWD/caller-config" GIT_CONFIG_GLOBAL="$PWD/caller-global"
+              ${pkgs.python3}/bin/python ${../../scripts/check-herdr-worktree-config} \
+                ${packageFor (mkPkgs system)}/bin/herdr
+              for path in caller.git caller-worktree caller-common caller-index caller-config caller-global; do
+                test ! -e "$path"
+              done
+              touch "$out"
+            '';
         herdr-home-manager-module =
           assert home.config.home.file ? ".pi/agent/extensions/herdr-agent-state.ts";
+          assert home.config.programs.herdr.package.drvPath == (packageFor (mkPkgs system)).drvPath;
           pkgs.runCommand "herdr-home-manager-module" { } ''
             ${pkgs.python3}/bin/python - ${herdrConfig} <<'PY'
             import sys
@@ -195,5 +233,6 @@ in
       };
     };
 
+  flake.lib.herdr = { inherit packageFor; };
   flake.modules.homeManager.herdr = homeManagerModule;
 }

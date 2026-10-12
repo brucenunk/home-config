@@ -8,6 +8,7 @@
 let
   gitData = config.flake.lib.git;
   piData = config.flake.lib.pi;
+  herdrPackageFor = config.flake.lib.herdr.packageFor;
 
   packageFor =
     pkgs:
@@ -71,9 +72,9 @@ let
       '';
       postInstall = ''
         wrapProgram "$out/bin/herdsman" \
+          --prefix PATH : "${herdrPackageFor pkgs}/bin" \
           --suffix PATH : ${
             pkgs.lib.makeBinPath [
-              pkgs.llm-agents.herdr
               pkgs.openssh
               pkgs.git
             ]
@@ -152,7 +153,7 @@ let
         ) machines;
       };
       package = packageFor pkgs;
-      herdrPackage = pkgs.llm-agents.herdr;
+      herdrPackage = herdrPackageFor pkgs;
       format = pkgs.formats.toml { };
       popupRunner = pkgs.writeShellScript "herdsman-popup" ''
         if ${package}/bin/herdsman; then
@@ -469,7 +470,7 @@ in
               stateVersion = "25.05";
             };
             programs.herdr.enable = true;
-            programs.herdr.package = pkgs.llm-agents.herdr;
+            programs.herdr.package = herdrPackageFor pkgs;
             brucenunk.homeManager.herdsman = {
               machineName = "machine-a";
               machines = {
@@ -694,9 +695,9 @@ in
             HERDR_SOCKET_PATH="$PWD/stale.sock" ${pkgs.coreutils}/bin/env \
             XDG_CONFIG_HOME="$XDG_CONFIG_HOME" XDG_DATA_HOME="$XDG_DATA_HOME" \
             HERDR_SOCKET_PATH="$plugin/offline.sock" \
-            ${pkgs.llm-agents.herdr}/bin/herdr plugin link "$plugin"
+            ${herdrPackageFor pkgs}/bin/herdr plugin link "$plugin"
           test ! -e "$PWD/stale-config/herdr/plugins.json"
-          ${pkgs.llm-agents.herdr}/bin/herdr plugin link "$plugin"
+          ${herdrPackageFor pkgs}/bin/herdr plugin link "$plugin"
           ${pkgs.python3}/bin/python - "$XDG_CONFIG_HOME/herdr/plugins.json" <<'PY'
           import json
           import sys

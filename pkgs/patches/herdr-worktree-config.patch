@@ -1,0 +1,125 @@
+--- a/src/workspace/git/discovery.rs
++++ b/src/workspace/git/discovery.rs
+@@ -241,8 +241,26 @@
+ }
+
+ fn git_dir_is_bare(git_dir: &Path) -> bool {
+-    read_git_config_value(&git_dir.join("config"), "core", "bare")
+-        .is_some_and(|value| value.eq_ignore_ascii_case("true"))
++    let common_config = git_common_dir_for_git_dir(git_dir).join("config");
++    let worktree_config_enabled =
++        read_git_config_value(&common_config, "extensions", "worktreeConfig")
++            .is_some_and(|value| git_config_bool_is_true(&value));
++    let bare = if worktree_config_enabled {
++        read_git_config_value(&git_dir.join("config.worktree"), "core", "bare")
++            .or_else(|| read_git_config_value(&common_config, "core", "bare"))
++    } else {
++        // Without worktreeConfig, Git ignores shared core.bare for linked
++        // checkouts. Preserve their existing non-bare discovery behavior.
++        read_git_config_value(&git_dir.join("config"), "core", "bare")
++    };
++    bare.is_some_and(|value| git_config_bool_is_true(&value))
++}
++
++fn git_config_bool_is_true(value: &str) -> bool {
++    matches!(
++        value.to_ascii_lowercase().as_str(),
++        "true" | "yes" | "on" | "1"
++    )
+ }
+
+ fn parse_git_head_branch(head: &str) -> Option<String> {
+@@ -680,6 +698,93 @@
+     }
+
+     #[test]
++    fn git_space_metadata_supports_worktree_specific_bare() {
++        let (base, bare, checkout) =
++            crate::workspace::git::test_support::create_bare_repo_with_linked_worktree(
++                "worktree-specific-bare",
++            );
++        run_git(&bare, &["config", "extensions.worktreeConfig", "true"]);
++        run_git(&bare, &["config", "--worktree", "core.bare", "true"]);
++        run_git(&bare, &["config", "--unset", "core.bare"]);
++
++        assert!(read_git_config_value(&bare.join("config"), "core", "bare").is_none());
++        let info = git_worktree_info(&bare).expect("worktree-specific bare repo is discovered");
++        assert!(info.is_bare);
++        assert!(!info.is_linked_worktree);
++        let linked = git_worktree_info(&checkout).expect("linked checkout remains discoverable");
++        assert!(!linked.is_bare);
++        assert!(linked.is_linked_worktree);
++        assert_eq!(info.git_common_dir, linked.git_common_dir);
++        assert_eq!(
++            git_space_metadata(&bare).unwrap().key,
++            git_space_metadata(&checkout).unwrap().key
++        );
++        std::fs::remove_dir_all(base).unwrap();
++    }
++
++    #[test]
++    fn git_bare_worktree_config_precedence() {
++        let root = temp_test_dir("bare-config-precedence");
++        for (extension, shared, specific, expected) in [
++            ("true", "false", "true", true),
++            ("true", "true", "false", false),
++            ("true", "true", "", true),
++            ("true", "", "true", true),
++            ("false", "false", "true", false),
++            ("false", "true", "false", true),
++            ("1", "", "true", true),
++            ("yes", "false", "on", true),
++            ("ON", "false", "YES", true),
++            ("true", "1", "0", false),
++            ("off", "false", "true", false),
++            ("no", "false", "true", false),
++            ("0", "false", "true", false),
++        ] {
++            std::fs::write(
++                root.join("config"),
++                format!(
++                    "[extensions]\nworktreeConfig = {extension}\n[core]\n{}",
++                    if shared.is_empty() {
++                        String::new()
++                    } else {
++                        format!("bare = {shared}\n")
++                    }
++                ),
++            )
++            .unwrap();
++            std::fs::write(
++                root.join("config.worktree"),
++                format!(
++                    "[core]\n{}",
++                    if specific.is_empty() {
++                        String::new()
++                    } else {
++                        format!("bare = {specific}\n")
++                    }
++                ),
++            )
++            .unwrap();
++            assert_eq!(
++                git_dir_is_bare(&root),
++                expected,
++                "extension={extension}, shared={shared}, specific={specific}"
++            );
++        }
++        std::fs::remove_dir_all(root).unwrap();
++    }
++
++    #[test]
++    fn git_bare_config_preserves_legacy_linked_checkout() {
++        let (base, bare, checkout) =
++            crate::workspace::git::test_support::create_bare_repo_with_linked_worktree(
++                "legacy-linked-bare",
++            );
++        assert!(git_worktree_info(&bare).unwrap().is_bare);
++        assert!(!git_worktree_info(&checkout).unwrap().is_bare);
++        std::fs::remove_dir_all(base).unwrap();
++    }
++
++    #[test]
+     fn bare_source_and_linked_checkout_share_repo_name_but_not_auto_label() {
+         let (base, bare, checkout) =
+             crate::workspace::git::test_support::create_bare_repo_with_linked_worktree(

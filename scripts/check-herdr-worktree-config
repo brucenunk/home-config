@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Check the pinned Herdr's worktree lifecycle using only isolated local state."""
+
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+
+def check(binary, root):
+    # A caller's GIT_DIR/index/config overrides can redirect even git -C into
+    # unrelated repositories. Neither Git nor the test server may inherit them.
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    for key in ("HERDR_WORKSPACE_ID", "HERDR_TAB_ID", "HERDR_PANE_ID"):
+        env.pop(key, None)
+    env.update(
+        HOME=str(root),
+        XDG_CONFIG_HOME=str(root),
+        XDG_CACHE_HOME=str(root),
+        XDG_DATA_HOME=str(root),
+        HERDR_CONFIG_PATH=str(root / "config.toml"),
+        HERDR_SOCKET_PATH=str(root / "herdr.sock"),
+        HERDR_SESSION="home-config-regression",
+        SHELL=shutil.which("sh"),
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL="/dev/null",
+        GIT_CONFIG_COUNT="1",
+        GIT_CONFIG_KEY_0="core.fsmonitor",
+        GIT_CONFIG_VALUE_0="false",
+        GIT_AUTHOR_NAME="Test",
+        GIT_AUTHOR_EMAIL="test@example.invalid",
+        GIT_COMMITTER_NAME="Test",
+        GIT_COMMITTER_EMAIL="test@example.invalid",
+    )
+
+    def run(*args):
+        result = subprocess.run(args, cwd=root, env=env, capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            raise RuntimeError(f"{args!r}: {result.stderr.strip() or result.stdout.strip()}")
+        return result.stdout.strip()
+
+    def git(*args):
+        return run("git", *map(str, args))
+
+    def shared_setting(git_dir, key):
+        result = subprocess.run(["git", "config", "--file", str(git_dir / "config"), "--get", key],
+                                cwd=root, env=env, capture_output=True, text=True, timeout=30)
+        if result.returncode == 1:
+            return None
+        if result.returncode:
+            raise RuntimeError(result.stderr)
+        return result.stdout.strip()
+
+    def api(*args):
+        response = json.loads(run(binary, *map(str, args)))
+        if response.get("error") or "result" not in response:
+            raise RuntimeError(f"{args!r}: {response!r}")
+        return response["result"]
+
+    log = root / "server-output.log"
+    with log.open("w") as output:
+        server = subprocess.Popen(
+            [binary, "server"], cwd=root, env=env,
+            stdout=output, stderr=output, start_new_session=True,
+        )
+        try:
+            deadline = time.monotonic() + 30
+            while True:
+                if server.poll() is not None:
+                    raise RuntimeError(f"isolated server exited: {log.read_text()}")
+                try:
+                    api("api", "snapshot")
+                    break
+                except RuntimeError:
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(f"isolated server did not start: {log.read_text()}")
+                    time.sleep(0.05)
+
+            for layout in ("ordinary", "legacy-bare", "worktree-config-bare"):
+                fixture = root / layout
+                fixture.mkdir()
+                upstream = fixture / "upstream"
+                checkout = fixture / "default"
+                git("init", "-q", "-b", "master", upstream)
+                git("-C", upstream, "commit", "-q", "--allow-empty", "-m", "initial")
+                if layout == "ordinary":
+                    git("clone", "-q", upstream, checkout)
+                    repository = checkout
+                else:
+                    repository = fixture / "master.git"
+                    git("clone", "-q", "--bare", upstream, repository)
+                    if layout == "worktree-config-bare":
+                        git("-C", repository, "config", "extensions.worktreeConfig", "true")
+                        git("-C", repository, "config", "--worktree", "core.bare", "true")
+                        git("-C", repository, "config", "--unset", "core.bare")
+                    git("-C", repository, "worktree", "add", "-q", checkout, "master")
+                    assert git("-C", repository, "rev-parse", "--is-bare-repository") == "true"
+                assert git("-C", checkout, "rev-parse", "--is-bare-repository") == "false"
+                git_dir = Path(git("-C", repository, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+                config_before = {key: shared_setting(git_dir, key) for key in ("core.bare", "core.worktree", "extensions.worktreeConfig")}
+                specific_file = git_dir / "config.worktree"
+                specific_before = specific_file.read_bytes() if specific_file.exists() else None
+                if layout == "worktree-config-bare":
+                    assert config_before["core.bare"] is None
+                    assert git("-C", repository, "config", "--worktree", "--get", "core.bare") == "true"
+
+                # Parent discovery and creation use the original configured path,
+                # not a linked-checkout anchor or a replacement lifecycle.
+                source = api("worktree", "list", "--cwd", repository)["source"]
+                assert source["source_checkout_path"] == str(repository)
+                assert not source.get("source_workspace_id")
+                parent = api("workspace", "create", "--cwd", repository, "--label", f"example/{layout}", "--no-focus")
+                parent_id = parent["workspace"]["workspace_id"]
+                source = api("worktree", "list", "--cwd", repository)["source"]
+                assert source["source_workspace_id"] == parent_id
+
+                old = git("-C", checkout, "rev-parse", "HEAD")
+                branch_before = git("-C", checkout, "symbolic-ref", "HEAD")
+                (checkout / "dirty").write_text("preserve existing checkout\n")
+                status_before = git("-C", checkout, "status", "--porcelain=v1")
+                git("-C", upstream, "commit", "-q", "--allow-empty", "-m", "fresh base")
+                fresh = git("-C", upstream, "rev-parse", "HEAD")
+                # Same fetch/ref namespace contract as Herdsman's existing flow.
+                git("-C", repository, "fetch", "--no-tags", "--refmap=", "--", "origin", "+refs/heads/master:refs/remotes/origin/master")
+
+                for attempt in (1, 2):
+                    task = fixture / f"task-{attempt}"
+                    branch = f"jamesl/task-{attempt}"
+                    created = api("worktree", "create", "--workspace", parent_id, "--branch", branch,
+                                  "--base", "refs/remotes/origin/master", "--path", task, "--label", "test task", "--no-focus")
+                    task_id = created["workspace"]["workspace_id"]
+                    assert created["root_pane"]["pane_id"]
+                    assert git("-C", task, "rev-parse", "HEAD") == fresh != old
+                    assert git("-C", checkout, "rev-parse", "HEAD") == old
+                    assert git("-C", checkout, "symbolic-ref", "HEAD") == branch_before
+                    assert git("-C", checkout, "status", "--porcelain=v1") == status_before
+                    workspaces = api("workspace", "list")["workspaces"]
+                    membership = next(w for w in workspaces if w["workspace_id"] == task_id)["worktree"]
+                    assert membership["is_linked_worktree"] and membership["checkout_path"] == str(task)
+                    removed = api("worktree", "remove", "--workspace", task_id, "--force")
+                    assert removed["type"] == "worktree_removed" and removed["workspace_id"] == task_id
+                    assert removed["path"] == str(task) and removed["forced"]
+                    assert not task.exists()
+                    assert git("-C", repository, "rev-parse", f"refs/heads/{branch}") == fresh
+                    source = api("worktree", "list", "--cwd", repository)["source"]
+                    assert source["source_workspace_id"] == parent_id
+                    remaining = api("workspace", "list")["workspaces"]
+                    assert not any(w["workspace_id"] == task_id for w in remaining)
+                    parent_membership = next(w for w in remaining if w["workspace_id"] == parent_id)["worktree"]
+                    assert not parent_membership["is_linked_worktree"]
+                    assert parent_membership["checkout_path"] == str(repository)
+                assert {key: shared_setting(git_dir, key) for key in config_before} == config_before
+                assert (specific_file.read_bytes() if specific_file.exists() else None) == specific_before
+                print(f"{layout}: discovery, parent reuse, fresh-base creation and cleanup passed", flush=True)
+            run(binary, "server", "stop")
+            server.wait(timeout=10)
+        finally:
+            # Own only this isolated server and its shells, never a shared server.
+            if server.poll() is None:
+                os.killpg(server.pid, signal.SIGKILL)
+                server.wait(timeout=10)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        sys.exit("usage: check-herdr-worktree-config /absolute/path/to/herdr")
+    binary = str(Path(sys.argv[1]).resolve(strict=True))
+    # A short temporary root keeps Unix socket paths within sockaddr_un limits.
+    with tempfile.TemporaryDirectory(prefix="hwt-") as temporary:
+        check(binary, Path(temporary).resolve())
