@@ -6,9 +6,11 @@ let
     let
       upstream = pkgs.llm-agents.herdr;
     in
+    # Both releases still read only config/core.bare; keep the worktreeConfig
+    # fix until upstream handles config.worktree and Git boolean spellings.
     assert pkgs.lib.assertMsg (
-      upstream.version == "0.9.3"
-    ) "Reassess or retire the Herdr worktreeConfig patch when upgrading beyond 0.9.3";
+      builtins.elem upstream.version [ "0.9.3" "0.9.4" ]
+    ) "Reassess or retire the Herdr worktreeConfig patch when upgrading beyond 0.9.4";
     upstream.overrideAttrs (old: {
       patches = (old.patches or [ ]) ++ [ ../../pkgs/patches/herdr-worktree-config.patch ];
       doCheck = true;
