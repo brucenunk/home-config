@@ -40,10 +40,11 @@
 ;; Core Modules
 ;; ============================================================================
 
-(require 'my-emacs-ui)
+(require 'my-agent-shell)
 (require 'my-emacs-completion)
 (require 'my-emacs-editing)
 (require 'my-emacs-remote)
+(require 'my-emacs-ui)
 
 ;; ============================================================================
 ;; Startup Hooks

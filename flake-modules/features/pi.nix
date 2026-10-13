@@ -1,4 +1,9 @@
-{ inputs, lib, ... }:
+{
+  inputs,
+  lib,
+  mkPkgs,
+  ...
+}:
 
 let
   modelsOption = lib.mkOption {
@@ -108,14 +113,8 @@ let
 
         package = lib.mkOption {
           type = lib.types.package;
-          default =
-            if pkgs ? "llm-agents" then
-              pkgs.llm-agents.pi
-            else
-              (inputs.llm-agents.overlays.shared-nixpkgs pkgs pkgs).llm-agents.pi;
-          defaultText = lib.literalExpression ''
-            pkgs.llm-agents.pi or the module's pinned llm-agents overlay applied to pkgs
-          '';
+          default = pkgs.llm-agents.pi;
+          defaultText = lib.literalExpression "pkgs.llm-agents.pi";
           description = "Pi package to install.";
         };
 
@@ -185,7 +184,11 @@ let
         }
 
         (lib.mkIf cfg.enable {
-          home.packages = [ cfg.package ];
+          home.packages = [
+            cfg.package
+            # ACP clients such as agent-shell need the adapter, not just the CLI.
+            (pkgs.llm-agents.pi-acp.override { pi = cfg.package; })
+          ];
 
           home.file =
             themeEntries
@@ -216,7 +219,11 @@ in
   flake.lib.pi = { inherit modelsOption projectModels thinkingLevels; };
 
   perSystem =
-    { pkgs, ... }:
+    {
+      pkgs,
+      system,
+      ...
+    }:
     let
       wampaRelayModels = import ../../config/pi/wampa-relay-models.nix {
         bedrockBaseUrl = "http://127.0.0.1:18766/bedrock";
@@ -297,7 +304,7 @@ in
       mkHome =
         piConfig:
         inputs.home-manager.lib.homeManagerConfiguration {
-          inherit pkgs;
+          pkgs = mkPkgs system;
           modules = [
             homeManagerModule
             {
@@ -325,6 +332,11 @@ in
       overriddenDefaultsHome = mkHome {
         settingsDefaults = builtins.toFile "pi-settings-override.json" ''{"tuiMode":"fullscreen"}'';
       };
+      overriddenPi = pkgs.writeShellScriptBin "pi" ''
+        echo pi-acp-package-override
+      '';
+      overriddenPackageHome = mkHome { package = overriddenPi; };
+      overriddenAdapter = (mkPkgs system).llm-agents.pi-acp.override { pi = overriddenPi; };
       expectedDefaults = pkgs.writeText "pi-settings-defaults.json" (
         builtins.toJSON { tuiMode = "regular"; }
       );
@@ -340,6 +352,15 @@ in
     in
     {
       checks = {
+        pi-acp-package =
+          assert builtins.elem overriddenPi overriddenPackageHome.config.home.packages;
+          assert builtins.elem overriddenAdapter overriddenPackageHome.config.home.packages;
+          assert !(builtins.any (package: (package.pname or "") == "pi-acp") home.config.home.packages);
+          pkgs.runCommand "pi-acp-package-check" { } ''
+            grep -F '${overriddenPi}/bin' ${overriddenAdapter}/bin/pi-acp
+            touch "$out"
+          '';
+
         pi-settings-policy =
           assert usesDefaults expectedDefaults defaultsHome;
           assert usesDefaults expectedHostDefaults hostDefaultsHome;
