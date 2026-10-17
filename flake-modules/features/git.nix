@@ -1,4 +1,9 @@
-{ inputs, lib, ... }:
+{
+  config,
+  inputs,
+  lib,
+  ...
+}:
 
 let
   validComponent =
@@ -16,7 +21,9 @@ let
           description = "The repository's default branch; setting this does not check out or rename a branch.";
         };
         path = lib.mkOption {
-          type = lib.types.strMatching "/.*";
+          type = lib.types.addCheck (lib.types.strMatching "/.*") (
+            value: builtins.match "[^[:cntrl:]]+" value != null && builtins.match "/[^/]+:.*" value == null
+          );
           description = "Absolute path on this machine to a checkout/worktree or bare repository (the git -C directory).";
         };
       };
@@ -32,13 +39,14 @@ let
         if
           lib.all (
             slug:
-            builtins.match "[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" slug != null
+            builtins.stringLength slug <= 4096
+            && builtins.match "[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" slug != null
             && lib.all (part: part != "." && part != "..") (lib.splitString "/" slug)
           ) (builtins.attrNames repositories)
         then
           repositories
         else
-          throw "Git repository keys must be owner/repository slugs";
+          throw "Git repository keys must be owner/repository slugs of at most 4096 bytes";
       description = "Repositories hosted on this machine, keyed by owner/repository slug.";
     };
   };
@@ -64,10 +72,17 @@ let
       ...
     }:
     let
-      repositories = maintenancePaths config.brucenunk.homeManager.git;
+      machines = config.brucenunk.homeManager.machines;
+      localNames = machineData.localName machines;
+      localMachine =
+        if builtins.length localNames == 1 then
+          machines.${builtins.head localNames}
+        else
+          { repositories = { }; };
+      repositories = maintenancePaths localMachine;
     in
     {
-      options.brucenunk.homeManager.git = repositoryOptions;
+      imports = [ machinesModule ];
       config = {
         home.packages = [ pkgs.gh ];
 
@@ -136,6 +151,8 @@ let
         };
       };
     };
+  machinesModule = config.flake.modules.homeManager.machines;
+  machineData = config.flake.lib.machines;
 in
 {
   flake.lib.git = { inherit repositoryOptions maintenancePaths; };
@@ -155,17 +172,26 @@ in
                 if pkgs.stdenv.hostPlatform.isDarwin then "/Users/git-module-check" else "/home/git-module-check";
               stateVersion = "25.05";
             };
-            brucenunk.homeManager.git.repositories = {
-              "example/repo".path = "/test-repositories/checkouts/main";
-              "example/bare" = {
-                path = "/test-repositories/backing/repo.git";
-                defaultBranch = "master";
+            brucenunk.homeManager.machines = {
+              current = {
+                isLocal = true;
+                repositories = {
+                  "example/repo".path = "/test-repositories/checkouts/main";
+                  "example/bare" = {
+                    path = "/test-repositories/backing/repo.git";
+                    defaultBranch = "master";
+                  };
+                };
+              };
+              remote = {
+                directory = "/rpc:remote.example:~/work/";
+                repositories."example/repo".path = "/remote/must-not-maintain";
               };
             };
           }
         ];
       };
-      git = home.config.brucenunk.homeManager.git;
+      git = home.config.brucenunk.homeManager.machines.current;
       disabled = home.extendModules {
         modules = [ { programs.git.maintenance.enable = false; } ];
       };

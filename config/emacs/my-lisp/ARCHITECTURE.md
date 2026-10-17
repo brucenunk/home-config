@@ -7,11 +7,14 @@ conventions and review guardrails remain in `AGENTS.md`.
 
 | Module | Purpose |
 |--------|---------|
+| `my-agent-catalogue.el` | Declares the generated `my/agent-machines` configuration contract and explicit reload command; no launch/runtime operations. |
 | `my-task.el` | Shared task root, catalogue-backed note capture/default hints, template/skill choices, file predicate, capture/list keymap, and note-created hook. |
 | `my-task-list.el` | Dired display, persisted epic/regex filters and sort direction, and scoped reverts. |
 
 ```text
 my-task.el ── autoloads ──► my-task-list.el
+init.el ── loads trusted generated configuration via ──► my-agent-catalogue.el
+my-task.el ── consumes my/agent-machines declared by ──► my-agent-catalogue.el
 my-task-list.el subscribes to the note-created hook
 ```
 
@@ -21,23 +24,31 @@ my-task-list.el subscribes to the note-created hook
   optional epic subdirectories. Use native Denote identifiers and links.
 - Emacs owns capture, files, links, filtering, and sorting—not managed statuses,
   finish/discard, dependency parsing/check-off, git, worktrees, or
-  agent sessions. Herdr/Herdsman own repository selection and runtime lifecycle.
+  agent sessions. Herdr/Herdsman retain their existing runtime lifecycle.
   Emacs authors launch hints; it does not validate reachability or authorize launch.
 - New captures retain the `todo` filename signature solely to match the existing
   default `==todo--` regex. There is no transition API or status validation.
 - `skill` is optional downstream metadata. Capture always selects a repository,
   then writes `repo`, named `machine`, `model`, and `thinking`.
   Both capture forms prompt for machine when multiple destinations qualify,
-  skipping the machine prompt when only one destination is eligible. Ordinary
-  capture uses the Nix-generated Herdsman catalogue's model/thinking defaults;
+  with no implicit/default choice, skipping the machine prompt when only one
+  destination is eligible. Ordinary capture uses the Nix-generated agent catalogue's model/thinking defaults;
   prefix capture exposes those choices. Base ref is gathered only by Herdsman
   at launch, and legacy task-file `base-ref` metadata is ignored. Thinking
   prompts even in ordinary capture when no supported default exists. Templates
   have no Dependencies section.
-- The generated catalogue is the sole choice/default source; no cached inventory,
+- The generated catalogue is the sole choice/default source; no separate inventory,
   Git calls, host probes, mutable Pi settings, or launch lifecycle are involved.
-  Invalid/missing data and cancellation stop before creating the note. Listing
+  Missing configuration, unusable selections, and cancellation stop before creating the note. Listing
   and file identity remain independent of the catalogue.
+- `my-agent-catalogue.el` declares `my/agent-machines` and its contract.
+  Normal startup loads `emacs/agent-catalogue.el` as trusted executable config,
+  setting an alist of names to machine plists with directories, repository
+  records, and model defaults. Typed Nix options and generation tests own
+  structural validation, not a duplicate Lisp schema. Capture uses the loaded
+  value: after activation, explicitly run `my/agent-catalogue-reload` or restart
+  Emacs. The generated config omits local-machine identity. A session launcher
+  is not yet implemented. Nix source composition lives outside task Lisp.
 - Existing notes are untouched, including legacy signatures, repo/session fields,
   and dependency text. These are ordinary content, not runtime state.
 - A saved capture runs `my/task-note-created-hook` to refresh open task lists.
@@ -51,6 +62,7 @@ my-task-list.el subscribes to the note-created hook
 
 - Note capture, shared root, templates, catalogue/default hints, skill metadata, capture/list bindings,
   and task-file predicate → `my-task.el`
+- Generated agent configuration contract/reload → `my-agent-catalogue.el`
 - Dired views, persisted filters, sort, and pinned-scope reverts → `my-task-list.el`
 - Package configuration, templates, links, and file auto-revert → `my-emacs-denote.el`
 

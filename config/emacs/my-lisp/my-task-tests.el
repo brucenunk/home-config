@@ -7,23 +7,27 @@
 ;;; Code:
 
 (require 'my-task-test-support)
+(require 'vertico)
 
-(defconst my/task-test--catalogue
-  "{\"localMachine\":\"machine-a\",\"machines\":{\"machine-a\":{\"repositories\":[\"example/project\"],\"defaultBaseRefs\":{\"example/project\":\"origin/main\"},\"defaultModel\":\"provider/vendor/model\",\"models\":[{\"name\":\"provider/vendor/model\",\"thinkingLevels\":[\"off\",\"medium\",\"high\"],\"defaultThinking\":\"medium\"}]}}}")
+(defconst my/task-test--machines
+  '(("machine-a" :directory "~/work/"
+     :repositories ((:name "example/project" :path "/work/project/main" :base-ref "origin/main"))
+     :default-model "provider/vendor/model"
+     :models ((:name "provider/vendor/model" :thinking-levels ("off" "medium" "high")
+               :default-thinking "medium")))))
 
 (defmacro my/task-test--with-directory (&rest body)
   "Run BODY with an isolated shared task directory."
   (declare (indent 0) (debug t))
   `(let* ((root (make-temp-file "task-files-" t))
           (denote-directory root)
-          (my/task-catalogue-file (expand-file-name "catalogue.json" root))
+          (my/agent-machines (copy-tree my/task-test--machines))
           (denote-save-buffers t)
           (denote-templates '((task-workflow-v3 . "## Context\n\nCapture context.\n")
                               (empty . "")))
           (my/task-note-created-hook nil))
      (unwind-protect
          (progn
-           (with-temp-file my/task-catalogue-file (insert my/task-test--catalogue))
            (cl-letf (((symbol-function 'my/task-directory) (lambda () root))
                      ((symbol-function 'completing-read)
                       (lambda (_prompt choices &optional _predicate _require-match _initial _history default &rest _)
@@ -100,7 +104,7 @@
                       (file-name-as-directory epic)))
        (should (my/task-file-p))))))
 
-(ert-deftest my/task-add-prefix-prompts-in-herdsman-order ()
+(ert-deftest my/task-add-prefix-prompts-in-capture-order ()
   (my/task-test--with-directory
    (let (prompts)
      (cl-letf (((symbol-function 'called-interactively-p) (lambda (&rest _) t))
@@ -122,7 +126,7 @@
 
 (ert-deftest my/task-add-both-interactive-forms-prompt-for-multiple-machines ()
   (my/task-test--with-directory
-   (with-temp-file my/task-catalogue-file (insert my/task-test--two-machines))
+   (setq my/agent-machines (copy-tree my/task-test--two-machines))
    (dolist (prefix '(nil (4)))
      (let (prompts)
        (cl-letf (((symbol-function 'called-interactively-p) (lambda (&rest _) t))
@@ -160,39 +164,23 @@
      (should-not (my/task-file-p)))))
 
 (defconst my/task-test--two-machines
-  "{\"localMachine\":\"machine-a\",\"machines\":{\"machine-a\":{\"repositories\":[\"example/project\"],\"defaultBaseRefs\":{\"example/project\":\"origin/main\"},\"defaultModel\":\"provider/vendor/model\",\"models\":[{\"name\":\"provider/vendor/model\",\"thinkingLevels\":[\"off\",\"medium\",\"high\"],\"defaultThinking\":\"medium\"}]},\"machine-b\":{\"repositories\":[\"example/project\",\"remote/only\"],\"defaultBaseRefs\":{\"example/project\":\"origin/master\",\"remote/only\":\"origin/release/stable\"},\"defaultModel\":\"other/reasoner\",\"models\":[{\"name\":\"other/off\",\"thinkingLevels\":[\"off\"],\"defaultThinking\":\"off\"},{\"name\":\"other/reasoner\",\"thinkingLevels\":[\"low\",\"high\"],\"defaultThinking\":\"\"}]}}}")
+  (append my/task-test--machines
+          '(("machine-b" :directory "/rpc:remote.example:~/work/"
+             :repositories ((:name "example/project" :path "/srv/project.git" :base-ref "origin/master")
+                            (:name "remote/only" :path "/srv/only.git" :base-ref "origin/release/stable"))
+             :default-model "other/reasoner"
+             :models ((:name "other/off" :thinking-levels ("off") :default-thinking "off")
+                      (:name "other/reasoner" :thinking-levels ("low" "high") :default-thinking ""))))))
 
-(ert-deftest my/task-catalogue-parses-delivered-shape-and-nested-model-id ()
+(ert-deftest my/task-capture-uses-loaded-configuration-and-nested-model-id ()
   (my/task-test--with-directory
-   (let* ((catalogue (my/task--catalogue-read))
-          (machine (alist-get 'machine-a (alist-get 'machines catalogue))))
-     (should (equal (alist-get 'localMachine catalogue) "machine-a"))
-     (should (equal (alist-get 'name (car (alist-get 'models machine)))
+   (let ((machine (cdr (assoc "machine-a" my/agent-machines))))
+     (should (equal (plist-get (car (plist-get machine :models)) :name)
                     "provider/vendor/model"))
      (should (equal (my/task--metadata-read nil)
                     '((repo . "example/project") (machine . "machine-a")
                       (model . "provider/vendor/model")
                       (thinking . "medium")))))))
-
-(ert-deftest my/task-catalogue-empty-xdg-uses-home-fallback ()
-  (let ((process-environment (copy-sequence process-environment))
-        (library-directory (file-name-directory (locate-library "my-task"))))
-    (setenv "XDG_CONFIG_HOME" "")
-    (with-temp-buffer
-      (should (zerop (call-process (expand-file-name invocation-name invocation-directory)
-                                  nil t nil "--batch" "-q" "-L" library-directory
-                                  "-l" "my-task" "--eval" "(princ my/task-catalogue-file)")))
-      (should (equal (buffer-string)
-                     (expand-file-name "~/.config/herdsman/catalogue.json"))))))
-
-(ert-deftest my/task-catalogue-rejects-trailing-json-and-garbage ()
-  (my/task-test--with-directory
-    (dolist (suffix '(" {}" " garbage"))
-      (with-temp-file my/task-catalogue-file (insert my/task-test--catalogue suffix))
-      (should-error (my/task-add "Invalid catalogue") :type 'user-error)
-      (should-not (directory-files root nil "\\.md\\'")))
-    (with-temp-file my/task-catalogue-file (insert my/task-test--catalogue " \t\r\n"))
-    (should (my/task--catalogue-read))))
 
 (ert-deftest my/task-metadata-insertion-retains-unicode-in-live-buffer ()
   (with-temp-buffer
@@ -204,7 +192,7 @@
 
 (ert-deftest my/task-capture-two-machines-prompts-and-filters-by-repo ()
   (my/task-test--with-directory
-   (with-temp-file my/task-catalogue-file (insert my/task-test--two-machines))
+   (setq my/agent-machines (copy-tree my/task-test--two-machines))
    (let (prompts)
      (cl-letf (((symbol-function 'completing-read)
                 (lambda (prompt choices &optional _p _r _i _h default &rest _)
@@ -212,7 +200,7 @@
                   (pcase prompt
                     ("Repository: " "example/project")
                     ("Machine: "
-                     (should (equal default "machine-a"))
+                     (should-not default)
                      (should (equal choices '("machine-a" "machine-b")))
                      "machine-b")
                     ("Thinking: " "high")
@@ -240,7 +228,7 @@
 
 (ert-deftest my/task-capture-extended-filters-model-and-thinking ()
   (my/task-test--with-directory
-   (with-temp-file my/task-catalogue-file (insert my/task-test--two-machines))
+   (setq my/agent-machines (copy-tree my/task-test--two-machines))
    (let (prompts)
      (cl-letf (((symbol-function 'read-string)
                 (lambda (&rest _) (ert-fail "Capture must not ask for a base ref")))
@@ -250,7 +238,7 @@
                   (pcase prompt
                     ("Repository: " "example/project")
                     ("Machine: "
-                     (should (equal default "machine-a"))
+                     (should-not default)
                      (should (equal choices '("machine-a" "machine-b"))) "machine-b")
                     ("Model: "
                      (should (equal default "other/reasoner"))
@@ -269,16 +257,76 @@
   (my/task-test--with-directory
    (dolist (extended '(nil t))
      (cl-letf (((symbol-function 'read-string) (lambda (&rest _) (ert-fail "No base-ref prompt")))
+               ((symbol-function 'my/agent-catalogue-reload) (lambda (&rest _) (ert-fail "Capture uses loaded configuration")))
                ((symbol-function 'process-file) (lambda (&rest _) (ert-fail "No Git calls"))))
        (should-not (assq 'base-ref (my/task--metadata-read extended)))))))
 
-(ert-deftest my/task-catalogue-invalid-or-missing-stops-before-note-creation ()
+(ert-deftest my/task-capture-multiple-machines-requires-explicit-choice ()
   (my/task-test--with-directory
-   (dolist (contents '(nil "{" "{}" "[]" "null"
-			   "{\"localMachine\":\"missing\",\"machines\":{}}"))
-     (if contents
-         (with-temp-file my/task-catalogue-file (insert contents))
-       (delete-file my/task-catalogue-file))
+    (setq my/agent-machines (copy-tree my/task-test--two-machines))
+    (dolist (extended '(nil t))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (prompt _choices &optional _p require-match initial history default &rest _)
+                   (pcase prompt
+                     ("Repository: " "example/project")
+                     ("Machine: "
+                      (should require-match)
+                      (should-not initial)
+                      (should-not history)
+                      (should-not default)
+                      "")
+                     (_ (ert-fail "Must stop at empty machine choice"))))))
+        (should-error (my/task-add "No implicit machine" "task" extended) :type 'user-error)))
+    (should-not (directory-files root nil "\\.md\\'"))))
+
+(ert-deftest my/task-capture-vertico-does-not-preselect-a-machine ()
+  ;; Batch Emacs reads stdin instead of opening a minibuffer.  Supply a
+  ;; headless frontend, but run Vertico's real candidate update, navigation,
+  ;; and Return command rather than emulating its selection policy.
+  (let ((my/agent-machines (copy-tree my/task-test--two-machines))
+        (vertico-preselect 'first))
+    (dolist (navigate '(nil t))
+      (let ((completing-read-function
+             (lambda (prompt choices predicate require-match initial history default &rest _)
+               (pcase prompt
+                 ("Repository: "
+                  (should (eq vertico-preselect 'first))
+                  "example/project")
+                 ("Machine: "
+                  (should-not (or initial history default))
+                  (with-temp-buffer
+                    (let ((minibuffer-completion-table choices)
+                          (minibuffer-completion-predicate predicate)
+                          (minibuffer--require-match require-match)
+                          (minibuffer-default default)
+                          returned)
+                      (vertico--update)
+                      (should (= vertico--index -1))
+                      (when navigate (vertico-next))
+                      (cl-letf (((symbol-function 'exit-minibuffer)
+                                 (lambda () (setq returned (minibuffer-contents-no-properties)))))
+                        (vertico-exit))
+                      (should (equal returned (if navigate "machine-a" "")))
+                      returned)))
+                 (_ (ert-fail "Unexpected capture prompt"))))))
+        (if navigate
+            (should (equal (alist-get 'machine (my/task--metadata-read nil)) "machine-a"))
+          (should-error (my/task--metadata-read nil) :type 'user-error))))
+    (should (eq vertico-preselect 'first))))
+
+(ert-deftest my/task-capture-empty-inventory-choices-and-models-stop-before-note ()
+  (my/task-test--with-directory
+    (dolist (machine '((:directory "~/work/" :repositories nil :default-model "" :models nil)
+                       (:directory "~/work/"
+                        :repositories ((:name "example/project" :path "/work/main" :base-ref "origin/main"))
+                        :default-model "" :models nil)))
+      (setq my/agent-machines (list (cons "machine-a" machine)))
+      (should-error (my/task-add "No choices") :type 'user-error)
+      (should-not (directory-files root nil "\\.md\\'")))))
+
+(ert-deftest my/task-capture-missing-configuration-stops-before-note-creation ()
+  (my/task-test--with-directory
+   (let ((my/agent-machines nil))
      (should-error (my/task-add "Never created") :type 'user-error)
      (should-not (directory-files root nil "\\.md\\'")))
    ;; Listing and identity do not consume the catalogue.
@@ -286,15 +334,15 @@
      (setq-local buffer-file-name (expand-file-name "20261005T100000==todo--existing.md" root))
      (should (my/task-file-p)))))
 
-(ert-deftest my/task-catalogue-rejects-invalid-dependent-data ()
+(ert-deftest my/task-capture-unusable-model-or-thinking-stops-before-note ()
   (my/task-test--with-directory
-   (dolist (change '(("origin/main" . "") ("provider/vendor/model" . "no-slash")
-                     ("defaultThinking\":\"medium" . "defaultThinking\":\"huge")
-                     ("thinkingLevels\":[\"off\",\"medium\",\"high\"]" . "thinkingLevels\":[\"huge\"]")
-                     ("machine-a" . "local")))
-     (with-temp-file my/task-catalogue-file
-       (insert (string-replace (car change) (cdr change) my/task-test--catalogue)))
-     (should-error (my/task--catalogue-read) :type 'user-error))))
+   (dolist (default '("unknown/model" ""))
+     (setf (plist-get (cdar my/agent-machines) :default-model) default)
+     (should-error (my/task-add "Unusable model") :type 'user-error))
+   (setq my/agent-machines (copy-tree my/task-test--machines))
+   (setf (plist-get (car (plist-get (cdar my/agent-machines) :models)) :default-thinking) "unsupported")
+   (should-error (my/task-add "Unusable thinking") :type 'user-error)
+   (should-not (directory-files root nil "\\.md\\'"))))
 
 (ert-deftest my/task-capture-cancellation-creates-no-files ()
   (my/task-test--with-directory

@@ -108,16 +108,25 @@ and platform boundaries.
   `flake.lib.herdr.packageFor` supplies the same patched variant to Herdsman
   and any downstream custom package wiring; `packages.<system>.herdr` exposes it
   directly. See [the compatibility-patch notes](herdsman.md#pinned-herdr-compatibility-patch).
-- `herdsman` packages the Go companion launcher. Hosts combine Git/Pi data under
-  `brucenunk.homeManager.herdsman.machines`; operational settings and themes
-  remain under `herdsman.config`. It generates TOML for the launcher and a small
-  JSON catalogue for Emacs. See [`herdsman.md`](herdsman.md).
+- `machines` declares the shared, data-only inventory under
+  `brucenunk.homeManager.machines`. Host composition supplies repository/model
+  definitions, browsing directories, and one `isLocal` record. Git, Herdsman,
+  and `agent-catalogue` import these option declarations, not each other's
+  behavior. See [`agent-catalogue.md`](agent-catalogue.md).
+- `agent-catalogue` generates trusted executable Elisp configuration for Emacs
+  from that inventory, setting `my/agent-machines` at startup with explicit reload.
+  It installs neither Emacs nor Herdsman. Hosts/downstream consumers opt in
+  explicitly; capture consumes it, while session launching remains future work.
+- `herdsman` packages the Go companion launcher. It consumes the shared machine
+  inventory; operational settings and themes remain under `herdsman.config`.
+  Its operational TOML and companion JSON formats are unchanged, and Emacs no
+  longer reads that JSON. See [`herdsman.md`](herdsman.md).
 - `pi` exposes its deployment interface under
   `brucenunk.homeManager.pi`. Its public theme and extension directories are
   defaults, so provider or transport adapters can replace them without
   `mkForce`.
-- `git` owns repository definitions under `brucenunk.homeManager.git` and
-  derives source paths for native Home Manager maintenance on Linux and Darwin.
+- `git` owns repository option types and derives paths from the shared inventory's
+  local record for native Home Manager maintenance on Linux and Darwin.
   Its shared option declarations and Pi's model projection are exported through
   `flake.lib`; combining machine data does not evaluate other complete hosts.
 - `doric-waybar-themes` deploys only the generated `doric-marble` and

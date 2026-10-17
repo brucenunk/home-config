@@ -6,8 +6,8 @@
 }:
 
 let
-  gitData = config.flake.lib.git;
-  piData = config.flake.lib.pi;
+  machineData = config.flake.lib.machines;
+  machinesModule = config.flake.modules.homeManager.machines;
   herdrPackageFor = config.flake.lib.herdr.packageFor;
 
   packageFor =
@@ -93,61 +93,23 @@ let
     }:
     let
       cfg = config.brucenunk.homeManager.herdsman.config;
-      machineName = config.brucenunk.homeManager.herdsman.machineName;
-      machines = config.brucenunk.homeManager.herdsman.machines;
+      machines = config.brucenunk.homeManager.machines;
+      localNames = machineData.localName machines;
+      machineName = if builtins.length localNames == 1 then builtins.head localNames else null;
       localMachine = if machineName == null then null else machines.${machineName} or null;
-      piSettingsDefaults =
-        if options.brucenunk.homeManager ? pi then
-          config.brucenunk.homeManager.pi.settingsDefaults
-        else
-          null;
-      piDefaults =
-        if piSettingsDefaults == null then
-          { }
-        else
-          builtins.fromJSON (builtins.readFile piSettingsDefaults);
-      localDefaultModel =
-        if
-          builtins.isAttrs piDefaults
-          && builtins.isString (piDefaults.defaultProvider or null)
-          && builtins.isString (piDefaults.defaultModel or null)
-          && piDefaults.defaultProvider != ""
-          && piDefaults.defaultModel != ""
-        then
-          "${piDefaults.defaultProvider}/${piDefaults.defaultModel}"
-        else
-          null;
       catalogue = {
         localMachine = machineName;
         machines = lib.mapAttrs (
           _: machine:
           let
-            models = map (
-              model:
-              model
-              // {
-                defaultThinking =
-                  if builtins.elem "medium" model.thinkingLevels then
-                    "medium"
-                  else if builtins.elem "off" model.thinkingLevels then
-                    "off"
-                  else
-                    "";
-              }
-            ) (piData.projectModels machine.models);
+            models = machineData.projectModels machine;
           in
           {
             repositories = builtins.attrNames machine.repositories;
             defaultBaseRefs = lib.mapAttrs (
               _: repository: "origin/${repository.defaultBranch}"
             ) machine.repositories;
-            defaultModel =
-              if machine.defaultModel != null then
-                machine.defaultModel
-              else if models != [ ] then
-                (builtins.head models).name
-              else
-                "";
+            defaultModel = machineData.defaultModel machine;
             inherit models;
           }
         ) machines;
@@ -260,30 +222,7 @@ let
       };
     in
     {
-      options.brucenunk.homeManager.herdsman.machineName = lib.mkOption {
-        type = lib.types.nullOr lib.types.str;
-        default = null;
-        description = "This host's machine name; the current launcher renders it as local in TOML only.";
-      };
-      options.brucenunk.homeManager.herdsman.machines = lib.mkOption {
-        default = { };
-        description = "Git/Pi definitions keyed by machine name, shared with Emacs task metadata.";
-        type = lib.types.attrsOf (
-          lib.types.submodule (
-            { name, ... }: {
-              options = {
-                defaultModel = lib.mkOption {
-                  type = lib.types.nullOr lib.types.str;
-                  default = if name == machineName then localDefaultModel else null;
-                  description = "Initial provider/model selection without a task hint. The local machine inherits Pi's Nix settings defaults; null falls back to the first catalogue model.";
-                };
-                repositories = gitData.repositoryOptions.repositories;
-                models = piData.modelsOption;
-              };
-            }
-          )
-        );
-      };
+      imports = [ machinesModule ];
       options.brucenunk.homeManager.herdsman.config = lib.mkOption {
         description = "Nix-managed Herdsman operational settings; repositories and models come from machines.";
         default = { };
@@ -357,32 +296,12 @@ let
         assertions = [
           {
             assertion =
-              machines == { } || (machineName != null && machines ? ${machineName} && !(machines ? local));
-            message = "Set Herdsman's own machineName when supplying machines; local is reserved for the launcher TOML.";
-          }
-          {
-            assertion =
-              localMachine == null
-              || !(options.brucenunk.homeManager ? git)
-              || config.brucenunk.homeManager.git.repositories == localMachine.repositories;
-            message = "Herdsman and Git must share this machine's repository definition.";
-          }
-          {
-            assertion =
               localMachine == null
               || !(options.brucenunk.homeManager ? pi)
               || config.brucenunk.homeManager.pi.models == localMachine.models;
             message = "Herdsman and Pi must share this machine's model configuration.";
           }
-        ]
-        ++ lib.mapAttrsToList (name: machine: {
-          assertion =
-            machine.defaultModel == null
-            || builtins.elem machine.defaultModel (
-              map (model: model.name) (piData.projectModels machine.models)
-            );
-          message = "Herdsman defaultModel for ${name} must be a model in that machine's catalogue.";
-        }) machines;
+        ];
         home.packages = [ package ];
         systemd.user.services.herdsman = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
           Unit.Description = "Herdsman cached discovery and execution daemon";
@@ -463,6 +382,9 @@ in
         inherit pkgs;
         modules = [
           homeManagerModule
+          config.flake.modules.homeManager.git
+          config.flake.modules.homeManager.agent-catalogue
+          machinesModule
           {
             home = {
               username = "herdsman-module-check";
@@ -471,10 +393,10 @@ in
             };
             programs.herdr.enable = true;
             programs.herdr.package = herdrPackageFor pkgs;
-            brucenunk.homeManager.herdsman = {
-              machineName = "machine-a";
+            brucenunk.homeManager = {
               machines = {
                 "machine-a" = {
+                  isLocal = true;
                   repositories = {
                     "example/repo".path = "${homeDirectory}/work/example/repo/main";
                     "example/bare" = {
@@ -499,9 +421,12 @@ in
                     ];
                   };
                 };
-                "machine-b".repositories."example/repo" = {
-                  path = "/srv/git/remote/repo.git";
-                  defaultBranch = "master";
+                "machine-b" = {
+                  directory = "/rpc:remote.example:~/work/";
+                  repositories."example/repo" = {
+                    path = "/srv/git/remote/repo.git";
+                    defaultBranch = "master";
+                  };
                 };
               };
             };
@@ -517,7 +442,7 @@ in
           {
             brucenunk.homeManager.pi = {
               enable = false;
-              models = home.config.brucenunk.homeManager.herdsman.machines.machine-a.models;
+              models = home.config.brucenunk.homeManager.machines.machine-a.models;
               settingsDefaults = builtins.toFile "herdsman-pi-defaults.json" (
                 builtins.toJSON {
                   defaultProvider = "example";
@@ -530,11 +455,11 @@ in
       };
       explicitDefaultHome = home.extendModules {
         modules = [
-          { brucenunk.homeManager.herdsman.machines.machine-a.defaultModel = "example/vendor/model"; }
+          { brucenunk.homeManager.machines.machine-a.defaultModel = "example/vendor/model"; }
         ];
       };
       clearedDefaultHome = piDefaultHome.extendModules {
-        modules = [ { brucenunk.homeManager.herdsman.machines.machine-a.defaultModel = null; } ];
+        modules = [ { brucenunk.homeManager.machines.machine-a.defaultModel = null; } ];
       };
       partialDefaultHome = piDefaultHome.extendModules {
         modules = [
@@ -549,17 +474,17 @@ in
       };
       invalidDefaultHome = home.extendModules {
         modules = [
-          { brucenunk.homeManager.herdsman.machines.machine-a.defaultModel = "example/unknown"; }
+          { brucenunk.homeManager.machines.machine-a.defaultModel = "example/unknown"; }
         ];
       };
       nonfirstDefaultHome = home.extendModules {
         modules = [
           {
-            brucenunk.homeManager.herdsman.machines.machine-a = {
+            brucenunk.homeManager.machines.machine-a = {
               defaultModel = "example/alternate";
               models = pkgs.lib.mkForce (
                 let
-                  original = home.config.brucenunk.homeManager.herdsman.machines.machine-a.models;
+                  original = home.config.brucenunk.homeManager.machines.machine-a.models;
                 in
                 pkgs.lib.recursiveUpdate original {
                   providers.example.models = original.providers.example.models ++ [
@@ -579,6 +504,13 @@ in
       packages.herdsman = package;
       checks.herdsman = package;
       checks.herdsman-home-manager-module = builtins.deepSeq home.activationPackage.drvPath (
+        assert
+          home.config.programs.git.maintenance.repositories == [
+            "/srv/git/example.git"
+            "${homeDirectory}/work/example/custom/main"
+            "${homeDirectory}/work/example/repo/main"
+          ];
+        assert home.config.xdg.configFile ? "emacs/agent-catalogue.el";
         assert !(builtins.tryEval invalidDefaultHome.activationPackage.drvPath).success;
         assert
           piDefaultHome.config.xdg.configFile."herdsman/catalogue.json".source

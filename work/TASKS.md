@@ -88,16 +88,16 @@ launch hints.
 repository and, when multiple destinations qualify, machine. It uses
 `task-workflow-v3` and the shared catalogue's model and thinking defaults.
 `C-u C-c t a` additionally offers skill
-selection and the launch choices in Herdsman's order:
+selection and the capture hints in this order:
 
 1. Repository (always selected explicitly).
 2. Machine (eligible destinations for that repository; skip with one choice).
 3. Model (`provider/model`, with additional slashes preserved in the model ID).
 4. Thinking (only levels supported by that model).
 
-Both capture forms prompt for machine when multiple destinations qualify. The
-initial selection is the local named machine when eligible, otherwise the first
-named eligible destination. The model uses that machine's effective default.
+Both capture forms require an explicit machine choice with no default when
+multiple destinations qualify. A sole eligible machine is selected automatically;
+the machine running Emacs has no preference. The model uses the selected machine's effective default.
 Thinking defaults to `medium` when supported, otherwise `off`; if neither is
 supported, even ordinary capture asks for an explicit supported choice.
 
@@ -106,10 +106,16 @@ above. Machine values are catalogue keys, never the display label `Local` or
 routing key `local`. Capture neither prompts for nor writes `base-ref`;
 Herdsman gathers it at launch, defaulting to `origin/${defaultBranch}`.
 
-Capture reads `$XDG_CONFIG_HOME/herdsman/catalogue.json` (falling back to
-`~/.config/herdsman/catalogue.json`). Missing/invalid catalogue data or unusable
+Emacs startup loads `$XDG_CONFIG_HOME/emacs/agent-catalogue.el` (normally
+`~/.config/emacs/agent-catalogue.el`) as trusted executable configuration,
+setting `my/agent-machines`. Nix generates it from the shared machine inventory; it includes
+machine browsing directories and machine-local repository paths/base refs, but
+no local-machine identity. Capture uses this loaded value, not a fresh disk
+read. After activating inventory changes, run `M-x my/agent-catalogue-reload`
+or restart Emacs. Missing configuration or unusable
 required choices stop capture with an actionable error; cancellation creates no
-note. Listing and existing notes do not require the catalogue.
+note. Listing and existing notes do not require the catalogue. The catalogue
+does not implement an Emacs session launcher.
 
 These fields remain optional hints to Herdsman, not launch authorization.
 Herdsman skips a usable repository hint and an eligible local machine hint;

@@ -10,8 +10,9 @@ repurposing a package or ownership boundary.
 
 Before modifying or creating my-lisp files:
 
-- [ ] Task code manages files and filtering only; no git, repository selection,
-  agent sessions, worktrees, status transitions, or dependency orchestration.
+- [ ] Task code manages files, filtering, and capture hints only; repository and
+  machine choices are metadata, not launch operations. No Git, agent sessions,
+  worktrees, status transitions, or dependency orchestration.
 - [ ] Function names follow `my/<noun>-<verb>`; predicates end in `-p`.
 - [ ] New internals use `my/<module>--...`; cross-module callers use public APIs.
 - [ ] Public and interactive functions have `;;;###autoload`.
@@ -22,6 +23,10 @@ Before modifying or creating my-lisp files:
 
 Compare `grep -c ';;;###autoload' my-MODULE.el` with Commentary entries when public
 APIs change. Preserve native Denote identity and ordinary Dired operations.
+
+Run feature-worktree Lisp only in isolated batch Emacs. Never load it into the
+shared daemon. Deployment and runtime pickup are separate proof points; use
+approved deployed files for later live checks.
 
 ## Review Guardrails
 

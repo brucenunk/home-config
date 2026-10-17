@@ -223,7 +223,7 @@ and owner sessions still use `$HOME/work/{owner}`.
 
 ### Shared machine data
 
-Hosts reuse Git/Pi definitions under `brucenunk.homeManager.herdsman.machines`,
+Hosts reuse Git/Pi definitions under `brucenunk.homeManager.machines`,
 keyed by machine name, without evaluating complete remote host configurations.
 Import Git, Pi, and Herdsman explicitly with the shared `llm-agents` overlay.
 For example, this fragment adds a synthetic second machine:
@@ -241,25 +241,24 @@ let
 in
 {
   brucenunk.homeManager = {
-    inherit git;
     pi.models = piModels;
-    herdsman = {
-      machineName = "machine-a";
-      machines = {
-        "machine-a" = { repositories = git.repositories; models = piModels; };
-        "machine-b".repositories."example/project" = {
+    machines = {
+      "machine-a" = { isLocal = true; repositories = git.repositories; models = piModels; };
+      "machine-b" = {
+        directory = "/rpc:remote.example:~/work/";
+        repositories."example/project" = {
           path = "/srv/git/project.git";
           defaultBranch = "master";
         };
       };
-      config.agentNames = [ "runner" "helper" ];
     };
+    herdsman.config.agentNames = [ "runner" "helper" ];
   };
 }
 ```
 
-`$XDG_CONFIG_HOME/herdsman/catalogue.json` is the generated view shared by Emacs
-metadata editing and Herdsman's launch selection:
+`$XDG_CONFIG_HOME/herdsman/catalogue.json` remains Herdsman's generated view for
+launch selection. Its format is unchanged:
 `localMachine` is the launcher's named machine key; each `machines.<name>` record
 contains `repositories: [slugs]`, `defaultBaseRefs: {slug: ref}`, an effective
 `defaultModel`, and `models: [{name, thinkingLevels, defaultThinking}]`.
@@ -268,25 +267,26 @@ Thinking levels follow Pi's maps; only configured chat models are included.
 Base refs project the per-machine Git branch defaults as `origin/${defaultBranch}`;
 they contain no live reachability information. There are no Git paths, provider connection fields, credentials, display
 names, or schema version. These are configured choices, not readiness checks;
-task metadata provides defaults and Herdsman owns final selection.
+task metadata provides hints and Herdsman owns final selection.
 
-Emacs `my/task-add` prompts for a repository and writes four launch hints:
-repository, machine, model, and thinking. Both capture forms prompt for machine
-when multiple destinations qualify, skipping a single eligible machine.
-Ordinary capture uses catalogue model/thinking defaults; prefix capture exposes
-those choices. Base ref is gathered only at launch. Thinking always uses the
-selected model's supported levels. Missing/invalid catalogue data blocks capture, not listing.
-See `work/TASKS.md` for capture details. Existing notes are not migrated.
+Emacs no longer reads this JSON. The independent `agent-catalogue` feature
+projects the same shared machine data into `emacs/agent-catalogue.el`, with
+repository records, paths, and browsing directories, but no local-machine
+identity. Capture requires an explicit machine choice without a default when
+several qualify. See [agent-catalogue.md](agent-catalogue.md) and `work/TASKS.md`.
+No Emacs session launcher is implemented by that catalogue; existing notes are
+not migrated.
 
 The catalogue's effective model is the configured machine default, otherwise
 the first model (or an empty string with no models). Thinking projects the
 existing launch rule: `medium` when supported, otherwise `off`, otherwise an
 empty default requiring explicit selection. Herdsman consumes these projected
 defaults and validates their agreement with operational configuration. Standalone
-older catalogues without capture defaults remain usable by Herdsman; Emacs
-requires the generated capture data. No mutable Pi settings are consulted.
+older catalogues without capture defaults remain usable by Herdsman. No mutable
+Pi settings are consulted.
 
-Only the current launcher TOML translates `machineName` to `local`; its
+The Nix generator derives machine identity from the sole `isLocal` record.
+Only the current launcher TOML translates that name to `local`; its
 `local_machine_name` records the original catalogue key explicitly. JSON keeps
 machine names, including the local machine's name. Task `machine` hints use
 these keys, never the user-facing **Local** label or the TOML routing key `local`.
@@ -294,7 +294,7 @@ Remote names match saved
 Herdr labels. Repository paths and default branches are per machine: shared slugs
 may point to different checkouts or bare repositories.
 
-Each machine may declare `brucenunk.homeManager.herdsman.machines.<name>.defaultModel`
+Each machine may declare `brucenunk.homeManager.machines.<name>.defaultModel`
 as an exact `provider/model` reference. For the local machine, its option default
 comes from `defaultProvider` and `defaultModel` in Pi's Nix `settingsDefaults` JSON
 file, when both are provided. It does not read mutable `~/.pi/agent/settings.json`.
@@ -305,7 +305,7 @@ An explicit value overrides the inherited local default; explicit `null` disable
 it and restores first-catalogue-model preselection. For example:
 
 ```nix
-brucenunk.homeManager.herdsman.machines."machine-a".defaultModel = "example-provider/vendor/model";
+brucenunk.homeManager.machines."machine-a".defaultModel = "example-provider/vendor/model";
 ```
 
 The option is emitted into operational TOML as `machines.<destination>.default_model`;
@@ -318,9 +318,9 @@ Pi's mutable default alone does not change Herdsman's initial selection.
 
 Replace old source-directory/root declarations with absolute `path` values and
 static base refs with repository `defaultBranch` metadata. Move declarations to
-`herdsman.machines`; its records reuse Git's repositories and Pi's models.
+`brucenunk.homeManager.machines`; its records reuse Git's repositories and Pi's models.
 The removed `git-maintenance` module and `gitMaintenance.repositories` also move
-to Git, which uses these paths for native Linux/Darwin schedules. Operational
+to the local machine record, which Git uses for native Linux/Darwin schedules. Operational
 Herdsman settings remain under `config`; no old-schema compatibility adapter is provided.
 
 Before the first managed-file activation, inspect the existing writable TOML

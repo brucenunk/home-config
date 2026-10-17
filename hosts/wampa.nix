@@ -47,6 +47,7 @@ in
         imports = [
           config.flake.modules.homeManager.packages
           config.flake.modules.homeManager.agents
+          config.flake.modules.homeManager.agent-catalogue
           config.flake.modules.homeManager.bazel
           config.flake.modules.homeManager.direnv
           config.flake.modules.homeManager.emacs
@@ -62,6 +63,7 @@ in
           config.flake.modules.homeManager.herdsman
           config.flake.modules.homeManager.kube
           config.flake.modules.homeManager.language-servers
+          config.flake.modules.homeManager.machines
           config.flake.modules.homeManager.ripgrep
           config.flake.modules.homeManager.rust
           config.flake.modules.homeManager.pi
@@ -114,13 +116,10 @@ in
           "cockatoo"
         ];
 
-        brucenunk.homeManager.git = git;
-        brucenunk.homeManager.herdsman = {
-          machineName = "wampa";
-          machines.wampa = {
-            repositories = git.repositories;
-            models = piModels;
-          };
+        brucenunk.homeManager.machines.wampa = {
+          isLocal = true;
+          repositories = git.repositories;
+          models = piModels;
         };
 
         programs.emacs.package = pkgs.emacs-pgtk;

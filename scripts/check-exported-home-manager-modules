@@ -34,6 +34,7 @@ nix eval --impure --raw --expr '
     };
 
     expectedModuleNames = [
+      "agent-catalogue"
       "agents"
       "bazel"
       "darkman"
@@ -52,6 +53,7 @@ nix eval --impure --raw --expr '
       "herdsman"
       "kube"
       "language-servers"
+      "machines"
       "niri"
       "packages"
       "pi"
