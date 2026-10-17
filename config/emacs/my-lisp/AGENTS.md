@@ -11,10 +11,13 @@ repurposing a package or ownership boundary.
 Before modifying or creating my-lisp files:
 
 - [ ] Task code manages files, filtering, and capture hints only; repository and
-  machine choices are metadata, not launch operations. No Git, agent sessions,
-  worktrees, status transitions, or dependency orchestration.
+  machine choices are metadata, not launch operations. A human-invoked task-list
+  action may pass the exact Dired todo file at point to the public launcher;
+  task code still owns no Git, agent sessions, worktrees, status transitions,
+  or dependency orchestration. Capture remains file-only.
 - [ ] Explicit human-operated launches belong in `my-agent-session.el`, not task
-  packages. It may create disposable worktrees and conversations, but owns no
+  packages; the task-list action is only a UI delegate. The launcher may create
+  disposable worktrees and conversations, but owns no
   agent-to-agent orchestration, automatic cleanup or task lifecycle.
 - [ ] Function names follow `my/<noun>-<verb>`; predicates end in `-p`.
 - [ ] New internals use `my/<module>--...`; cross-module callers use public APIs.

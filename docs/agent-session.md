@@ -10,6 +10,9 @@ pinned agent-shell/ACP packages, and `pi-acp` on the selected machine.
 
 ### `M-x my/agent-session-start-from-file`
 
+Globally, **`C-c a f`** invokes this command with its normal task picker. The
+`C-c a` agent prefix leaves `d`, `w` and `r` unbound for future commands.
+
 Select a todo task note recursively under `~/work/tasks/`, including epic
 subdirectories. Only Denote Markdown filenames with the exact `==todo--`
 signature qualify; done/discarded notes, unrelated files, backups and lock
@@ -24,9 +27,29 @@ submit the complete saved snapshot and any skill instruction to that exact
 shell. Unsaved editor changes are not part of the snapshot.
 
 The optional Lisp argument `FILE` bypasses completion, not saved-task validation:
-`(my/agent-session-start-from-file file)`. This supports future task-list/Dired
-callers without adding bindings or file actions now. There is no direct-directory
-task path or generic prompt-file mode.
+`(my/agent-session-start-from-file file)`. The task-list action below supplies
+that argument directly. There is no direct-directory task path or generic
+prompt-file mode.
+
+#### Launch from the task list
+
+In a task-list buffer, **`C-c a f`** runs `my/task-list-start-agent`: launch the
+saved todo task **at point**, without selecting the task again. Dired marks are
+ignored; this is not a batch action. The exact Dired path is passed to the public
+launcher, so duplicate display titles do not change file identity.
+
+Move to an existing Denote Markdown file with the exact `==todo--` filename
+signature. Header/empty lines, directories, unrelated files, backups and other
+signatures are rejected before launch, even if a broader list filter displays
+them. The action preserves epic/regex filters, sorting and marks. Ordinary Dired
+opening/navigation and the `C-c t` task/filter bindings are unchanged; other
+global agent-prefix bindings are inherited.
+
+The wrapper neither saves nor reverts visiting task buffers. If a task buffer
+differs from disk, the launcher asks you to save or revert before launching;
+resolve that deliberately and invoke the action again. Repository/machine/base
+choices, worktree creation, overrides, task/skill submission and failure handling
+remain exclusively in the launcher. Capture remains file-only.
 
 ### `M-x my/agent-session-start-new-worktree`
 
@@ -213,6 +236,11 @@ existence boundary. A native task-startup/submission fixture leaves its new Git
 worktree clean, with unchanged exclusions and no `.agent-shell/`. These are
 isolated worktree checks, not proof of live RPC/authentication behavior.
 
+The catalogue/capture/list ERT suite also mocks the public launcher to check
+at-point file identity versus marks, invalid targets, cancellation/failure
+propagation, untouched unsaved task buffers and list state, and the global/local
+agent-prefix bindings. These tests never create live agent sessions.
+
 Stage intended files, run the required Wampa build on x86_64 Linux, and follow
 [activation.md](activation.md) when delivery is authorized. From Woowoo, Wampa
 activation requires the reviewed source to have been merged and pushed; a
@@ -246,6 +274,12 @@ disposable smoke-test worktrees/conversations and any cleanup:
    must leave Git clean and create no `.agent-shell/` or exclusions.
 7. Cancel at each selector/base prompt: no worktree appears. Inspect a startup
    failure and uncertain delivery without deleting work or automatically resending.
+8. From a filtered task list, mark a different task, then use `C-c a f` on a saved
+   todo note. Verify there is no second task picker and only the note at point
+   launches; return to the list and check filters, sort and marks. Try a header,
+   directory or non-todo note and confirm rejection. With an unsaved visiting task
+   buffer, confirm the save/revert diagnostic leaves edits intact. Outside the
+   task list, confirm `C-c a f` uses the normal task picker.
 
 Record build, activation and actual runtime-pickup evidence separately. Live
 checks above are not marked passed by the isolated suite.

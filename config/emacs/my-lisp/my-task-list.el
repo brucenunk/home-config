@@ -13,6 +13,7 @@
 ;;   - my/task-list — open task list
 ;;   - my/task-list-show — display the current filtered view
 ;;   - my/task-list-setup — install task-prefix bindings
+;;   - my/task-list-start-agent — launch the saved todo task at point
 ;;   - my/task-list-buffer — return a task-list buffer
 ;;   - my/task-list-revert-buffers — refresh task-list buffers
 ;;   - my/task-list-filter-epic — filter by epic
@@ -30,6 +31,7 @@
   "Hook run after a new task note has been saved.")
 
 (declare-function denote-sort-dired-revert "denote" (&rest args))
+(autoload 'my/agent-session-start-from-file "my-agent-session" nil t)
 
 ;;; Filter state
 
@@ -133,9 +135,38 @@ Uses temp file + rename for atomicity."
 
 ;;;###autoload
 (defun my/task-list-setup ()
-  "Set up task list buffer with task-prefix bindings."
+  "Set up task and agent prefixes without changing ordinary Dired bindings."
   (setq-local my/task-list--managed-p t)
-  (local-set-key (kbd "C-c t") (my/task-list--task-prefix-map)))
+  ;; Dired's mode map is shared with unmanaged directory buffers.
+  (use-local-map (copy-keymap (or (current-local-map) (make-sparse-keymap))))
+  (local-set-key (kbd "C-c t") (my/task-list--task-prefix-map))
+  (let ((map (make-sparse-keymap)))
+    (when-let* ((global-agent-map (lookup-key (current-global-map) (kbd "C-c a"))))
+      (set-keymap-parent map global-agent-map))
+    (define-key map (kbd "f") #'my/task-list-start-agent)
+    (local-set-key (kbd "C-c a") map)))
+
+;;;###autoload
+(defun my/task-list-start-agent ()
+  "Launch the saved todo task at point, ignoring Dired marks.
+Pass Dired's exact filename to `my/agent-session-start-from-file' without
+another task picker.  The launcher owns saved-content validation and all
+launch choices and operations; visiting task buffers are never saved or
+reverted here.  Do not change the list's filters, sort direction or marks."
+  (interactive)
+  (unless (derived-mode-p 'dired-mode)
+    (user-error "Move to a todo task file in a task-list Dired buffer"))
+  (let ((file (dired-get-filename nil t)))
+    (unless file
+      (user-error "No task file on this line; move to a todo task file"))
+    (when (file-directory-p file)
+      (user-error "Choose a todo task file, not a directory: %s" file))
+    (unless (and (file-regular-p file)
+                 (string-match-p
+                  "\\`[0-9]\\{8\\}T[0-9]\\{6\\}==todo--.+\\.md\\'"
+                  (file-name-nondirectory file)))
+      (user-error "Choose an existing Denote Markdown todo task (==todo--): %s" file))
+    (my/agent-session-start-from-file file)))
 
 (defun my/task-list--task-prefix-map ()
   "Return task prefix map for task-list buffers."
@@ -156,8 +187,7 @@ Uses temp file + rename for atomicity."
   "Restore task-list bindings in Denote empty buffers for task directories."
   (when (or my/task-list--managed-p
             (my/task-list--tasks-directory-p))
-    (setq-local my/task-list--managed-p t)
-    (local-set-key (kbd "C-c t") (my/task-list--task-prefix-map))))
+    (my/task-list-setup)))
 
 (defun my/task-list--clone-buffer (buffer)
   "Return a cloned managed task-list BUFFER.

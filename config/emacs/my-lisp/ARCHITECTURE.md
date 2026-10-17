@@ -10,7 +10,7 @@ conventions and review guardrails remain in `AGENTS.md`.
 | `my-agent-catalogue.el` | Declares the generated `my/agent-machines` configuration contract and explicit reload command; no launch/runtime operations. |
 | `my-agent-session.el` | Explicit human-operated task/ad hoc launches, disposable worktree creation, independent task model/thinking overrides, and clear failure reporting; no retained launch context, task lifecycle or automatic cleanup. |
 | `my-task.el` | Shared task root, catalogue-backed note capture/default hints, template/skill choices, file predicate, capture/list keymap, and note-created hook. |
-| `my-task-list.el` | Dired display, persisted epic/regex filters and sort direction, and scoped reverts. |
+| `my-task-list.el` | Dired display, persisted epic/regex filters and sort direction, scoped reverts, and a human-invoked at-point delegate to the public launcher. |
 
 ```text
 my-task.el ── autoloads ──► my-task-list.el
@@ -18,6 +18,7 @@ init.el ── loads trusted generated configuration via ──► my-agent-cata
 my-task.el ── consumes my/agent-machines declared by ──► my-agent-catalogue.el
 my-agent-session.el ── consumes inventory from ──► my-agent-catalogue.el
 my-agent-session.el ── starts fresh conversations through ──► agent-shell / Pi ACP
+my-task-list.el ── passes the Dired todo file at point to ──► my/agent-session-start-from-file
 my-task-list.el subscribes to the note-created hook
 ```
 
@@ -31,7 +32,14 @@ my-task-list.el subscribes to the note-created hook
   `my/agent-session-start-from-file` creates a worktree and submits a saved task;
   `my/agent-session-start-new-worktree` creates an ad hoc worktree; and
   `my/agent-session-start-in-directory` starts ad hoc in an exact chosen directory.
-  They share Git/startup internals, with no dispatcher or task-list/Dired binding.
+  They share Git/startup internals, with no dispatcher. `init.el` binds the global
+  `C-c a f` to the file launcher's normal task picker. Task-list buffers override
+  only `f` in an inherited local agent prefix: a human-invoked UI action validates
+  the existing todo Markdown filename at point and delegates that exact Dired
+  path to the public launcher. It ignores marks and never saves/reverts task
+  buffers, changes list state, or implements launch operations. Saved-snapshot
+  validation and all launch choices, operations and failure handling remain
+  with the launcher; capture remains file-only.
   Herdr/Herdsman retain their runtime lifecycle and
   orchestration. See `../../../docs/agent-session.md` for launch/failure policy.
 - New captures retain the `todo` filename signature solely to match the existing
@@ -75,7 +83,8 @@ my-task-list.el subscribes to the note-created hook
   and task-file predicate → `my-task.el`
 - Generated agent configuration contract/reload → `my-agent-catalogue.el`
 - Explicit human-operated worktree/directory launches → `my-agent-session.el`
-- Dired views, persisted filters, sort, and pinned-scope reverts → `my-task-list.el`
+- Dired views, persisted filters, sort, pinned-scope reverts, and thin human-invoked
+  launch delegation → `my-task-list.el`
 - Package configuration, templates, links, and file auto-revert → `my-emacs-denote.el`
 
 Prefer removing unused helpers over compatibility layers. New packages or state

@@ -8,6 +8,163 @@
 
 (require 'my-task-test-support)
 
+(defmacro my/task-list-test--with-launch-files (&rest body)
+  "Run BODY in an isolated Dired task list with real task and other files."
+  (declare (indent 0) (debug t))
+  `(let* ((root (make-temp-file "task-list-launch-" t))
+          (task (expand-file-name "20261017T183224==todo--same-title.md" root))
+          (other (expand-file-name "20261017T183225==todo--same-title.md" root))
+          (directory (expand-file-name "20261017T183226==todo--directory.md" root))
+          (invalid-names '("notes.md" "20261017T183224==done--task.md"
+                           "20261017T183224==discarded--task.md"
+                           "20261017T183224==todo--task.org"
+                           "20261017T183224==todo--task.md~"
+                           ".#20261017T183224==todo--task.md"))
+          (my/task-list-epic root)
+          (my/task-list-regex "==todo--")
+          (my/task-list-reverse t)
+          buffer)
+     (unwind-protect
+         (progn
+           (dolist (file (append (list task other)
+                                (mapcar (lambda (name) (expand-file-name name root))
+                                        invalid-names)))
+             (with-temp-file file (insert "---\ntitle: Same title\n---\nSaved task\n")))
+           (make-directory directory)
+           (setq buffer (dired-noselect root))
+           (with-current-buffer buffer
+             (my/task-list--prepare-buffer buffer root)
+             ,@body))
+       (when (buffer-live-p buffer) (kill-buffer buffer))
+       (dolist (file (list task other))
+         (when-let* ((visiting (get-file-buffer file)))
+           (with-current-buffer visiting (set-buffer-modified-p nil))
+           (kill-buffer visiting)))
+       (delete-directory root t))))
+
+(ert-deftest my/task-list-start-agent-passes-exact-file-at-point-and-preserves-state ()
+  (my/task-list-test--with-launch-files
+    (dired-goto-file other)
+    (dired-mark 1)
+    (dired-goto-file task)
+    (let ((contents (buffer-string))
+          (position (point))
+          (scope my/task-list--denote-scope)
+          (directory-default default-directory)
+          (reverter revert-buffer-function)
+          calls)
+      (cl-letf (((symbol-function 'my/agent-session-start-from-file)
+                 (lambda (&optional file) (push file calls) 'launched))
+                ((symbol-function 'completing-read)
+                 (lambda (&rest _) (ert-fail "Unexpected second task picker")))
+                ((symbol-function 'dired-get-marked-files)
+                 (lambda (&rest _) (ert-fail "Must not consult marked files")))
+                ((symbol-function 'my/task-list--filter-save)
+                 (lambda () (ert-fail "Must not persist list state"))))
+        (should (eq (call-interactively #'my/task-list-start-agent) 'launched)))
+      (should (equal calls (list task)))
+      (should (equal contents (buffer-string)))
+      (should (= position (point)))
+      (should (equal scope my/task-list--denote-scope))
+      (should (equal directory-default default-directory))
+      (should (eq reverter revert-buffer-function))
+      (should (equal my/task-list-epic root))
+      (should (equal my/task-list-regex "==todo--"))
+      (should my/task-list-reverse))))
+
+(ert-deftest my/task-list-start-agent-rejects-invalid-targets-before-launch ()
+  (my/task-list-test--with-launch-files
+    (cl-letf (((symbol-function 'my/agent-session-start-from-file)
+               (lambda (&rest _) (ert-fail "Invalid target reached launcher"))))
+      (goto-char (point-min))
+      (should-error (my/task-list-start-agent) :type 'user-error)
+      (dolist (file (cons directory
+                         (mapcar (lambda (name) (expand-file-name name root)) invalid-names)))
+        (should (dired-goto-file file))
+        (should-error (my/task-list-start-agent) :type 'user-error))
+      ;; A stale Dired entry is not an existing saved task.
+      (dired-goto-file task)
+      (delete-file task)
+      (should-error (my/task-list-start-agent) :type 'user-error)
+      (with-temp-buffer
+        (should-error (my/task-list-start-agent) :type 'user-error))
+      (with-temp-buffer
+        (denote-dired-empty-mode)
+        (should-error (my/task-list-start-agent) :type 'user-error)))))
+
+(ert-deftest my/task-list-start-agent-propagates-launch-outcomes-without-changing-list ()
+  (my/task-list-test--with-launch-files
+    (dired-goto-file task)
+    (let ((contents (buffer-string)) (position (point)))
+      (dolist (outcome '(nil (quit) (error "Launch failed") (user-error "Save or revert task")))
+        (cl-letf (((symbol-function 'my/agent-session-start-from-file)
+                   (lambda (file)
+                     (should (equal file task))
+                     (when outcome (signal (car outcome) (cdr outcome))))))
+          (should (equal (condition-case err
+                             (my/task-list-start-agent)
+                           ((error quit) err))
+                         outcome)))
+        (should (equal contents (buffer-string)))
+        (should (= position (point)))
+        (should (equal my/task-list-epic root))
+        (should (equal my/task-list-regex "==todo--"))
+        (should my/task-list-reverse)))))
+
+(ert-deftest my/task-list-start-agent-leaves-unsaved-visiting-task-to-launcher ()
+  (my/task-list-test--with-launch-files
+    (let ((visiting (find-file-noselect task)) saved edited)
+      (with-current-buffer visiting
+        (setq saved (buffer-string))
+        (goto-char (point-max))
+        (insert "Unsaved edit\n")
+        (setq edited (buffer-string)))
+      (dired-goto-file task)
+      (cl-letf (((symbol-function 'my/agent-session-start-from-file)
+                 (lambda (file)
+                   (should (equal file task))
+                   (with-current-buffer visiting
+                     (should (equal edited (buffer-string)))
+                     (should (buffer-modified-p)))
+                   (should (equal saved (with-temp-buffer
+                                          (insert-file-contents file)
+                                          (buffer-string))))
+                   (user-error "Task buffer differs from disk; save or revert before launching"))))
+        (should-error (my/task-list-start-agent) :type 'user-error))
+      (with-current-buffer visiting
+        (should (equal edited (buffer-string)))
+        (should (buffer-modified-p))))))
+
+(ert-deftest my/task-list-agent-prefix-is-local-and-inherits-global-bindings ()
+  (let ((original-global-map (current-global-map))
+        (original-dired-agent-prefix (lookup-key dired-mode-map (kbd "C-c a"))))
+    (unwind-protect
+        (progn
+          (use-global-map (copy-keymap original-global-map))
+          ;; Model a global agent prefix without depending on init.el, which
+          ;; is intentionally outside the catalogue check's my-lisp input.
+          (keymap-global-set "C-c a"
+                             (define-keymap "f" #'my/agent-session-start-from-file))
+          (should (eq (key-binding (kbd "C-c a f")) #'my/agent-session-start-from-file))
+          ;; A future global sibling must remain visible in task lists.
+          (define-key (lookup-key (current-global-map) (kbd "C-c a")) "d" #'ignore)
+          (my/task-list-test--with-launch-files
+            (should (eq (key-binding (kbd "C-c a f")) #'my/task-list-start-agent))
+            (should (eq (key-binding (kbd "C-c a d")) #'ignore))
+            (should (equal (lookup-key dired-mode-map (kbd "C-c a"))
+                           original-dired-agent-prefix))
+            (my/task-list--revert-buffer)
+            (should (eq (key-binding (kbd "C-c a f")) #'my/task-list-start-agent))
+            (with-temp-buffer
+              (dired-mode root)
+              (should (eq (key-binding (kbd "C-c a f")) #'my/agent-session-start-from-file)))
+            (with-temp-buffer
+              (setq-local my/task-list--managed-p t)
+              (denote-dired-empty-mode)
+              (should (eq (key-binding (kbd "C-c a f")) #'my/task-list-start-agent))))
+          (should (eq (key-binding (kbd "C-c a f")) #'my/agent-session-start-from-file)))
+      (use-global-map original-global-map))))
+
 (ert-deftest my/task-list-root-dir-uses-denote-directory ()
   (cl-letf (((symbol-function 'denote-directories)
              (lambda ()

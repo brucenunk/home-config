@@ -49,6 +49,10 @@
 (autoload 'my/agent-session-start-from-file "my-agent-session" nil t)
 (autoload 'my/agent-session-start-new-worktree "my-agent-session" nil t)
 (autoload 'my/agent-session-start-in-directory "my-agent-session" nil t)
+(defvar-keymap my/agent-session-map
+  :doc "Human-operated agent session commands."
+  "f" #'my/agent-session-start-from-file)
+(keymap-global-set "C-c a" my/agent-session-map)
 (require 'my-emacs-completion)
 (require 'my-emacs-editing)
 (require 'my-emacs-remote)
