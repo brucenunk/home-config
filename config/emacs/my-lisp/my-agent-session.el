@@ -8,7 +8,9 @@
 ;;; Commentary:
 
 ;; Public commands:
-;;   - my/agent-session-start — launch from a task or without an initial prompt
+;;   - my/agent-session-start-from-file — launch a saved task in a new worktree
+;;   - my/agent-session-start-new-worktree — launch ad hoc in a new worktree
+;;   - my/agent-session-start-in-directory — launch ad hoc in an exact directory
 ;; This owns explicit human launches, not task capture, orchestration or cleanup.
 
 ;;; Code:
@@ -22,6 +24,44 @@
 (require 'my-agent-catalogue)
 
 (defvar vertico-preselect)
+
+(defun my/agent-session--task-candidates (root)
+  "Return completion labels paired with task files recursively under ROOT.
+Use only Denote filename metadata, never task bodies.  Include epic/date
+identity so duplicate titles remain selectable."
+  (let ((counts (make-hash-table :test #'equal)) entries)
+    (when (file-directory-p root)
+      (dolist (file (directory-files-recursively
+                    root "\\`[0-9]\\{8\\}T[0-9]\\{6\\}==todo--.+\\.md\\'"))
+        (let* ((title (replace-regexp-in-string "-" " " (or (denote-retrieve-filename-title file) "Untitled task")))
+               (epic (directory-file-name (or (file-name-directory (file-relative-name file root)) "tasks")))
+               (id (denote-retrieve-filename-identifier file))
+               (label (concat (propertize title 'face 'denote-faces-title)
+                              "  [" (propertize epic 'face 'denote-faces-subdirectory)
+                              " · " (propertize (concat (denote-id-to-date id) " "
+                                                       (substring id 9 11) ":" (substring id 11 13) ":" (substring id 13 15))
+                                               'face 'denote-faces-date) "]")))
+          (puthash label (1+ (gethash label counts 0)) counts)
+          (push (cons label file) entries))))
+    (mapcar (lambda (entry)
+              ;; Even duplicate identifiers (e.g. copied notes with
+              ;; different keyword suffixes) retain distinct file paths.
+              (if (> (gethash (car entry) counts) 1)
+                  (cons (concat (car entry) " " (file-relative-name (cdr entry) root)) (cdr entry))
+                entry))
+            (nreverse entries))))
+
+(defun my/agent-session--task-select ()
+  "Select a todo task file using styled, filename-only completion."
+  (let* ((candidates (my/agent-session--task-candidates (expand-file-name "~/work/tasks/" "/")))
+         (_ (unless candidates (user-error "No todo task notes under ~/work/tasks/")))
+         (table (denote-get-completion-table
+                 (mapcar #'car candidates)
+                 '(category . my-agent-session)))
+         (selection (completing-read "Task: " table nil t))
+         (entry (assoc selection candidates)))
+    (unless entry (user-error "Select a todo task"))
+    (cdr entry)))
 
 (defun my/agent-session--task-read (file)
   "Read a saved task FILE and its bounded YAML front matter.
@@ -89,51 +129,41 @@ Only the opening delimiter and its first closing delimiter delimit metadata."
     (unless (member value choices) (user-error "Select a value for %s" prompt))
     value))
 
-(defun my/agent-session--collect ()
-  "Collect all user choices without mutating Git or starting an agent."
+(defun my/agent-session--machine-select (&optional repo)
+  "Return an explicitly selected catalogue entry, restricted to REPO if given.
+A sole eligible machine is automatic; multiple machines have no default."
   (unless my/agent-machines
     (user-error "Configure machines and run M-x my/agent-catalogue-reload"))
-  (let* ((mode (my/agent-session--choice "Start: " '("Task-backed" "Ad hoc")))
-         (task (when (equal mode "Task-backed")
-                 (my/agent-session--task-read
-                  (read-file-name "Task file: " (expand-file-name "~/work/tasks/") nil t))))
-         (worktree (equal (my/agent-session--choice
-                          "Location: " '("New repository worktree" "Existing directory"))
-                         "New repository worktree"))
-         (repos (delete-dups
-                 (cl-loop for (_ . machine) in my/agent-machines
-                          append (mapcar (lambda (repo) (plist-get repo :name))
-                                         (plist-get machine :repositories)))))
-         (hint (plist-get task :repo))
-         (repo (when worktree
-                 (if (member hint repos) hint
-                   (my/agent-session--choice "Repository: " (sort repos #'string<)))))
-         (eligible (cl-loop for (name . machine) in my/agent-machines
-                            when (or (not worktree)
+  (let* ((eligible (cl-loop for (name . machine) in my/agent-machines
+                            when (or (not repo)
                                      (cl-find repo (plist-get machine :repositories)
                                               :key (lambda (item) (plist-get item :name))
                                               :test #'equal))
                             collect name))
          (name (if (= (length eligible) 1) (car eligible)
-                 (my/agent-session--choice "Machine: " (sort eligible #'string<))))
-         (machine (cdr (assoc name my/agent-machines)))
+                 (my/agent-session--choice "Machine: " (sort eligible #'string<)))))
+    (assoc name my/agent-machines)))
+
+(defun my/agent-session--worktree-options (&optional task)
+  "Collect repository, machine and base choices, optionally using TASK hints.
+Do not mutate Git or start an agent."
+  (let* ((repos (delete-dups
+                 (cl-loop for (_ . machine) in my/agent-machines
+                          append (mapcar (lambda (repo) (plist-get repo :name))
+                                         (plist-get machine :repositories)))))
+         (hint (plist-get task :repo))
+         (repo (if (member hint repos) hint
+                 (my/agent-session--choice "Repository: " (sort repos #'string<))))
+         (entry (my/agent-session--machine-select repo))
+         (machine (cdr entry))
          (browse (file-name-as-directory (expand-file-name (plist-get machine :directory))))
          (record (cl-find repo (plist-get machine :repositories)
                           :key (lambda (item) (plist-get item :name)) :test #'equal))
-         (source (when worktree
-                   (concat (file-remote-p browse) (plist-get record :path))))
-         (base (when worktree
-                 (let ((default (plist-get record :base-ref)))
-                   (read-string (format-prompt "Base ref" default) nil nil default))))
-         (directory (unless worktree
-                      (let ((default-directory browse))
-                        (file-name-as-directory
-                         (expand-file-name (read-directory-name "Directory: " browse nil t)))))))
-    (when (and directory
-               (not (equal (file-remote-p directory) (file-remote-p browse))))
-      (user-error "Choose a directory on the selected machine (%s)" name))
-    (append (list :branch nil :machine name :source source :base base :directory directory
-                  :worktree worktree)
+         (source (concat (file-remote-p browse) (plist-get record :path)))
+         (default (plist-get record :base-ref))
+         (base (read-string (format-prompt "Base ref" default) nil nil default)))
+    (append (list :branch nil :machine (car entry) :source source :base base :directory nil
+                  :worktree t)
             task)))
 
 (defun my/agent-session--git-result (source &rest args)
@@ -329,27 +359,58 @@ UNCERTAIN means submission may already have reached the agent."
               returned))
         ((error quit) (fail (error-message-string err)) shell)))))
 
+(defun my/agent-session--start (context)
+  "Create CONTEXT's worktree if requested, then launch its fresh Pi shell.
+All choices must already be collected.  Failures never remove user work."
+  (condition-case err
+      (progn
+        (when (plist-get context :worktree)
+          (let* ((source (plist-get context :source))
+                 (commit (my/agent-session--base-resolve source (plist-get context :base))))
+            (my/agent-session--name context)
+            (my/agent-session--git source "worktree" "add" "--no-track" "-b"
+                                   (plist-get context :branch) "--"
+                                   (file-local-name (plist-get context :directory)) commit)))
+        (my/agent-session--launch context))
+    ((error quit)
+     (my/agent-session--report-failure (plist-get context :directory) (plist-get context :branch)
+                                       nil (error-message-string err))
+     nil)))
+
 ;;;###autoload
-(defun my/agent-session-start ()
-  "Start a task-backed or ad hoc Pi conversation, optionally in a new worktree.
-All selections precede mutation.  Git operations run on the chosen machine
-through its file handler.  Failures never remove user work."
+(defun my/agent-session-start-from-file (&optional file)
+  "Start a saved task FILE in a new repository worktree.
+When FILE is nil, select a todo task with styled completion.  Use a valid
+repository hint, select an eligible machine and always confirm the base ref.
+Submit the saved snapshot, skill instruction and independent optional overrides.
+All selections precede Git mutation or agent startup."
   (interactive)
-  (let ((context (my/agent-session--collect)))
-    (condition-case err
-        (progn
-          (when (plist-get context :worktree)
-            (let* ((source (plist-get context :source))
-                   (commit (my/agent-session--base-resolve source (plist-get context :base))))
-              (my/agent-session--name context)
-              (my/agent-session--git source "worktree" "add" "--no-track" "-b"
-                                     (plist-get context :branch) "--"
-                                     (file-local-name (plist-get context :directory)) commit)))
-          (my/agent-session--launch context))
-      ((error quit)
-       (my/agent-session--report-failure (plist-get context :directory) (plist-get context :branch)
-                                         nil (error-message-string err))
-       nil))))
+  (my/agent-session--start
+   (my/agent-session--worktree-options
+    (my/agent-session--task-read (expand-file-name (or file (my/agent-session--task-select)))))))
+
+;;;###autoload
+(defun my/agent-session-start-new-worktree ()
+  "Select a repository, eligible machine and base ref; start Pi ad hoc.
+Create a new sibling worktree, with no prompt, overrides or naming questions.
+All selections precede Git mutation or agent startup."
+  (interactive)
+  (my/agent-session--start (my/agent-session--worktree-options)))
+
+;;;###autoload
+(defun my/agent-session-start-in-directory ()
+  "Select a machine and directory, then start Pi ad hoc in that exact directory.
+Browse from the selected machine's configured directory.  Create no worktree
+and send no prompt or overrides.  All selections precede agent startup."
+  (interactive)
+  (let* ((entry (my/agent-session--machine-select))
+         (browse (file-name-as-directory (expand-file-name (plist-get (cdr entry) :directory))))
+         (directory (let ((default-directory browse))
+                      (file-name-as-directory
+                       (expand-file-name (read-directory-name "Directory: " browse nil t))))))
+    (unless (equal (file-remote-p directory) (file-remote-p browse))
+      (user-error "Choose a directory on the selected machine (%s)" (car entry)))
+    (my/agent-session--start (list :branch nil :machine (car entry) :directory directory))))
 
 (provide 'my-agent-session)
 ;;; my-agent-session.el ends here

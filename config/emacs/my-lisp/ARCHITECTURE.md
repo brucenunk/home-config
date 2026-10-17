@@ -27,9 +27,12 @@ my-task-list.el subscribes to the note-created hook
   optional epic subdirectories. Use native Denote identifiers and links.
 - Task packages own capture, files, links, filtering, and sorting—not managed
   statuses, finish/discard, dependency parsing/check-off, Git or sessions.
-  `my-agent-session.el` separately owns explicit human launches: creating a new
-  worktree or choosing any directory on the selected machine, then starting a
-  fresh Pi conversation. Herdr/Herdsman retain their runtime lifecycle and
+  `my-agent-session.el` separately owns three explicit human launch commands:
+  `my/agent-session-start-from-file` creates a worktree and submits a saved task;
+  `my/agent-session-start-new-worktree` creates an ad hoc worktree; and
+  `my/agent-session-start-in-directory` starts ad hoc in an exact chosen directory.
+  They share Git/startup internals, with no dispatcher or task-list/Dired binding.
+  Herdr/Herdsman retain their runtime lifecycle and
   orchestration. See `../../../docs/agent-session.md` for launch/failure policy.
 - New captures retain the `todo` filename signature solely to match the existing
   default `==todo--` regex. There is no transition API or status validation.

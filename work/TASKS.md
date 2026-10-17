@@ -6,8 +6,8 @@ Task notes are ordinary files under `~/work/tasks/`, optionally grouped into
 subdirectories. Emacs provides capture, Denote links/identity, Dired file
 management, and filtering—not task status, dependency enforcement, or an agent
 lifecycle. Herdr/Herdsman own agent-operated sessions/worktrees. A human may
-explicitly launch a fresh conversation and optional disposable worktree with
-Emacs's `my/agent-session-start`; task capture itself performs no launch.
+explicitly launch a fresh conversation through the three Emacs commands
+described below; task capture itself performs no launch.
 
 ## Identity and Resolution
 
@@ -131,10 +131,24 @@ change existing notes.
 
 ## Human-operated Emacs Launches
 
-`M-x my/agent-session-start` has exactly two entry modes: select a saved task
-file with YAML front matter, or start ad hoc without a task or initial prompt.
-Both can create a fresh repository worktree or use an existing directory.
-This is separate from capture and does not manage task statuses or other agents.
+There are three explicit commands, separate from capture, with no combined
+selector, dispatcher or compatibility alias:
+
+- `M-x my/agent-session-start-from-file`: styled completion of `==todo--`
+  Markdown task notes recursively under `~/work/tasks/`, including epics.
+  Readable filename titles and epic/date annotations retain unique file
+  identities without scanning bodies. Use a valid repository hint or ask,
+  select an eligible machine, confirm the base ref and create a new worktree.
+  Its optional Lisp `FILE` argument bypasses completion, not task validation.
+- `M-x my/agent-session-start-new-worktree`: select a repository, then eligible
+  machine, confirm the base ref and create a new ad hoc worktree.
+- `M-x my/agent-session-start-in-directory`: select a machine, then browse from
+  its configured directory and start ad hoc in the exact selected directory.
+  It creates no worktree.
+
+These commands do not manage task statuses or other agents. All choices precede
+Git mutation or agent startup. Ad hoc sessions have no initial prompt, overrides
+or description/name/model/thinking questions.
 
 For a worktree, a valid task `repo` hint skips repository selection. One eligible
 machine is automatic; multiple machines always require explicit selection with
@@ -143,6 +157,11 @@ always confirmed, defaulting to the catalogue value. New worktrees are siblings
 of the configured repository source, not reconstructed from repository names.
 Directory browsing starts at the machine's configured directory and the exact
 chosen directory is retained as the agent CWD.
+
+Local and remote transcripts are uniquely named Markdown files directly under
+`~/work/agent-shell-transcripts/` on the Emacs host. Identifying metadata stays
+in agent-shell's normal header; no transcript directories or Git exclusions are
+created inside worktrees. Existing transcripts/worktrees are left untouched.
 
 Task `model` and `thinking` fields are independent optional overrides, applied
 without confirmation before sending context. An absent field sends no override;

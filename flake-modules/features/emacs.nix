@@ -234,7 +234,7 @@ in
                                (eq agent-shell-path-resolver-function
                                    (quote agent-shell-tramp-resolve-path))
                                (eq agent-shell-transcript-file-path-function
-                                   (quote agent-shell-tramp-transcript-file-path)))
+                                   (quote my/agent-shell--transcript-file-path)))
                     (error "Agent shell defaults or TRAMP integration are missing"))
                   (unless (version<= agent-shell--shell-maker-minimum-version shell-maker-version)
                     (error "shell-maker is too old: %s" shell-maker-version))
@@ -242,11 +242,29 @@ in
                     (error "ACP is too old: %s" acp-package-version))
                   (unless (fboundp (quote agent-shell-pi-make-agent-config))
                     (error "Pi integration is missing"))
+                  ;; Inspect only launcher autoload forms, without running init.
+                  (with-temp-buffer
+                    (insert-file-contents "${../../config/emacs/init.el}")
+                    (goto-char (point-min))
+                    (condition-case nil
+                        (while t
+                          (let ((form (read (current-buffer))))
+                            (when (and (eq (car-safe form) (quote autoload))
+                                       (equal (nth 2 form) "my-agent-session"))
+                              (eval form))))
+                      (end-of-file nil)))
+                  (dolist (command (quote (my/agent-session-start-from-file
+                                           my/agent-session-start-new-worktree
+                                           my/agent-session-start-in-directory)))
+                    (unless (and (commandp command) (autoloadp (symbol-function command)))
+                      (error "Missing launcher autoload: %s" command)))
+                  (when (fboundp (quote my/agent-session-start))
+                    (error "Obsolete combined launcher is still autoloaded"))
                   (message "agent-shell %s; shell-maker %s; ACP %s"
                            agent-shell--version shell-maker-version acp-package-version))'
               emacs --batch -Q -l ${agentShellTramp.src}/agent-shell-tramp-tests.el \
                 -f ert-run-tests-batch-and-exit
-              emacs --batch -Q -L ${../../config/emacs/my-lisp} \
+              emacs --batch -Q -L ${../../config/emacs/my-lisp} -L ${../../config/emacs/my-emacs-modules} \
                 -l my-agent-session-tests -f ert-run-tests-batch-and-exit
               touch "$out"
             '';

@@ -46,7 +46,9 @@
 (my/agent-catalogue-reload 'noerror)
 
 (require 'my-agent-shell)
-(autoload 'my/agent-session-start "my-agent-session" nil t)
+(autoload 'my/agent-session-start-from-file "my-agent-session" nil t)
+(autoload 'my/agent-session-start-new-worktree "my-agent-session" nil t)
+(autoload 'my/agent-session-start-in-directory "my-agent-session" nil t)
 (require 'my-emacs-completion)
 (require 'my-emacs-editing)
 (require 'my-emacs-remote)

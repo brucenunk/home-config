@@ -1,28 +1,51 @@
 # Human-operated agent-shell launches
 
-Run `M-x my/agent-session-start`. The command is autoloaded by `init.el` and
-implemented in `config/emacs/my-lisp/my-agent-session.el`, separately from task
-capture/list packages. It creates a **new Pi conversation**, never a reused
-project conversation. It requires the generated [catalogue](agent-catalogue.md),
-the pinned agent-shell/ACP packages, and `pi-acp` on the selected machine.
+Three explicit commands are autoloaded by `init.el` and implemented in
+`config/emacs/my-lisp/my-agent-session.el`, separately from task capture/list
+packages. Each creates a **new Pi conversation**, never a reused project
+conversation. They require the generated [catalogue](agent-catalogue.md), the
+pinned agent-shell/ACP packages, and `pi-acp` on the selected machine.
 
 ## Interaction
 
-1. **Task-backed** selects a saved task file with YAML front matter; **Ad hoc**
-   has no task, description or initial prompt. Generic prompt files are not an
-   entry mode. Unsaved editor changes are not part of the saved snapshot.
-2. Choose **New repository worktree** or **Existing directory**.
-3. For worktrees, use a valid task repository hint or explicitly select a
-   configured repository. A single eligible machine is automatic. Multiple
-   machines always require explicit selection without a default/preselection,
-   even when task metadata names a machine. Existing-directory sessions choose
-   from all configured machines, then browse from that machine's `:directory`.
-4. For worktrees, **always confirm the base ref**. The catalogue value is the
-   initial default; legacy task `base-ref` is not used. This is the place to
-   select a preceding PR's branch for a train.
-5. Start the fresh shell, wait for initialization, apply supplied task
-   overrides, and submit its task snapshot explicitly to that returned shell.
-   Ad hoc sessions open without a prompt or configuration questions.
+### `M-x my/agent-session-start-from-file`
+
+Select a todo task note recursively under `~/work/tasks/`, including epic
+subdirectories. Only Denote Markdown filenames with the exact `==todo--`
+signature qualify; done/discarded notes, unrelated files, backups and lock
+files are excluded. Completion uses styled, readable filename titles plus
+epic/date annotations, without reading note bodies. Duplicate titles retain
+distinct file identities and normal completion narrowing applies.
+
+Use a valid task repository hint, otherwise select a configured repository.
+Select an eligible machine, **always confirm the base ref**, then create a new
+sibling worktree. Wait for initialization, apply supplied task overrides, and
+submit the complete saved snapshot and any skill instruction to that exact
+shell. Unsaved editor changes are not part of the snapshot.
+
+The optional Lisp argument `FILE` bypasses completion, not saved-task validation:
+`(my/agent-session-start-from-file file)`. This supports future task-list/Dired
+callers without adding bindings or file actions now. There is no direct-directory
+task path or generic prompt-file mode.
+
+### `M-x my/agent-session-start-new-worktree`
+
+Select a configured repository, then an eligible machine. **Always confirm the
+base ref**, create a new sibling worktree, and start ad hoc. There is no initial
+prompt, model/thinking override, or description/name question.
+
+### `M-x my/agent-session-start-in-directory`
+
+Select a machine, then browse from its configured `:directory`. Start ad hoc in
+the exact chosen directory without creating a worktree. There is no repository,
+base-ref, description, name, model or thinking question, and no initial prompt.
+
+For all three commands, a sole eligible machine is automatic. Multiple machines
+always require explicit selection without a default/preselection, regardless of
+task `machine` hints or locality. The catalogue base ref is the initial default
+for worktrees; legacy task `base-ref` is ignored. Confirming the ref is also where
+you can select a preceding PR's branch for a train. There is no combined entry
+point, synthetic ad hoc candidate, mode selector, or compatibility alias.
 
 All choices precede Git mutation or agent startup. Browsing is unrestricted
 within the selected machine, not limited to repository-owner directories.
@@ -100,7 +123,7 @@ TRAMP RPC 0.15.0. The current Pi ACP package is 0.0.34.
   shell's buffer-local settings cannot fall back to the global resume strategy.
   Directory-local variables are skipped during this explicit startup: the pinned
   starter otherwise lets them replace the selected CWD or fresh-session policy
-  before initialization. Ordinary launches outside this command are unchanged.
+  before initialization. Ordinary launches outside these commands are unchanged.
 - Public `agent-shell-cwd-function` prevents project-root substitution. Its
   closure is retained buffer-locally for later ACP/file operations.
 - `agent-shell-initialized-p` plus the `init-finished` event covers asynchronous
@@ -128,9 +151,32 @@ TRAMP RPC 0.15.0. The current Pi ACP package is 0.0.34.
   supplies the full Emacs display name; internal session-title state is untouched.
 - Git uses `process-file` with a TRAMP `default-directory`, passing machine-local
   worktree paths as Git arguments. ACP 0.17.1 uses `make-process :file-handler`;
-  RPC implements both process APIs. Agent-shell-tramp maps agent paths and keeps
-  remote transcripts local. Explicit Git operations, including fetch, are
+  RPC implements both process APIs. Agent-shell-tramp maps agent paths; the
+  transcript policy below keeps both local and remote transcripts external.
+  Explicit Git operations, including fetch, are
   synchronous and interruptible; no background inventory scan or refresh runs.
+
+## Transcripts
+
+All agent-shell sessions, including ordinary launches outside these commands, use
+`~/work/agent-shell-transcripts/` on the **machine running Emacs**. A remote
+session never stores its transcript on the agent host or in its worktree.
+Each transcript is a timestamped, randomized Markdown file **directly under the
+root**, with no machine/project or per-session subdirectories. Existing filenames
+and dangling symlinks are skipped. Random names separate concurrent/same-second
+sessions without a registry or atomic file reservation. Filename generation
+creates neither files nor directories; agent-shell creates the root when needed
+and writes its normal header, which carries working-directory/session metadata.
+
+The configuration uses public `agent-shell-transcript-file-path-function`.
+The pinned `agent-shell-tramp-mode` replaces this customization when enabled,
+so a mode hook reapplies our policy after enabling/disabling it, leaving its
+remote path resolver intact. This does not patch either package.
+
+Ordinary startup/submission creates neither `.agent-shell/` nor Git exclusions
+or repository files. Existing transcripts and worktrees are not moved or
+deleted. Screenshots and other explicit attachment operations are outside this
+transcript-only policy. Clean-worktree prerequisites remain unchanged.
 
 ## Failures
 
@@ -157,7 +203,14 @@ exercise bare/ordinary/linked sources, local/fetched bases and collisions;
 simulated remote file/process boundaries and asynchronous agents exercise
 selection, path routing, overrides, readiness and failure handling. A pinned
 startup/insertion/viewport regression simulates only ACP initialization/transport
-and checks task conversation view versus ad hoc compose mode. These are
+and checks task conversation view versus ad hoc compose mode. Filename-only
+completion tests check filtering, narrowing and duplicate titles. Command tests
+cover optional file arguments, prompt order, explicit machine selection and
+cancellation before mutation. Native transcript tests cover flat paths,
+same-second pending sessions, filename collisions, external directory creation
+and TRAMP-mode toggles; remote writes simulate only the CWD
+existence boundary. A native task-startup/submission fixture leaves its new Git
+worktree clean, with unchanged exclusions and no `.agent-shell/`. These are
 isolated worktree checks, not proof of live RPC/authentication behavior.
 
 Stage intended files, run the required Wampa build on x86_64 Linux, and follow
@@ -173,11 +226,12 @@ if needed. Activation alone is not runtime pickup evidence.
 Run these human-observed checks only with approval for target machines,
 disposable smoke-test worktrees/conversations and any cleanup:
 
-1. Local **task + new worktree**: select a non-default base, verify sibling path,
+1. Local **start-from-file**: select a non-default base, verify sibling path,
    local branch, full-title display and exactly one task/skill submission.
-2. Local **ad hoc + new worktree**: verify `adhoc-...`, no description/model/name
+2. Local **start-new-worktree**: verify repository-before-machine order,
+   `adhoc-...`, no description/model/name
    questions and no initial prompt.
-3. **Existing directory**, both modes: browse outside owner directories, including
+3. **start-in-directory**: browse outside owner directories, including
    a project subdirectory; verify the exact CWD and no created worktree.
 4. **Remote RPC + local task**: verify destination selection, remote sibling path
    and Git branch, remote ACP CWD, local transcript, and snapshot delivery without
@@ -185,8 +239,17 @@ disposable smoke-test worktrees/conversations and any cleanup:
 5. Task overrides: model-only, thinking-only, both and neither; verify active
    settings before task submission. Use an unsupported value to confirm submission
    is withheld and the worktree is retained for manual inspection.
-6. Cancel at each selector/base prompt: no worktree appears. Inspect a startup
+6. Check task completion has no synthetic candidates, task titles are readable
+   and narrow normally, duplicate titles select distinct notes, and
+   done/discarded notes are absent. Verify local/remote transcripts appear directly under the external
+   Emacs-side root, including two same-second sessions; ordinary task submission
+   must leave Git clean and create no `.agent-shell/` or exclusions.
+7. Cancel at each selector/base prompt: no worktree appears. Inspect a startup
    failure and uncertain delivery without deleting work or automatically resending.
 
 Record build, activation and actual runtime-pickup evidence separately. Live
 checks above are not marked passed by the isolated suite.
+
+Downstream private configurations need a separately coordinated input update
+and activation to consume this public implementation. Neither a public build
+nor an input update proves that the deployed Emacs process has picked it up.
