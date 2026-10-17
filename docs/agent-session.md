@@ -201,7 +201,63 @@ or repository files. Existing transcripts and worktrees are not moved or
 deleted. Screenshots and other explicit attachment operations are outside this
 transcript-only policy. Clean-worktree prerequisites remain unchanged.
 
-## Failures
+## Automatic session cleanup
+
+`my-agent-shell.el` enables `agent-shell-gc-mode` automatically. Nix installs
+agent-shell-gc 0.1.0 at `e3b5e1d62187bc7dd3b1d34bdfe7b571ffb1efae`, sharing
+the pinned agent-shell/ACP dependencies; there is no runtime package download.
+
+| Policy | Setting |
+| --- | --- |
+| Close idle sessions | `agent-shell-gc-idle-session-ttl`: 4 days |
+| Remove idle worktrees | Disabled: `agent-shell-gc-idle-worktree-ttl` is `nil` |
+| Delete branches | Disabled: `agent-shell-gc-delete-worktree-branch` is `nil` |
+| Dry-run | Off: eligible session buffers/processes are actually collected |
+
+Sweeps run every 60 seconds, with a 300-second grace period after enabling,
+Desktop restoration or a detected forward clock jump. Activity is persisted in
+`agent-shell-gc/state.eld` under `user-emacs-directory`; time spent asleep or with
+Emacs closed counts towards expiry. Agent output/tool activity, submitted input,
+typing and selecting a shell/viewport refresh session activity. Idle is not task
+completion; unsent work and in-flight requests are protected as described below.
+
+Sessions are protected while busy, waiting for a permission/elicitation response,
+holding unsent queued prompts or shell/viewport text (including a stashed
+viewport draft), or explicitly pinned. Unknown/erroring session status is
+protected conservatively.
+Merely leaving a shell or viewport visible does **not** protect it indefinitely.
+
+Session collection closes the shell, its viewport and associated tool-call diff
+buffers, and shuts down its ACP client without a confirmation prompt. It does
+not explicitly delete agent-persisted sessions or the external Markdown
+transcripts; resumability still depends on the agent. Native agent-shell
+temporary sessions additionally remove their explicitly marked temporary
+directory when closed. The three launch commands above do not set that marker;
+closing their sessions leaves worktrees and branches intact.
+
+Worktree/branch collection is deliberately disabled: this package revision's
+worktree resolver mishandles RPC Git paths and bare-source layouts such as
+`repo/master.git`. Worktree/branch cleanup needs a separate solution; none is
+configured here.
+
+The package still performs best-effort worktree bookkeeping even with deletion
+disabled. An unavailable remote filesystem can interrupt a sweep before session
+collection. A signalled directory-probe failure preserves the tracking entry;
+a nil result is treated as absence and drops that record without deleting
+anything remotely. Isolated tests exercise both outcomes; pinned RPC propagates
+a simulated transport connection error. This is not live network evidence.
+
+No routine manual command is required. Optional controls:
+
+- `M-x agent-shell-gc-toggle-keep`: pin/unpin the current session from its shell
+  or viewport. Pins are buffer-local and do not survive Emacs restarts.
+- `M-x agent-shell-gc-list`: inspect idle times and protection reasons. Reports
+  and cleanup failures go to `*agent-shell-gc*` by default, not popup prompts.
+- `M-x agent-shell-gc-now`: request a sweep now. TTLs and protections still
+  apply; it clears grace, although clock-jump detection can establish new grace.
+- `M-x agent-shell-gc-mode`: disable/re-enable the global tracking/sweeper.
+
+## Launch failures
 
 Failures report the retained directory, branch and shell buffer when available
 in an ordinary Emacs message. Nothing is automatically removed or resent. A
@@ -215,9 +271,10 @@ when finished. If submission may have reached the agent, inspect the conversatio
 before sending anything again. Even a locally accepted send is not proof of
 remote processing.
 
-There is no cleanup, task-status management, completion monitoring or
-agent-to-agent control. Launching another conversation does not grant the agent
-tools to operate it. Herdr/Herdsman's orchestration capabilities remain separate.
+The launch commands do no cleanup, task-status management, completion monitoring
+or agent-to-agent control. GC above is separate idle housekeeping, not a launch
+failure rollback or task-completion signal. Launching another conversation does
+not grant the agent tools to operate it.
 
 ## Verification, activation and smoke tests
 
@@ -235,6 +292,15 @@ and TRAMP-mode toggles; remote writes simulate only the CWD
 existence boundary. A native task-startup/submission fixture leaves its new Git
 worktree clean, with unchanged exclusions and no `.agent-shell/`. These are
 isolated worktree checks, not proof of live RPC/authentication behavior.
+
+The GC policy suite runs in disposable state with pinned packages. It checks
+actual mode enablement/settings, busy and permission/elicitation waits,
+queued input, shell/viewport/stashed drafts, activity and pins, visible-session
+collection, ACP process shutdown, native temporary-directory cleanup, transcript
+and saved-session preservation, worktree/branch retention in ordinary and bare
+layouts, and best-effort remote bookkeeping failure handling. Unrelated launcher
+tests suppress GC enablement so their simulated remote paths are not probed by
+the automatic tracking hooks.
 
 The catalogue/capture/list ERT suite also mocks the public launcher to check
 at-point file identity versus marks, invalid targets, cancellation/failure
@@ -284,6 +350,15 @@ disposable smoke-test worktrees/conversations and any cleanup:
 Record build, activation and actual runtime-pickup evidence separately. Live
 checks above are not marked passed by the isolated suite.
 
-Downstream private configurations need a separately coordinated input update
-and activation to consume this public implementation. Neither a public build
+For GC runtime pickup after authorized activation, use deployed files in a
+fresh Emacs process: confirm GC mode is enabled with a four-day session TTL,
+dry-run off and worktree/branch deletion disabled. In a disposable conversation, check
+`agent-shell-gc-list` and pin/unpin from its viewport. Do not shorten global TTLs
+or run collection against real user sessions to smoke-test deployment; any
+destructive smoke check needs its own disposable process/worktrees and approval.
+
+Downstream `canvanauts/jamesl-home-config` configurations need a separately
+coordinated update of their public home-config input to the landed revision,
+followed by their machine-specific build/activation procedure. No private
+adapter or input update is included here. Neither a public build
 nor an input update proves that the deployed Emacs process has picked it up.

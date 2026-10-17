@@ -42,5 +42,51 @@ Random names separate same-second sessions; skip existing Markdown paths."
               (setq agent-shell-transcript-file-path-function #'my/agent-shell--transcript-file-path)))
   (agent-shell-tramp-mode 1))
 
+(defun my/agent-shell-gc-protect-in-flight-p (buffer)
+  "Protect BUFFER while busy or waiting for permission/elicitation input.
+If status cannot be determined, leave the session alone."
+  (condition-case nil
+      (memq (agent-shell-status :shell-buffer buffer) '(busy blocked))
+    (error t)))
+
+(defun my/agent-shell-gc-protect-queued-input-p (buffer)
+  "Protect BUFFER while it holds unsent queued prompts."
+  (map-elt (buffer-local-value 'agent-shell--state buffer) :pending-prompts))
+
+(defun my/agent-shell-gc-protect-viewport-draft-p (buffer)
+  "Protect BUFFER when its viewport holds an unsent draft.
+Include drafts saved while peeking at a response in view mode."
+  (when-let* ((viewport (agent-shell-viewport--buffer
+                        :shell-buffer buffer :existing-only t)))
+    (with-current-buffer viewport
+      (or (and (derived-mode-p 'agent-shell-viewport-edit-mode)
+               (not (string-empty-p (string-trim (buffer-string)))))
+          (not (string-empty-p
+                (string-trim (or (map-elt agent-shell-viewport--compose-snapshot
+                                        :content)
+                                 ""))))))))
+
+(use-package agent-shell-gc
+  :ensure nil
+  :after agent-shell
+  :custom
+  (agent-shell-gc-idle-session-ttl (* 4 24 60 60))
+  ;; Leave worktrees and branches intact: the pinned GC's worktree resolver
+  ;; does not support our RPC and bare-source layouts.
+  (agent-shell-gc-idle-worktree-ttl nil)
+  (agent-shell-gc-delete-worktree-branch nil)
+  (agent-shell-gc-dry-run nil)
+  ;; Visibility alone does not protect an abandoned conversation.  Native
+  ;; busy protection excludes blocked sessions; native draft protection only
+  ;; checks the shell, not its viewport.
+  (agent-shell-gc-session-protect-functions
+   '(my/agent-shell-gc-protect-in-flight-p
+     my/agent-shell-gc-protect-queued-input-p
+     agent-shell-gc-protect-pending-input-p
+     my/agent-shell-gc-protect-viewport-draft-p
+     agent-shell-gc-protect-kept-p))
+  :config
+  (agent-shell-gc-mode 1))
+
 (provide 'my-agent-shell)
 ;;; my-agent-shell.el ends here

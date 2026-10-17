@@ -21,6 +21,7 @@ let
       emacsPackages =
         epkgs: with epkgs; [
           (import ../../pkgs/agent-shell.nix { inherit pkgs epkgs; })
+          (import ../../pkgs/agent-shell-gc.nix { inherit pkgs epkgs; })
           (import ../../pkgs/agent-shell-tramp.nix { inherit pkgs epkgs; })
           auto-dark
           avy
@@ -201,12 +202,17 @@ in
       checks = {
         emacs-agent-shell =
           let
+            agentShellGc = import ../../pkgs/agent-shell-gc.nix {
+              inherit pkgs;
+              epkgs = pkgs.emacs.pkgs;
+            };
             agentShellTramp = import ../../pkgs/agent-shell-tramp.nix {
               inherit pkgs;
               epkgs = pkgs.emacs.pkgs;
             };
             emacsWithAgent = pkgs.emacs.pkgs.emacsWithPackages (epkgs: [
               (import ../../pkgs/agent-shell.nix { inherit pkgs epkgs; })
+              agentShellGc
               agentShellTramp
               epkgs.denote
               epkgs.yaml
@@ -225,7 +231,11 @@ in
             }
             ''
               export HOME="$TMPDIR"
-              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} -l my-agent-shell --eval '
+              # Never enable configured cleanup during unrelated launcher tests.
+              # The dedicated GC suite checks real enablement in isolated state.
+              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+                --eval '(progn (require (quote agent-shell-gc)) (advice-add (quote agent-shell-gc-mode) :override (quote ignore)))' \
+                -l my-agent-shell --eval '
                 (progn
                   (require (quote agent-shell))
                   (unless (and (eq agent-shell-preferred-agent-config (quote pi))
@@ -264,8 +274,13 @@ in
                            agent-shell--version shell-maker-version acp-package-version))'
               emacs --batch -Q -l ${agentShellTramp.src}/agent-shell-tramp-tests.el \
                 -f ert-run-tests-batch-and-exit
+              emacs --batch -Q -l ${agentShellGc.src}/tests/agent-shell-gc-tests.el \
+                -f ert-run-tests-batch-and-exit
               emacs --batch -Q -L ${../../config/emacs/my-lisp} -L ${../../config/emacs/my-emacs-modules} \
+                --eval '(progn (require (quote agent-shell-gc)) (advice-add (quote agent-shell-gc-mode) :override (quote ignore)))' \
                 -l my-agent-session-tests -f ert-run-tests-batch-and-exit
+              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+                -l my-agent-shell-tests -f ert-run-tests-batch-and-exit
               touch "$out"
             '';
 
