@@ -116,7 +116,8 @@ and platform boundaries.
 - `agent-catalogue` generates trusted executable Elisp configuration for Emacs
   from that inventory, setting `my/agent-machines` at startup with explicit reload.
   It installs neither Emacs nor Herdsman. Hosts/downstream consumers opt in
-  explicitly; capture consumes it, while session launching remains future work.
+  explicitly; capture and the separate human-operated Emacs session launcher
+  consume it. See [`agent-session.md`](agent-session.md).
 - `herdsman` packages the Go companion launcher. It consumes the shared machine
   inventory; operational settings and themes remain under `herdsman.config`.
   Its operational TOML and companion JSON formats are unchanged, and Emacs no

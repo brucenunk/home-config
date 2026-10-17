@@ -57,6 +57,7 @@ let
           vertico
           wgrep
           ws-butler
+          yaml
           yaml-mode
         ];
 
@@ -207,34 +208,48 @@ in
             emacsWithAgent = pkgs.emacs.pkgs.emacsWithPackages (epkgs: [
               (import ../../pkgs/agent-shell.nix { inherit pkgs epkgs; })
               agentShellTramp
+              epkgs.denote
+              epkgs.yaml
+              epkgs.vertico
+              (import ../../pkgs/tramp-rpc.nix { inherit inputs pkgs epkgs; })
               epkgs.use-package
             ]);
           in
-          pkgs.runCommand "emacs-agent-shell-check" { nativeBuildInputs = [ emacsWithAgent ]; } ''
-            export HOME="$TMPDIR"
-            emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} -l my-agent-shell --eval '
-              (progn
-                (require (quote agent-shell))
-                (unless (and (eq agent-shell-preferred-agent-config (quote pi))
-                             agent-shell-prefer-viewport-interaction
-                             agent-shell-tramp-mode
-                             (eq agent-shell-path-resolver-function
-                                 (quote agent-shell-tramp-resolve-path))
-                             (eq agent-shell-transcript-file-path-function
-                                 (quote agent-shell-tramp-transcript-file-path)))
-                  (error "Agent shell defaults or TRAMP integration are missing"))
-                (unless (version<= agent-shell--shell-maker-minimum-version shell-maker-version)
-                  (error "shell-maker is too old: %s" shell-maker-version))
-                (unless (version<= agent-shell--acp-minimum-version acp-package-version)
-                  (error "ACP is too old: %s" acp-package-version))
-                (unless (fboundp (quote agent-shell-pi-make-agent-config))
-                  (error "Pi integration is missing"))
-                (message "agent-shell %s; shell-maker %s; ACP %s"
-                         agent-shell--version shell-maker-version acp-package-version))'
-            emacs --batch -Q -l ${agentShellTramp.src}/agent-shell-tramp-tests.el \
-              -f ert-run-tests-batch-and-exit
-            touch "$out"
-          '';
+          pkgs.runCommand "emacs-agent-shell-check"
+            {
+              nativeBuildInputs = [
+                emacsWithAgent
+                pkgs.git
+                pkgs.curl
+              ];
+            }
+            ''
+              export HOME="$TMPDIR"
+              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} -l my-agent-shell --eval '
+                (progn
+                  (require (quote agent-shell))
+                  (unless (and (eq agent-shell-preferred-agent-config (quote pi))
+                               agent-shell-prefer-viewport-interaction
+                               agent-shell-tramp-mode
+                               (eq agent-shell-path-resolver-function
+                                   (quote agent-shell-tramp-resolve-path))
+                               (eq agent-shell-transcript-file-path-function
+                                   (quote agent-shell-tramp-transcript-file-path)))
+                    (error "Agent shell defaults or TRAMP integration are missing"))
+                  (unless (version<= agent-shell--shell-maker-minimum-version shell-maker-version)
+                    (error "shell-maker is too old: %s" shell-maker-version))
+                  (unless (version<= agent-shell--acp-minimum-version acp-package-version)
+                    (error "ACP is too old: %s" acp-package-version))
+                  (unless (fboundp (quote agent-shell-pi-make-agent-config))
+                    (error "Pi integration is missing"))
+                  (message "agent-shell %s; shell-maker %s; ACP %s"
+                           agent-shell--version shell-maker-version acp-package-version))'
+              emacs --batch -Q -l ${agentShellTramp.src}/agent-shell-tramp-tests.el \
+                -f ert-run-tests-batch-and-exit
+              emacs --batch -Q -L ${../../config/emacs/my-lisp} \
+                -l my-agent-session-tests -f ert-run-tests-batch-and-exit
+              touch "$out"
+            '';
 
         emacs-tramp-rpc =
           let

@@ -115,9 +115,12 @@ configuration or unusable required choices prevent note creation. Listing and ex
 notes remain independent of the catalogue.
 
 This is configured inventory, not readiness evidence: configuration/capture does not
-probe hosts, query Git, create worktrees, or launch sessions. An Emacs session
-launcher is future work. Herdsman's existing JSON remains under `herdsman/` for
-its own consumers; Emacs no longer reads it.
+probe hosts, query Git, create worktrees, or launch sessions. The separate
+[human-operated session launcher](agent-session.md) consumes machine connections,
+repository sources and default base refs from this catalogue. It does not apply
+catalogue model/thinking defaults: Pi keeps its own defaults unless a task
+independently overrides either field. Herdsman's existing JSON remains under
+`herdsman/` for its own consumers; Emacs no longer reads it.
 
 ## Migration and verification
 

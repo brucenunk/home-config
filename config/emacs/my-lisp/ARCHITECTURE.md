@@ -8,6 +8,7 @@ conventions and review guardrails remain in `AGENTS.md`.
 | Module | Purpose |
 |--------|---------|
 | `my-agent-catalogue.el` | Declares the generated `my/agent-machines` configuration contract and explicit reload command; no launch/runtime operations. |
+| `my-agent-session.el` | Explicit human-operated task/ad hoc launches, disposable worktree creation, independent task model/thinking overrides, and clear failure reporting; no retained launch context, task lifecycle or automatic cleanup. |
 | `my-task.el` | Shared task root, catalogue-backed note capture/default hints, template/skill choices, file predicate, capture/list keymap, and note-created hook. |
 | `my-task-list.el` | Dired display, persisted epic/regex filters and sort direction, and scoped reverts. |
 
@@ -15,6 +16,8 @@ conventions and review guardrails remain in `AGENTS.md`.
 my-task.el ── autoloads ──► my-task-list.el
 init.el ── loads trusted generated configuration via ──► my-agent-catalogue.el
 my-task.el ── consumes my/agent-machines declared by ──► my-agent-catalogue.el
+my-agent-session.el ── consumes inventory from ──► my-agent-catalogue.el
+my-agent-session.el ── starts fresh conversations through ──► agent-shell / Pi ACP
 my-task-list.el subscribes to the note-created hook
 ```
 
@@ -22,10 +25,12 @@ my-task-list.el subscribes to the note-created hook
 
 - Task notes are ordinary Denote Markdown files under `~/work/tasks/`, with
   optional epic subdirectories. Use native Denote identifiers and links.
-- Emacs owns capture, files, links, filtering, and sorting—not managed statuses,
-  finish/discard, dependency parsing/check-off, git, worktrees, or
-  agent sessions. Herdr/Herdsman retain their existing runtime lifecycle.
-  Emacs authors launch hints; it does not validate reachability or authorize launch.
+- Task packages own capture, files, links, filtering, and sorting—not managed
+  statuses, finish/discard, dependency parsing/check-off, Git or sessions.
+  `my-agent-session.el` separately owns explicit human launches: creating a new
+  worktree or choosing any directory on the selected machine, then starting a
+  fresh Pi conversation. Herdr/Herdsman retain their runtime lifecycle and
+  orchestration. See `../../../docs/agent-session.md` for launch/failure policy.
 - New captures retain the `todo` filename signature solely to match the existing
   default `==todo--` regex. There is no transition API or status validation.
 - `skill` is optional downstream metadata. Capture always selects a repository,
@@ -33,12 +38,13 @@ my-task-list.el subscribes to the note-created hook
   Both capture forms prompt for machine when multiple destinations qualify,
   with no implicit/default choice, skipping the machine prompt when only one
   destination is eligible. Ordinary capture uses the Nix-generated agent catalogue's model/thinking defaults;
-  prefix capture exposes those choices. Base ref is gathered only by Herdsman
-  at launch, and legacy task-file `base-ref` metadata is ignored. Thinking
+  prefix capture exposes those choices. Base ref is gathered by Herdsman or
+  explicitly confirmed by the Emacs launcher; legacy task-file `base-ref`
+  metadata is ignored. Thinking
   prompts even in ordinary capture when no supported default exists. Templates
   have no Dependencies section.
 - The generated catalogue is the sole choice/default source; no separate inventory,
-  Git calls, host probes, mutable Pi settings, or launch lifecycle are involved.
+  Git calls, host probes, mutable Pi settings, or launch lifecycle are involved in capture.
   Missing configuration, unusable selections, and cancellation stop before creating the note. Listing
   and file identity remain independent of the catalogue.
 - `my-agent-catalogue.el` declares `my/agent-machines` and its contract.
@@ -47,8 +53,10 @@ my-task-list.el subscribes to the note-created hook
   records, and model defaults. Typed Nix options and generation tests own
   structural validation, not a duplicate Lisp schema. Capture uses the loaded
   value: after activation, explicitly run `my/agent-catalogue-reload` or restart
-  Emacs. The generated config omits local-machine identity. A session launcher
-  is not yet implemented. Nix source composition lives outside task Lisp.
+  Emacs. The generated config omits local-machine identity. The separate launcher
+  consumes the same inventory for machine, repository and browsing choices.
+  Task model/thinking hints independently override Pi defaults; absent fields
+  send no override. Nix source composition lives outside task Lisp.
 - Existing notes are untouched, including legacy signatures, repo/session fields,
   and dependency text. These are ordinary content, not runtime state.
 - A saved capture runs `my/task-note-created-hook` to refresh open task lists.
@@ -63,6 +71,7 @@ my-task-list.el subscribes to the note-created hook
 - Note capture, shared root, templates, catalogue/default hints, skill metadata, capture/list bindings,
   and task-file predicate → `my-task.el`
 - Generated agent configuration contract/reload → `my-agent-catalogue.el`
+- Explicit human-operated worktree/directory launches → `my-agent-session.el`
 - Dired views, persisted filters, sort, and pinned-scope reverts → `my-task-list.el`
 - Package configuration, templates, links, and file auto-revert → `my-emacs-denote.el`
 

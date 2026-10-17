@@ -2,7 +2,7 @@
 
 # Worktree Workflow
 
-Repositories under `~/work` use `~/work/{owner}/{repo}/{worktree}`. Preserve the default-branch worktree (`main` or `master`). Herdr/Herdsman own creation and management of new task worktrees, including worktree naming and branch selection; worktrees are created dynamically, not preallocated as static slots. Keep one task per feature worktree and use the tooling's current guidance rather than manual repository setup or legacy allocation helpers.
+Repositories under `~/work` use `~/work/{owner}/{repo}/{worktree}`. Preserve the default-branch worktree (`main` or `master`). Herdr/Herdsman own agent-operated creation and management of new task worktrees, including worktree naming and branch selection. A human may explicitly create a disposable worktree and start a conversation through Emacs's `my/agent-session-start`; this narrow alternative does not authorize agents to create branches/worktrees manually or to manage other sessions. Worktrees are created dynamically, not preallocated as static slots. Keep one task per feature worktree and use the tooling's current guidance rather than manual repository setup or legacy allocation helpers.
 
 ## Tools
 

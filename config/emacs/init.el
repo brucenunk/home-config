@@ -46,6 +46,7 @@
 (my/agent-catalogue-reload 'noerror)
 
 (require 'my-agent-shell)
+(autoload 'my/agent-session-start "my-agent-session" nil t)
 (require 'my-emacs-completion)
 (require 'my-emacs-editing)
 (require 'my-emacs-remote)

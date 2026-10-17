@@ -13,6 +13,9 @@ Before modifying or creating my-lisp files:
 - [ ] Task code manages files, filtering, and capture hints only; repository and
   machine choices are metadata, not launch operations. No Git, agent sessions,
   worktrees, status transitions, or dependency orchestration.
+- [ ] Explicit human-operated launches belong in `my-agent-session.el`, not task
+  packages. It may create disposable worktrees and conversations, but owns no
+  agent-to-agent orchestration, automatic cleanup or task lifecycle.
 - [ ] Function names follow `my/<noun>-<verb>`; predicates end in `-p`.
 - [ ] New internals use `my/<module>--...`; cross-module callers use public APIs.
 - [ ] Public and interactive functions have `;;;###autoload`.

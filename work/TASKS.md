@@ -5,7 +5,9 @@
 Task notes are ordinary files under `~/work/tasks/`, optionally grouped into
 subdirectories. Emacs provides capture, Denote links/identity, Dired file
 management, and filtering—not task status, dependency enforcement, or an agent
-lifecycle. Herdr/Herdsman select the repository and own sessions/worktrees.
+lifecycle. Herdr/Herdsman own agent-operated sessions/worktrees. A human may
+explicitly launch a fresh conversation and optional disposable worktree with
+Emacs's `my/agent-session-start`; task capture itself performs no launch.
 
 ## Identity and Resolution
 
@@ -126,6 +128,35 @@ local/remote resolution. Emacs neither checks live Git refs nor probes hosts or
 changes running Pi settings. Existing or manually authored notes may omit hints;
 legacy `base-ref` metadata is ignored. Capture does not migrate or automatically
 change existing notes.
+
+## Human-operated Emacs Launches
+
+`M-x my/agent-session-start` has exactly two entry modes: select a saved task
+file with YAML front matter, or start ad hoc without a task or initial prompt.
+Both can create a fresh repository worktree or use an existing directory.
+This is separate from capture and does not manage task statuses or other agents.
+
+For a worktree, a valid task `repo` hint skips repository selection. One eligible
+machine is automatic; multiple machines always require explicit selection with
+no default, regardless of task `machine` hints or locality. The base ref is
+always confirmed, defaulting to the catalogue value. New worktrees are siblings
+of the configured repository source, not reconstructed from repository names.
+Directory browsing starts at the machine's configured directory and the exact
+chosen directory is retained as the agent CWD.
+
+Task `model` and `thinking` fields are independent optional overrides, applied
+without confirmation before sending context. An absent field sends no override;
+Pi keeps its configured default. Unsupported values stop automatic submission.
+Ad hoc sessions send neither override and ask no configuration questions.
+Emacs sends a complete saved task snapshot and, when present, its declared skill
+instruction. Remote agents need not read the original local path; provenance
+does not imply that path is accessible or editable remotely.
+
+Failures report the retained directory and shell buffer when available; nothing
+is automatically deleted or resent. Inspect partial Git operations and uncertain
+prompt delivery manually. Open the retained directory and start agent-shell
+normally when ready. There is no retained retry context, special recovery UI,
+automatic cleanup or agent-to-agent control.
 
 ## Managing Files
 
