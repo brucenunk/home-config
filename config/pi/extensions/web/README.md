@@ -8,7 +8,7 @@ Two direct tools, loaded through the existing Home Manager Pi extension director
   Only this nested request gets `web_search`, `tool_choice: required`, sources,
   and `store: false`. Ordinary coding requests are unchanged.
 - `web_fetch({url, offset?, expected_sha256?})`: readable source text from a public
-  URL. No model call. HTML is parsed with Python's standard-library `HTMLParser`;
+  URL. No model call. HTML is parsed in-process with a pinned `htmlparser2` bundle;
   scripts, styles, templates, SVG and head content are omitted. Relative links
   become absolute. Whitespace is normalized (including code indentation), so this
   is extracted text, **not byte-exact HTML or a model-generated summary**. Plain
@@ -23,12 +23,16 @@ Two direct tools, loaded through the existing Home Manager Pi extension director
   type notation are preserved, not sanitized or rendered. A standalone HTML
   example indistinguishable from a document is extracted; fenced examples are
   preserved. Results label the selected extraction/literal mode explicitly.
+  `application/xhtml+xml` uses XML parsing semantics, including self-closing
+  elements; ordinary HTML keeps HTML parsing semantics. External entities are
+  never fetched or expanded.
 
 Both are available alongside bash; neither runs until called. There is no new
 credential, endpoint, search service, package installation, or configuration file.
 Existing host opt-in to the Pi module/extension directory controls deployment.
-`python3` is installed by that module for HTML extraction. To try without
-activation: `pi -e ./config/pi/extensions/web/index.ts` (requires Python 3 on PATH).
+The parser is bundled alongside the extension: no Python, runtime npm install,
+or development `node_modules` is needed. To try without activation:
+`pi -e ./config/pi/extensions/web/index.ts`.
 Standard Pi tool activation settings can disable these tools.
 
 ## Compatibility and costs
@@ -91,8 +95,10 @@ Source metadata and citations are untrusted, not endorsements of accuracy.
   unusual routing, transparent proxies and public hosts proxying private content
   remain outside its control. Hosted search networking is operated by OpenAI.
 - One 20-second deadline covers redirects, transfer and HTML extraction.
-  Cancellation aborts HTTP and the parser subprocess. DNS system calls may finish
+  Cancellation aborts HTTP and stops parsing between bounded input chunks. DNS system calls may finish
   in the background after cancellation, but cannot start a subsequent request.
+  Parsing rejects nesting beyond 256 elements with a safe extraction error,
+  bounding the parser's synchronous stack work as well as its input chunks.
 - At most 2 MiB downloaded, 200000 extracted UTF-16 code units available, and
   12000 code units per chunk. Oversized downloads fail rather than parsing an
   arbitrary partial HTML document. HTTP errors, unsupported types/encodings and
@@ -115,7 +121,8 @@ that arbitrary content is accepted by a gateway.
 
 ## Verification
 
-Run `node --test config/pi/extensions/web/web.test.ts` with Node 24+ and Python 3.
+Run `node --test --test-timeout=10000 config/pi/extensions/web/{web,html-text}.test.ts`
+with Node 24+.
 The `pi-web-tests` flake check runs that suite plus `execution.test.ts` using the
 pinned Pi SDK. Fixtures exercise citations, malformed metadata, failure/completion
 rules, isolated request context, usage, cancellation, address/redirect checks,
@@ -124,7 +131,11 @@ content types, literal Markdown/code preservation, HTML/link extraction and
 hash-checked continuation. The SDK fixtures run a local mock parent through Pi's
 actual tool execution path for setup throws and result rejections with a 100000-
 character sentinel body; the parent continues without that body in its input or
-transcript. No real provider, credentials or network are used by those fixtures.
+transcript. A loader fixture checks that the packaged extension and its sibling
+parser bundle load through pinned Pi. The flake check uses a Node-only PATH;
+the parser needs no development dependencies. Reproduction instructions and
+third-party notices are in `vendor/`. No real provider, credentials or network
+are used by those fixtures.
 
 Keep live network/tool-choice checks in fresh bounded Pi sessions with bash also
 available. Inspect terminal assistant `stopReason`/`errorMessage`, search actions

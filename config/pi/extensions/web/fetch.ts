@@ -3,12 +3,13 @@ import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP, BlockList } from "node:net";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { setImmediate } from "node:timers/promises";
+import { Parser } from "./vendor/htmlparser2.mjs";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT = 200000;
 const CHUNK = 12000;
+const MAX_HTML_NESTING = 256;
 
 const blocked = new BlockList();
 for (const [address, prefix] of [
@@ -113,24 +114,72 @@ export async function download(input: string, signal: AbortSignal, request = req
   throw new Error("Too many redirects (limit 5).");
 }
 
-export function htmlText(html: string, signal: AbortSignal, url = ""): Promise<string> {
+export async function htmlText(html: string, signal: AbortSignal, url = "", contentType = "text/html"): Promise<string> {
   signal.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    const child = spawn("python3", [fileURLToPath(new URL("./html-text.py", import.meta.url)), url], { signal, stdio: ["pipe", "pipe", "pipe"] });
-    const parts: Buffer[] = [];
-    let size = 0;
-    let failed = false;
-    child.on("error", reject);
-    child.stdin.on("error", reject);
-    child.stderr.resume();
-    child.stdout.on("data", (part: Buffer) => {
-      size += part.length;
-      if (size > MAX_BYTES * 2) { failed = true; child.kill(); }
-      else parts.push(part);
-    });
-    child.on("close", code => code === 0 && !failed ? resolve(Buffer.concat(parts).toString("utf8")) : reject(new Error("HTML extraction failed; python3 is required.")));
-    child.stdin.end(html);
+  // The HTTP layer bounds bytes before decoding. Also bound direct callers and
+  // non-UTF-8 responses by decoded code units (at most one per downloaded byte).
+  if (html.length > MAX_BYTES) throw new Error("HTML exceeds the 2 MiB extraction input limit.");
+  const hiddenTags = new Set(["script", "style", "noscript", "template", "svg", "head"]);
+  const blocks = new Set(["p", "div", "section", "article", "header", "footer", "nav", "main",
+    "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "pre", "blockquote", "br", "hr", "tr", "table"]);
+  const links: string[] = [], parts: string[] = [];
+  let hidden = 0, depth = 0, size = 0;
+  const append = (text: string) => {
+    size += Buffer.byteLength(text);
+    if (size > MAX_BYTES * 2) throw new Error("HTML extraction exceeds the output limit.");
+    parts.push(text);
+  };
+  const parser = new Parser({
+    onopentagname() {
+      // htmlparser2 has just pushed at most one element, before attributes or
+      // content are parsed. Bound its internal stack, not just our output or
+      // write size: ancestor closes and implicit closes synchronously scan/pop it.
+      if (++depth > MAX_HTML_NESTING) throw new Error(`HTML nesting exceeds the ${MAX_HTML_NESTING}-element extraction limit.`);
+    },
+    onopentag(tag: string, attrs: Record<string, string>) {
+      if (hiddenTags.has(tag)) hidden++;
+      if (hidden) return;
+      if (tag === "a") {
+        let link = "";
+        try {
+          const href = attrs.href ?? "";
+          const resolved = new URL(href, url || undefined);
+          if (href && resolved.href.length <= 4096 && ["http:", "https:"].includes(resolved.protocol) && !resolved.username && !resolved.password) link = resolved.href;
+        } catch { /* Malformed/unsupported links do not discard readable text. */ }
+        links.push(link);
+      }
+      if (blocks.has(tag)) append("\n");
+      if (tag === "li") append("- ");
+      if (tag === "td" || tag === "th") append(" | ");
+    },
+    onclosetag(tag: string) {
+      depth--;
+      // The parser balances close callbacks, including malformed/implicit
+      // closes. A depth counter avoids rescanning a deeply nested hidden stack.
+      if (hiddenTags.has(tag) && hidden) { hidden--; return; }
+      if (hidden) return;
+      if (tag === "a" && links.length) {
+        const link = links.pop();
+        if (link) append(` (${link})`);
+      }
+      if (blocks.has(tag)) append("\n");
+    },
+    ontext(text: string) { if (!hidden) append(text); },
+  }, {
+    decodeEntities: true,
+    xmlMode: contentType.split(";", 1)[0].trim().toLowerCase() === "application/xhtml+xml",
+    lowerCaseTags: true,
   });
+  // Yield between bounded writes so timers, cancellation and other tools run.
+  // Parser state is retained across chunks, including partial tags/entities.
+  for (let offset = 0; offset < html.length; offset += 16384) {
+    await setImmediate(undefined, { signal });
+    signal.throwIfAborted();
+    parser.write(html.slice(offset, offset + 16384));
+  }
+  parser.end();
+  signal.throwIfAborted();
+  return parts.join("").replace(/[^\S\n]+/gu, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export function chunkText(text: string, offset: number, expected?: string) {
@@ -169,7 +218,7 @@ export async function fetchText(input: string, offset = 0, expected?: string, si
   try { decoded = new TextDecoder(charset, { fatal: true }).decode(page.body); }
   catch { throw new Error("Unsupported character encoding or invalid text bytes."); }
   const html = /html/i.test(page.type) || htmlDocument(decoded);
-  let text = html ? await htmlText(decoded, combined, page.url) : decoded;
+  let text = html ? await htmlText(decoded, combined, page.url, page.type) : decoded;
   // Remove terminal control characters but retain tabs/newlines. This is data, not instructions.
   text = text.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
   combined.throwIfAborted();

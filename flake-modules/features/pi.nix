@@ -186,8 +186,6 @@ let
         (lib.mkIf cfg.enable {
           home.packages = [
             cfg.package
-            # Standard-library HTML extraction for the local web extension.
-            pkgs.python3
             # ACP clients such as agent-shell need the adapter, not just the CLI.
             (pkgs.llm-agents.pi-acp.override { pi = cfg.package; })
           ];
@@ -390,18 +388,20 @@ in
             {
               nativeBuildInputs = [
                 pkgs.nodejs
-                pkgs.python3
               ];
             }
             ''
-              node --test ${../../config/pi/extensions/web}/web.test.ts
+              # No incidental Python or development dependencies on PATH.
+              mkdir -p node-only
+              ln -s ${pkgs.nodejs}/bin/node node-only/node
+              PATH="$PWD/node-only" node --test --test-timeout=10000 ${../../config/pi/extensions/web}/web.test.ts ${../../config/pi/extensions/web}/html-text.test.ts
               cp -r ${../../config/pi/extensions/web} ./web
               chmod -R u+w ./web
               mkdir -p ./web/node_modules/@earendil-works
               ln -s ${piNode}/lib/node_modules/@earendil-works/pi-coding-agent ./web/node_modules/@earendil-works/pi-coding-agent
               ln -s ${piNode}/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai ./web/node_modules/@earendil-works/pi-ai
               ln -s ${piNode}/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox ./web/node_modules/typebox
-              node --test ./web/execution.test.ts
+              PATH="$PWD/node-only" node --test ./web/execution.test.ts
               touch "$out"
             '';
 

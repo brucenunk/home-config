@@ -2,10 +2,31 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { createAgentSession, createExtensionRuntime, ModelRuntime, SessionManager, SettingsManager, type ExtensionAPI, type ResourceLoader, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, createExtensionRuntime, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type ExtensionAPI, type ResourceLoader, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import webExtension from "./index.ts";
+
+test("packaged web extension loads through pinned Pi with its sibling parser bundle", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-web-loader-"));
+  try {
+    const loader = new DefaultResourceLoader({
+      cwd: dir, agentDir: dir, settingsManager: SettingsManager.inMemory(),
+      additionalExtensionPaths: [fileURLToPath(new URL("./index.ts", import.meta.url))],
+      noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+      agentsFilesOverride: () => ({ agentsFiles: [] }),
+      systemPromptOverride: () => "Local loader fixture.", appendSystemPromptOverride: () => [],
+    });
+    await loader.reload();
+    const result = loader.getExtensions();
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.extensions.length, 1);
+    assert.deepEqual([...result.extensions[0].tools.keys()].sort(), ["web_fetch", "web_search"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 // Exercise Pi's actual parent loop, tool validation/wrapper/context and transcript.
 // Both parent and nested provider behavior are local fixtures: no network or real auth.
