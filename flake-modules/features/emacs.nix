@@ -217,6 +217,14 @@ in
               epkgs.denote
               epkgs.yaml
               epkgs.vertico
+              epkgs.marginalia
+              epkgs.orderless
+              epkgs.corfu
+              epkgs.cape
+              epkgs.consult
+              epkgs.embark
+              epkgs.embark-consult
+              epkgs.avy
               epkgs.mixed-pitch
               epkgs.markdown-mode
               epkgs.doric-themes
@@ -291,6 +299,8 @@ in
                 -l my-agent-shell-tests -f ert-run-tests-batch-and-exit
               emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
                 -l my-emacs-ui-tests -f ert-run-tests-batch-and-exit
+              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+                -l my-emacs-completion-tests -f ert-run-tests-batch-and-exit
               touch "$out"
             '';
 

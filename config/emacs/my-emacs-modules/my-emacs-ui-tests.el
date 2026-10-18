@@ -91,6 +91,34 @@
         (should (equal (my/ui-test--remapped-family 'default)
                        (face-attribute 'variable-pitch :family)))))))
 
+(ert-deftest my/ui-echoed-prompt-remaps-only-viewport-family ()
+  (let ((inherit (face-attribute 'agent-shell-viewport-prompt :inherit))
+        (doc-attributes (face-all-attributes 'font-lock-doc-face))
+        (prompt-attributes (face-all-attributes 'agent-shell-viewport-prompt)))
+    (should (eq inherit 'font-lock-doc-face))
+    (should (memq 'font-lock-doc-face mixed-pitch-fixed-pitch-faces))
+    (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
+      (dolist (mode '(agent-shell-viewport-view-mode
+                     agent-shell-viewport-edit-mode markdown-mode emacs-lisp-mode))
+        (with-temp-buffer
+          (funcall mode)
+          (if (eq mode 'agent-shell-viewport-view-mode)
+              (progn
+                (should (equal (my/ui-test--remapped-family 'agent-shell-viewport-prompt)
+                               (face-attribute 'variable-pitch :family)))
+                ;; Only family is overridden: inheritance supplies slant/colour.
+                (should (equal (cadr (assq 'agent-shell-viewport-prompt face-remapping-alist))
+                               (list :family (face-attribute 'variable-pitch :family))))
+                (should (equal (my/ui-test--remapped-family 'font-lock-doc-face)
+                               (face-attribute 'default :family)))
+                (mixed-pitch-mode -1)
+                (should-not (assq 'agent-shell-viewport-prompt face-remapping-alist))
+                (mixed-pitch-mode 1)
+                (should my/viewport-prompt-face-cookie))
+            (should-not (assq 'agent-shell-viewport-prompt face-remapping-alist))))))
+    (should (equal doc-attributes (face-all-attributes 'font-lock-doc-face)))
+    (should (equal prompt-attributes (face-all-attributes 'agent-shell-viewport-prompt)))))
+
 (ert-deftest my/ui-rendered-code-and-table-face-coverage ()
   (with-temp-buffer
     (insert (agent-shell-markdown-convert
@@ -165,6 +193,11 @@
                 (run-hooks 'fontaine-set-preset-hook)
                 (should mixed-pitch-mode)
                 (should (equal (my/ui-test--remapped-family 'default) "Test Variable"))
+                (if (eq mode 'agent-shell-viewport-view-mode)
+                    (should (equal (my/ui-test--remapped-family 'agent-shell-viewport-prompt)
+                                   "Test Variable"))
+                  (should-not (assq 'agent-shell-viewport-prompt face-remapping-alist)))
+                (should (equal (my/ui-test--remapped-family 'font-lock-doc-face) "Test Fixed"))
                 (dolist (face '(markdown-table-face agent-shell-markdown-inline-code
                                 agent-shell-markdown-source-block agent-shell-markdown-table))
                   (should (equal (my/ui-test--remapped-family face) "Test Fixed")))

@@ -106,7 +106,7 @@ candidates retain Marginalia's standard file annotation."
 (use-package corfu
   :ensure nil
   :demand t
-  :hook ((prog-mode eshell-mode) . my/corfu-enable-auto)
+  :hook ((prog-mode eshell-mode agent-shell-viewport-edit-mode) . my/corfu-enable-auto)
   :init
   ;; Must be set before calling `global-corfu-mode'.
   (setq corfu-auto nil
@@ -131,6 +131,18 @@ candidates retain Marginalia's standard file annotation."
   :ensure nil
   :demand t
   :config
+  (defun my/cape-explicit-file-capf ()
+    "Complete explicit paths using Cape and the buffer's working directory.
+Leave prose, URLs, @ mentions and slash-command-like tokens alone.  An
+absolute path must contain a directory component (for example /tmp/).
+Modes which omit the global CAPF fallback marker `t' keep their own policy."
+    (when-let* ((bounds (bounds-of-thing-at-point 'filename))
+                (file (buffer-substring-no-properties (car bounds) (point)))
+                ((string-match-p "\\`\\(?:\\.\\.?/\\|~/\\|/[^/[:space:]]+/\\)" file)))
+      ;; Capture the directory for delayed table and location queries too.
+      ;; Cape's native file handler dispatch supports TRAMP, including RPC.
+      (my/cape-file-capf default-directory)))
+
   (defun my/cape-file-capf (directory)
     "Return a `cape-file' CAPF which resolves relative to DIRECTORY."
     (let ((cape-file-directory directory))
@@ -169,6 +181,7 @@ candidates retain Marginalia's standard file annotation."
 
   (keymap-set cape-prefix-map "f" #'my/cape-file)
   (keymap-global-set "C-c p" cape-prefix-map)
+  (add-hook 'completion-at-point-functions #'my/cape-explicit-file-capf 80)
   (add-hook 'completion-at-point-functions #'my/cape-dabbrev-capf 90))
 
 (use-package corfu-popupinfo

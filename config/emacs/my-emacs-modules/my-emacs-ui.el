@@ -10,6 +10,23 @@
 
 (defvar mixed-pitch-mode)
 
+(defvar-local my/viewport-prompt-face-cookie nil
+  "Remapping cookie for the echoed viewport prompt.")
+
+(defun my/viewport-prompt-variable-pitch ()
+  "Let viewport prompts follow prose without changing documentation faces."
+  (when my/viewport-prompt-face-cookie
+    (face-remap-remove-relative my/viewport-prompt-face-cookie)
+    (setq my/viewport-prompt-face-cookie nil))
+  (when (and mixed-pitch-mode
+             (derived-mode-p 'agent-shell-viewport-view-mode))
+    ;; Override only the family inherited from mixed-pitch's doc-face remap.
+    ;; Keep the prompt's original colour/slant, and recompute on font refresh.
+    (setq my/viewport-prompt-face-cookie
+          (face-remap-add-relative
+           'agent-shell-viewport-prompt
+           :family (face-attribute 'variable-pitch :family)))))
+
 (defun my/refresh-mixed-pitch-mode ()
   "Refresh mixed-pitch-mode in all buffers where it's active."
   (dolist (buf (buffer-list))
@@ -119,6 +136,7 @@ error.  Evaluate the theme's package source once and retry to register it."
                   agent-shell-markdown-source-block
                   agent-shell-markdown-table))
     (add-to-list 'mixed-pitch-fixed-pitch-faces face))
+  (add-hook 'mixed-pitch-mode-hook #'my/viewport-prompt-variable-pitch)
   (add-hook 'fontaine-set-preset-hook #'my/refresh-mixed-pitch-mode))
 
 (use-package pulsar

@@ -284,6 +284,9 @@ inline code, rendered fenced code and tables. The renderer's base faces cover
 syntax-highlighted code, source labels, table headers, borders and zebra rows
 through face composition/inheritance. Fontaine preset changes refresh active
 mixed-pitch buffers. Ordinary shell/tool buffers are not opted into mixed pitch.
+The echoed user prompt also uses the variable-pitch family, retaining its native
+colour/slant. This is a conversation-buffer remapping of
+`agent-shell-viewport-prompt`, not a global change to `font-lock-doc-face`.
 Within conversation view, unfenced tool-result text has no dedicated fixed-pitch
 face and follows the variable-pitch default too. Whitespace-aligned raw logs or
 source in those results may not align; only rendered code/table regions are
@@ -323,6 +326,43 @@ streamed updates and unfenced tool output. Check that switching to compose gives
 variable-pitch drafts (including raw code/tables), the expected mixed-pitch cursor,
 and working indentation/completion, and that existing Markdown buffers remain
 unchanged. These human checks are not marked passed by batch tests.
+
+## Completion in compose and other editable buffers
+
+Normal completion-at-point offers Cape filesystem completion for explicit
+`./`, `../`, `~/` and absolute directory paths such as `/tmp/`. Relative paths
+use the buffer's `default-directory`, including TRAMP/RPC directories; delayed
+candidate/location queries retain that base. Cape uses native file handlers and
+non-essential lookups, not a project scan or an extra remote transport probe.
+This is not live remote performance evidence.
+
+Native/mode-specific providers run first. The guarded file provider is a global
+fallback before the existing three-character dabbrev fallback; it does not
+replace local CAPF lists. A mode that omits the global fallback marker `t` does
+not inherit these providers. Ordinary prose, URLs, @ mentions, relative paths
+without an explicit prefix, and slash-command-like tokens (`/`, `/help`, `/usr`)
+are not claimed by the file fallback. Add the directory slash (`/usr/`) for an
+absolute path. Bare root and root-level filename completion remain available
+through `C-c p f`, which retains its optional prefix-argument base-directory
+prompt. Cape's filename-token boundaries still apply; candidates can contain
+spaces, but this does not add parsing of already-typed whitespace-containing
+paths in prose.
+
+Corfu automatic completion is enabled in compose with the existing 0.1-second
+delay and two-character threshold, as in programming and Eshell buffers. Cape's
+prefix metadata allows `./` to offer candidates immediately at that prefix.
+Other prose buffers retain manual completion, and conversation view does not
+enable automatic completion. Native @file/slash-command providers, word
+completion and editing setup remain intact. Plain paths stay ordinary prompt
+text, not attachments or rewritten @ mentions.
+
+The pinned-package completion ERT suite exercises temporary filesystem fixtures,
+provider precedence, automatic candidate selection and mocked remote file-handler
+dispatch. After approved downstream input update/activation and Emacs runtime
+pickup, manually check automatic `./` suggestions, @file/slash commands, prose
+word completion, and proportional echoed replies alongside monospaced rendered
+code/tables. Batch success is not evidence of popup appearance, actual font
+selection, or shared-daemon pickup.
 
 ## Verification, activation and smoke tests
 
