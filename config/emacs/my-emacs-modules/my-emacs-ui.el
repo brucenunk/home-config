@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; Theme, fonts, spacious-padding, pulsar configuration.
+;; Theme, fonts, a quiet mode line, spacious-padding, and pulsar configuration.
 
 ;;; Code:
 
@@ -11,6 +11,8 @@
 (declare-function mixed-pitch-mode "mixed-pitch" (&optional arg))
 
 (defvar mixed-pitch-mode)
+(defvar vc-mode)
+(defvar display-time-string)
 
 (defvar-local my/agent-shell-header-face-cookies nil
   "Remapping cookies for agent-shell header underlines.")
@@ -104,9 +106,6 @@ error.  Evaluate the theme's package source once and retry to register it."
          :mode-line-inactive spacious-padding-line-inactive
          :header-line-active spacious-padding-line-active
          :header-line-inactive spacious-padding-line-inactive)))
-
-
-
 ;; https://github.com/protesilaos/fontaine
 (use-package fontaine
   :ensure nil
@@ -173,6 +172,131 @@ error.  Evaluate the theme's package source once and retry to register it."
   ;; Keep Doric's bg-accent selection colour.
   (setq lin-face 'hl-line)
   (lin-global-mode))
+
+;; Inspired by Prot's custom mode line.  Keep the native VC, Flymake, and
+;; process constructs rather than running queries or subprocesses on redisplay.
+;; Spacious padding supplies the subtle frame lines; faces inherit Doric's
+;; semantic colours so theme changes need no palette-copying hooks.
+(defun my/modeline-status ()
+  "Return a quiet read-only marker and exceptional editing states."
+  (concat
+   (when buffer-read-only
+     (propertize " RO " 'face 'shadow 'help-echo "Read-only buffer"))
+   (when (file-remote-p default-directory) " Remote ")
+   (when (buffer-narrowed-p) " Narrow ")
+   (when defining-kbd-macro " Recording ")))
+
+(defun my/modeline-buffer-name ()
+  "Identify the buffer, leaving room for state markers and the clock.
+Use the window being redisplayed, not the globally selected window."
+  (let* ((width (window-total-width))
+         (details (format-mode-line (list (my/modeline-context)
+                                         (my/modeline-info))))
+         (budget (max 4 (min (/ width 2)
+                            (- width (string-width (my/modeline-status))
+                               (string-width details) 4))))
+         (face (if (mode-line-window-selected-p) 'mode-line-buffer-id 'shadow)))
+    ;; Eval results are mode-line constructs too: quote literal percent signs.
+    (propertize (string-replace "%" "%%"
+                                (truncate-string-to-width
+                                 (buffer-name) budget nil nil "…"))
+                'face (if (and buffer-file-name (buffer-modified-p))
+                          (list 'italic face)
+                        face)
+                'help-echo (or buffer-file-name (buffer-name))
+                'mouse-face 'mode-line-highlight
+                'local-map mode-line-buffer-identification-keymap)))
+
+(defun my/modeline-details-p (minimum-width)
+  "Whether secondary details fit in the active window at MINIMUM-WIDTH."
+  (and (mode-line-window-selected-p)
+       (>= (- (window-total-width) (string-width (my/modeline-status)))
+           minimum-width)))
+
+(defun my/modeline-context ()
+  "Return separated mode, process, and VC details for this window.
+Reserve space for the clock and buffer identity before shortening VC text."
+  (let* ((mode (when (my/modeline-details-p 70)
+                 (truncate-string-to-width
+                  (if (eq major-mode 'emacs-lisp-mode)
+                      "Emacs Lisp"
+                    (format-mode-line 'mode-name))
+                  (/ (window-total-width) 3) nil nil "…")))
+         (branch (when (and vc-mode (my/modeline-details-p 70))
+                   (string-trim (format-mode-line 'vc-mode))))
+         (branch-width
+          (- (window-total-width)
+             (string-width (my/modeline-status))
+             (min (string-width (buffer-name)) (/ (window-total-width) 3))
+             (string-width (format-mode-line (my/modeline-info)))
+             (string-width (format-mode-line 'mode-line-process))
+             (if mode (+ 5 (string-width mode)) 0)
+             ;; Leading/branch spacing plus room for alignment and padding.
+             10)))
+    (list
+     ""
+     (when mode (list "  ·  " (string-replace "%" "%%" mode)))
+     ;; Process status remains visible even when secondary details are hidden.
+     'mode-line-process
+     (when (and branch (not (string-empty-p branch)) (> branch-width 8))
+       (list "  ·  "
+             (string-replace "%" "%%"
+                             (truncate-string-to-width branch branch-width
+                                                       nil nil "…")))))))
+
+(defun my/modeline-diagnostics ()
+  "Label non-zero native Flymake counters, retaining their faces and actions."
+  (when (bound-and-true-p flymake-mode)
+    (let ((exception (string-trim (format-mode-line 'flymake-mode-line-exception)))
+          fields)
+      (unless (string-empty-p exception) (push exception fields))
+      (dolist (entry '((flymake-mode-line-error-counter . "error")
+                       (flymake-mode-line-warning-counter . "warning")
+                       (flymake-mode-line-note-counter . "info")))
+        (let* ((counter (string-trim (format-mode-line (car entry))))
+               (count (string-to-number counter)))
+          (when (> count 0)
+            (push (apply #'propertize
+                         (format "%s %s%s" counter (cdr entry)
+                                 (if (or (= count 1) (string= (cdr entry) "info"))
+                                     "" "s"))
+                         (text-properties-at 0 counter))
+                  fields))))
+      (string-join (nreverse fields) ", "))))
+
+(defun my/modeline-info ()
+  "Return separated native diagnostics and clock, only in the active window."
+  (when (mode-line-window-selected-p)
+    (let ((diagnostics
+           (when (my/modeline-details-p 80)
+             (my/modeline-diagnostics))))
+      (list
+       ""
+       (when (and diagnostics (not (string-empty-p (string-trim diagnostics))))
+         (list (string-replace "%" "%%" diagnostics) "  ·  "))
+       display-time-string " "))))
+
+(setq mode-line-right-align-edge 'right-margin)
+(setq-default
+ mode-line-format
+ '("%e" " "
+   (:eval (my/modeline-status))
+   " " (:eval (my/modeline-buffer-name))
+   (:eval (my/modeline-context))
+   mode-line-format-right-align
+   (:eval (my/modeline-info))))
+
+;; Native minute-aligned updates; no separate timer or redisplay-time I/O.
+(use-package time
+  :ensure nil
+  :demand t
+  :custom
+  (display-time-format "%-I:%M %P")
+  (display-time-interval 60)
+  (display-time-default-load-average nil)
+  (display-time-mail-function #'ignore)
+  :config
+  (display-time-mode 1))
 
 (provide 'my-emacs-ui)
 ;;; my-emacs-ui.el ends here
