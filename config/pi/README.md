@@ -65,8 +65,15 @@ queue must still be coordinated separately.
 
 Shared defaults select `tuiMode: "regular"`, leaving transcript scrolling and
 selection with the terminal or Herdr instead of Pi's alternate-screen UI.
+They also set `defaultTools: ["+codemode"]` for normal Pi sessions across hosts
+and frontends, including pi-acp/agent-shell. The `+` adds codemode to the usual
+built-in tools without excluding auto-discovered extensions such as `apply_patch`;
+a plain-name allowlist would replace the default selection instead.
 Host `settingsDefaults` are layered over these defaults and may override them;
 setting the option to `null` disables settings activation altogether.
+Explicit CLI tool selection still takes precedence. Restricted review workers
+retain their read-only allowlist and disabled extensions; this does not enable
+codemode for them.
 
 The Emacs capability sets both `EDITOR` and `VISUAL` to `emacsclient -c`, and
 the Git capability uses the same command. Pi inherits `VISUAL` unless its
@@ -78,13 +85,15 @@ editing over SSH or in a headless session. Existing processes need the updated
 environment, and Pi needs a restart to pick up the changed TUI default.
 
 Wampa inherits the shared regular-mode default, replacing any mutable
-`"fullscreen"` setting during activation. `defaultTools: ["+codemode"]` adds
-codemode alongside the usual built-in tools and the auto-discovered
-`apply_patch` extension. Codemode remains in its default `on` mode: tools are
+`"fullscreen"` setting during activation, and inherits codemode from the same
+shared defaults. Codemode remains in its default `on` mode: tools are
 still directly available to the model, and scripts can orchestrate calls and
-filter their results. This does not configure MCP servers, image models, or
-additional provider credentials. `terminal.showTerminalProgress: true` enables
-OSC 9;4 terminal progress reporting.
+filter their results. Availability does not force models to use it or guarantee
+that gateway output filtering is avoided. This does not configure MCP servers,
+image models, or additional provider credentials. Wampa retains its provider and
+model defaults; `terminal.showTerminalProgress: true` enables OSC 9;4 terminal
+progress reporting. Activation updates settings, not existing sessions; start a
+fresh session afterward to pick up the new defaults.
 
 When configured, settings defaults are merged into mutable
 `~/.pi/agent/settings.json` during Home Manager activation. Missing settings

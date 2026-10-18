@@ -330,7 +330,7 @@ in
       };
       disabledDefaultsHome = mkHome { settingsDefaults = null; };
       overriddenDefaultsHome = mkHome {
-        settingsDefaults = builtins.toFile "pi-settings-override.json" ''{"tuiMode":"fullscreen"}'';
+        settingsDefaults = builtins.toFile "pi-settings-override.json" ''{"tuiMode":"fullscreen","defaultTools":["read"]}'';
       };
       overriddenPi = pkgs.writeShellScriptBin "pi" ''
         echo pi-acp-package-override
@@ -338,13 +338,25 @@ in
       overriddenPackageHome = mkHome { package = overriddenPi; };
       overriddenAdapter = (mkPkgs system).llm-agents.pi-acp.override { pi = overriddenPi; };
       expectedDefaults = pkgs.writeText "pi-settings-defaults.json" (
-        builtins.toJSON { tuiMode = "regular"; }
+        builtins.toJSON {
+          defaultTools = [ "+codemode" ];
+          tuiMode = "regular";
+        }
       );
       expectedHostDefaults = pkgs.writeText "pi-settings-defaults.json" (
-        builtins.toJSON (wampaSettings // { tuiMode = "regular"; })
+        builtins.toJSON (
+          wampaSettings
+          // {
+            defaultTools = [ "+codemode" ];
+            tuiMode = "regular";
+          }
+        )
       );
       expectedOverride = pkgs.writeText "pi-settings-defaults.json" (
-        builtins.toJSON { tuiMode = "fullscreen"; }
+        builtins.toJSON {
+          defaultTools = [ "read" ];
+          tuiMode = "fullscreen";
+        }
       );
       usesDefaults =
         expected: configuration:
@@ -368,7 +380,27 @@ in
           assert usesDefaults expectedOverride overriddenDefaultsHome;
           pkgs.runCommand "pi-settings-policy" { nativeBuildInputs = [ pkgs.jq ]; } ''
             jq -e '.tuiMode == "regular" and (has("externalEditor") | not)' ${expectedDefaults}
-            jq -e '.tuiMode == "regular" and .defaultProvider == "openai-proxy" and .defaultModel == "gpt-6.1-sol"' ${expectedHostDefaults}
+            jq -e '.tuiMode == "regular" and .defaultProvider == "openai-proxy" and .defaultModel == "gpt-6.1-sol" and .terminal.showTerminalProgress == true' ${expectedHostDefaults}
+            jq -e '.tuiMode == "fullscreen" and .defaultTools == ["read"]' ${expectedOverride}
+            for defaults in ${expectedDefaults} ${expectedHostDefaults}; do
+              jq -e '.defaultTools == ["+codemode"] and (has("codemode") | not)' "$defaults"
+              # Exercise activation into both missing and conflicting mutable settings.
+              rm -f settings.json
+              for state in missing existing; do
+                if [ "$state" = existing ]; then
+                  printf '%s\n' '{"defaultTools":["read"],"tuiMode":"fullscreen","terminal":{"showImages":false},"extensions":["custom.ts"]}' > settings.json
+                fi
+                ${pkgs.bash}/bin/bash ${../../config/pi/merge-settings-defaults.sh} \
+                  "$PWD/settings.json" "$defaults" ${pkgs.jq}/bin/jq \
+                  ${pkgs.coreutils}/bin/cp ${pkgs.coreutils}/bin/chmod \
+                  ${pkgs.coreutils}/bin/chown ${pkgs.coreutils}/bin/stat \
+                  ${pkgs.coreutils}/bin/mv ${pkgs.coreutils}/bin/ln
+                jq -e --slurpfile defaults "$defaults" '. as $actual | $defaults[0] | .tuiMode == $actual.tuiMode and .defaultTools == $actual.defaultTools and .defaultTools == ["+codemode"]' settings.json
+                if [ "$state" = existing ]; then
+                  jq -e '.extensions == ["custom.ts"] and .terminal.showImages == false' settings.json
+                fi
+              done
+            done
             touch "$out"
           '';
 
@@ -471,7 +503,7 @@ in
           '';
 
         pi-wampa-settings =
-          assert wampaSettings.defaultTools == [ "+codemode" ];
+          assert !(wampaSettings ? defaultTools);
           assert wampaSettings.terminal.showTerminalProgress;
           pkgs.runCommand "pi-wampa-settings" { } ''
             touch "$out"
