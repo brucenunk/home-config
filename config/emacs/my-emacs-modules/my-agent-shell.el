@@ -42,6 +42,7 @@ Random names separate same-second sessions; skip existing Markdown paths."
   (agent-shell-preferred-agent-config 'pi)
   (agent-shell-prefer-viewport-interaction t)
   :config
+  (require 'my-agent-shell-notifications)
   ;; Keep Linux clipboard-first: the upstream direct default uses X11 import.
   (when (eq system-type 'darwin)
     (define-key agent-shell-viewport-edit-mode-map (kbd "C-c C-s")

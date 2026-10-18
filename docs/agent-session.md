@@ -289,6 +289,61 @@ These human checks are pending; package deployment, activation and runtime
 pickup are separate proof points. Never load feature-worktree code into the
 shared daemon to perform them.
 
+## Attention notifications
+
+New agent-shell sessions enable local attention cues via
+`my-agent-shell-notifications.el`. Nix pins `agent-shell-notifications` at
+`fbf7a6b8c16326242d6e07430b7a8f5e84442466` and KnockKnock at
+`0920b9b390d4b4cc0818574e115d87eb245a41b5`, using our existing pinned
+agent-shell. There is no runtime package installation.
+
+- A finished turn or permission request produces a five-second, text-only
+  popup at the top right of the selected Emacs frame, labelled with the shell's
+  buffer name, and one soft two-note chime. A finished turn means a response is
+  ready, not that a task is complete. Cancelled turns do not notify.
+- The selected session counts as active only when its frame has input focus
+  and Emacs input was less than ten seconds ago. Active sessions delay the cue
+  ten seconds; interaction in the shell or either viewport acknowledges it and
+  cancels delivery. Merely leaving a session visible while AFK does not suppress
+  notification. Focus detection that returns unknown errs toward notifying.
+- Other sessions notify immediately. KnockKnock has a single popup slot, so
+  a newer cue replaces an older one. Waiting-session state persists separately.
+- `M-x my/agent-notification-visit-waiting` offers completion over live waiting
+  sessions and uses their existing viewport when available. Visiting/interaction
+  acknowledges a finished response; permission requests remain listed until
+  answered. There is no new global binding, RET takeover, mode-line indicator,
+  tab bar, desktop notification or automatic focus change.
+- Popups use the current theme's foreground/background. The local adapter uses
+  KnockKnock's basic text API, not the experimental upstream backend or agent
+  image rendering. It also cancels queued rendering on dismissal for the pinned
+  version, and prevents acknowledgement in one session closing another's popup.
+  Only the latest cue is kept during frame initialization. Unused synchronous
+  icon fetching is disabled, and KnockKnock diagnostics are redirected to the
+  null device before loading it (never its default shared `/tmp` log).
+
+`config/emacs/sounds/generate-attention.py` is the committed sound recipe. Nix
+builds its half-second, mono, 24 kHz/16-bit WAV with integer-only synthesis and
+checks its SHA-256; Home Manager links it at
+`~/.config/emacs/sounds/agent-attention.wav`. No binary WAV is committed and
+activation does not generate audio. Playback is asynchronous via `/usr/bin/afplay`
+on macOS and `paplay` (installed by the Emacs module) on Linux, at the existing
+system volume. Both playback and popups belong to the **Emacs host**, including
+for remote devbox sessions. Set `my/agent-notification-sound-file` to nil to mute.
+
+The `emacs-agent-shell` check includes isolated ERT tests for filtering,
+active/AFK decisions, delayed session labels, viewport acknowledgement,
+multi-session dismissal, navigation and local playback invocation on both
+platform branches. `emacs-agent-attention-sound` realizes the deterministic WAV
+on the native platform. These are not GUI or real audio playback evidence.
+
+After separately approved deployment and runtime pickup, manually check on
+both macOS and Linux: a background session's popup and audible chime; a visible
+AFK session; suppression during active interaction; cancelled turns; choosing
+waiting sessions; and two simultaneous sessions. Confirm typing/RET and focus
+are unchanged, and audition the chime at ordinary listening volume. Include a
+remote devbox conversation to confirm delivery stays local. These manual checks
+remain pending; do not load feature-worktree code into the shared Emacs daemon.
+
 ## Automatic session cleanup
 
 `my-agent-shell.el` enables `agent-shell-gc-mode` automatically. Nix installs

@@ -22,6 +22,7 @@ let
         epkgs: with epkgs; [
           (import ../../pkgs/agent-shell.nix { inherit pkgs epkgs; })
           (import ../../pkgs/agent-shell-gc.nix { inherit pkgs epkgs; })
+          (import ../../pkgs/agent-shell-notifications.nix { inherit pkgs epkgs; })
           (import ../../pkgs/agent-shell-tramp.nix { inherit pkgs epkgs; })
           auto-dark
           avy
@@ -138,7 +139,11 @@ let
           package = lib.mkDefault pkgs.emacs;
         };
 
-        home.packages = [ pkgs.enchant ] ++ spellingDictionaries;
+        home.packages = [
+          pkgs.enchant
+        ]
+        ++ spellingDictionaries
+        ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.pulseaudio;
 
         home.sessionVariables = {
           # Enchant's Hunspell provider must also find dictionaries when Emacs
@@ -152,6 +157,9 @@ let
         xdg.configFile."emacs/init.el".source = ../../config/emacs/init.el;
         xdg.configFile."emacs/my-lisp".source = ../../config/emacs/my-lisp;
         xdg.configFile."emacs/my-emacs-modules".source = ../../config/emacs/my-emacs-modules;
+        xdg.configFile."emacs/sounds/agent-attention.wav".source =
+          import ../../pkgs/agent-attention-sound.nix
+            { inherit pkgs; };
         xdg.configFile."emacs/tramp-rpc-managed-servers.json".text = builtins.toJSON managedServers;
         xdg.configFile."mermaid/themes".source = ../../config/mermaid/themes;
       };
@@ -212,6 +220,7 @@ in
             };
             emacsWithAgent = pkgs.emacs.pkgs.emacsWithPackages (epkgs: [
               (import ../../pkgs/agent-shell.nix { inherit pkgs epkgs; })
+              (import ../../pkgs/agent-shell-notifications.nix { inherit pkgs epkgs; })
               agentShellGc
               agentShellTramp
               epkgs.denote
@@ -302,11 +311,15 @@ in
               emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
                 -l my-agent-shell-tests -f ert-run-tests-batch-and-exit
               emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+                -l my-agent-shell-notifications-tests -f ert-run-tests-batch-and-exit
+              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
                 -l my-emacs-ui-tests -f ert-run-tests-batch-and-exit
               emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
                 -l my-emacs-completion-tests -f ert-run-tests-batch-and-exit
               touch "$out"
             '';
+
+        emacs-agent-attention-sound = import ../../pkgs/agent-attention-sound.nix { inherit pkgs; };
 
         emacs-tramp-rpc =
           let
