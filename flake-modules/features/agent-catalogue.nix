@@ -143,6 +143,15 @@ in
       explicitDefaultHome = piDefaultHome.extendModules {
         modules = [ { brucenunk.homeManager.machines.machine-a.defaultModel = "example/vendor/model"; } ];
       };
+      localNamedHome = home.extendModules {
+        modules = [
+          {
+            brucenunk.homeManager.machines = pkgs.lib.mkForce {
+              local = home.config.brucenunk.homeManager.machines.machine-a;
+            };
+          }
+        ];
+      };
       rejects =
         module:
         !(builtins.tryEval (home.extendModules { modules = [ module ]; }).activationPackage.drvPath)
@@ -217,7 +226,7 @@ in
             { id = longHint; }
           ];
         };
-        builtins.deepSeq home.activationPackage.drvPath (
+        builtins.deepSeq [ home.activationPackage.drvPath localNamedHome.activationPackage.drvPath ] (
           pkgs.runCommand "agent-catalogue-home-manager-module"
             {
               nativeBuildInputs = [ emacs ];
@@ -228,6 +237,9 @@ in
               emacs --batch -Q -L ${../../config/emacs/my-lisp} \
                 -l my-agent-catalogue-tests -l my-task-tests -l my-task-list-tests \
                 -f ert-run-tests-batch-and-exit
+              AGENT_CATALOGUE_TEST=${localNamedHome.config.xdg.configFile."emacs/agent-catalogue.el".source} \
+                emacs --batch -Q -L ${../../config/emacs/my-lisp} \
+                  -l my-agent-catalogue --eval '(progn (load (getenv "AGENT_CATALOGUE_TEST") nil t) (unless (assoc "local" my/agent-machines) (error "Missing local machine")))'
               touch "$out"
             ''
         );

@@ -63,7 +63,7 @@ let
       key = "brucenunk.homeManager.machines";
       options.brucenunk.homeManager.machines = lib.mkOption {
         default = { };
-        description = "Shared machine inventory for Git, Emacs agents, and transitional Herdsman configuration.";
+        description = "Shared machine inventory for Git and Emacs agents.";
         type = lib.types.attrsOf (
           lib.types.submodule (
             { config, ... }: {
@@ -98,13 +98,11 @@ let
           message = "A non-empty machine inventory must have exactly one isLocal record.";
         }
         {
-          assertion =
-            !(machines ? local)
-            && lib.all (
-              name:
-              name != "" && builtins.stringLength name <= 4096 && builtins.match "[^[:cntrl:]]+" name != null
-            ) (lib.attrNames machines);
-          message = "Machine names must be non-empty, at most 4096 bytes, contain no controls, and not use the reserved name local.";
+          assertion = lib.all (
+            name:
+            name != "" && builtins.stringLength name <= 4096 && builtins.match "[^[:cntrl:]]+" name != null
+          ) (lib.attrNames machines);
+          message = "Machine names must be non-empty, at most 4096 bytes, and contain no controls.";
         }
       ]
       ++ lib.mapAttrsToList (name: machine: {

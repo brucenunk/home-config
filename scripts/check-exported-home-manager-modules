@@ -49,8 +49,6 @@ nix eval --impure --raw --expr '
       "ghostty"
       "git"
       "golang"
-      "herdr"
-      "herdsman"
       "kube"
       "language-servers"
       "machines"

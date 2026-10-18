@@ -5,8 +5,7 @@
 Task notes are ordinary files under `~/work/tasks/`, optionally grouped into
 subdirectories. Emacs provides capture, Denote links/identity, Dired file
 management, and filtering—not task status, dependency enforcement, or an agent
-lifecycle. Herdr/Herdsman own agent-operated sessions/worktrees. A human may
-explicitly launch a fresh conversation through the three Emacs commands
+lifecycle. A human may explicitly launch a fresh conversation through the three Emacs commands
 described below; task capture itself performs no launch.
 
 ## Identity and Resolution
@@ -104,9 +103,9 @@ Thinking defaults to `medium` when supported, otherwise `off`; if neither is
 supported, even ordinary capture asks for an explicit supported choice.
 
 Every captured value is written after `skill` in front matter, in the order
-above. Machine values are catalogue keys, never the display label `Local` or
-routing key `local`. Capture neither prompts for nor writes `base-ref`;
-Herdsman gathers it at launch, defaulting to `origin/${defaultBranch}`.
+above. Machine values are catalogue keys, not display labels. Capture neither
+prompts for nor writes `base-ref`; the Emacs launcher confirms it at launch,
+defaulting to the repository's catalogue value (`origin/${defaultBranch}`).
 
 Emacs startup loads `$XDG_CONFIG_HOME/emacs/agent-catalogue.el` (normally
 `~/.config/emacs/agent-catalogue.el`) as trusted executable configuration,
@@ -119,15 +118,11 @@ required choices stop capture with an actionable error; cancellation creates no
 note. Listing and existing notes do not require the catalogue. The catalogue
 does not implement an Emacs session launcher.
 
-These fields remain optional hints to Herdsman, not launch authorization.
-Herdsman skips a usable repository hint and an eligible local machine hint;
-remote destinations, model, thinking, and base ref still require confirmation.
-Missing/unavailable hints require selection or deliberate replacement, and
-back-navigation can revisit skipped choices. Herdsman owns final selection and
-local/remote resolution. Emacs neither checks live Git refs nor probes hosts or
-changes running Pi settings. Existing or manually authored notes may omit hints;
-legacy `base-ref` metadata is ignored. Capture does not migrate or automatically
-change existing notes.
+These fields are optional launch hints, not launch authorization. The
+human-operated Emacs commands below own launch choices and resolution. Capture
+neither checks live Git refs nor probes hosts or changes running Pi settings.
+Existing or manually authored notes may omit hints; legacy `base-ref` metadata
+is ignored. Capture does not migrate or automatically change existing notes.
 
 ## Human-operated Emacs Launches
 
@@ -187,5 +182,6 @@ parsers, or automatic edits to other notes.
 Existing notes, including legacy signatures, `repo`/session metadata, and
 Dependencies sections, are not migrated. Such content is ordinary file content.
 File operations never stop agents, deliver code, remove branches, or release
-worktrees. Follow the current Herdr/Herdsman and repository guidance separately
-for those actions.
+worktrees. Session/worktree cleanup is a separate human-coordinated action;
+agents must not automatically remove worktrees or branches. Repository delivery
+follows the applicable repository guidance, separately from note management.

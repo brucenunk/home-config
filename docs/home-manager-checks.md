@@ -38,9 +38,6 @@ owns it:
 | Check | Platforms | Regression caught |
 | --- | --- | --- |
 | `ghostty-home-manager-module` | Linux, Darwin | Package overrides remain effective, extra configuration remains appended, the two generated themes remain deployed, and disabling the canonical Linux service suppresses its link. |
-| `herdr-home-manager-module` | Linux, Darwin | The generated Herdr TOML remains parseable and retains terminal, Doric theme, sidebar, notification, SSH, update policy, and the Ctrl+Space prefix, and the matching Pi integration remains deployed. The native check realizes only the generated configuration needed to inspect that artifact. |
-| `herdr-worktree-config` | Linux, Darwin | The patched pinned package runs Rust discovery tests. An isolated real Herdr server discovers ordinary, legacy-bare and worktree-config bare sources, reuses the parent workspace, creates tasks from a fresh remote base without changing the default checkout, and removes tasks through Herdr while preserving branch history and bare-layout settings. No live SSH or shared server is involved. |
-| `herdsman`, `herdsman-home-manager-module` | Linux, Darwin | The Go package passes its tests; the isolated feature derives unchanged operational TOML and companion JSON from the shared inventory, with per-machine repository paths/default branches and preserved model defaults, retains normal file-collision protection, and installs the command. Plugin checks cover the Start/Finish popup manifest and bare-command runner, offline link/relink, shim routing, and `prefix+t` binding, not live popup/focus behavior. |
 | `agent-catalogue-home-manager-module` | Linux, Darwin | Shared inventory local identity, typed directory/repository options, Nix-to-Elisp escaping and private-field exclusion, and isolated trusted-configuration loading/reload/capture/list ERT tests. Capture requires explicit multi-machine choice without changing model/thinking defaults. |
 | `pi-home-manager-module` | Linux, Darwin | Disable/directory overrides remain effective; model/thinking projections match the pinned Pi loader and exclude private provider fields. |
 | `doric-waybar-themes-home-manager-module` | Linux, Darwin | The portable Waybar theme module continues to deploy its theme directory recursively. |
@@ -90,8 +87,6 @@ The previous broad script's assertions were assigned as follows:
 - Ghostty configuration, themes, package override, and service control moved
   to the Ghostty feature check;
 - Git repository and maintenance behavior is covered by its combined feature check;
-- Herdr generated settings and Pi integration moved to the Herdr feature
-  check;
 - nullable Pi directory overrides moved to the Pi feature check;
 - portable Waybar theme deployment moved to the Waybar feature check; and
 - the personal Wampa Emacs package equality assertion was intentionally

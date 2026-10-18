@@ -170,7 +170,7 @@ error.  Evaluate the theme's package source once and retry to register it."
 (use-package lin
   :ensure nil
   :config
-  ;; Keep Doric's bg-accent selection colour, matching Herdr and Herdsman.
+  ;; Keep Doric's bg-accent selection colour.
   (setq lin-face 'hl-line)
   (lin-global-mode))
 

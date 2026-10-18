@@ -64,7 +64,7 @@ queue must still be coordinated separately.
 ## Settings defaults
 
 Shared defaults select `tuiMode: "regular"`, leaving transcript scrolling and
-selection with the terminal or Herdr instead of Pi's alternate-screen UI.
+selection with the terminal instead of Pi's alternate-screen UI.
 They also set `defaultTools: ["+codemode"]` for normal Pi sessions across hosts
 and frontends, including pi-acp/agent-shell. The `+` adds codemode to the usual
 built-in tools without excluding auto-discovered extensions such as `apply_patch`;

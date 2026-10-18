@@ -40,8 +40,8 @@ my-task-list.el subscribes to the note-created hook
   buffers, changes list state, or implements launch operations. Saved-snapshot
   validation and all launch choices, operations and failure handling remain
   with the launcher; capture remains file-only.
-  Herdr/Herdsman retain their runtime lifecycle and
-  orchestration. See `../../../docs/agent-session.md` for launch/failure policy.
+  Session/worktree cleanup remains a separate human-coordinated action, not
+  agent orchestration. See `../../../docs/agent-session.md` for launch/failure policy.
 - New captures retain the `todo` filename signature solely to match the existing
   default `==todo--` regex. There is no transition API or status validation.
 - `skill` is optional downstream metadata. Capture always selects a repository,
@@ -49,8 +49,8 @@ my-task-list.el subscribes to the note-created hook
   Both capture forms prompt for machine when multiple destinations qualify,
   with no implicit/default choice, skipping the machine prompt when only one
   destination is eligible. Ordinary capture uses the Nix-generated agent catalogue's model/thinking defaults;
-  prefix capture exposes those choices. Base ref is gathered by Herdsman or
-  explicitly confirmed by the Emacs launcher; legacy task-file `base-ref`
+  prefix capture exposes those choices. Base ref is explicitly confirmed by
+  the Emacs launcher; legacy task-file `base-ref`
   metadata is ignored. Thinking
   prompts even in ordinary capture when no supported default exists. Templates
   have no Dependencies section.

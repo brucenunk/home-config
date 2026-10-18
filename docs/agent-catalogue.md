@@ -1,9 +1,9 @@
 # Machines and the Emacs agent catalogue
 
 `brucenunk.homeManager.machines` is the shared Nix inventory. The `machines`
-Home Manager module declares data only; Git, the Emacs catalogue generator, and
-the transitional Herdsman generator consume it independently. Consumers import
-those features explicitly. Git, Herdsman, and `agent-catalogue` import the
+Home Manager module declares data only; Git and the Emacs catalogue generator
+consume it independently. Consumers import those features explicitly.
+Git and `agent-catalogue` import the
 data-only option declarations as a prerequisite; none enables the others.
 
 Hosts own composition. Wampa is composed in `hosts/wampa.nix`; private Woowoo
@@ -46,8 +46,6 @@ selection; a non-null default must name a configured model.
 Repository definitions retain Git's `path` and `defaultBranch` options. Paths
 are absolute, machine-local directories accepted by `git -C`, including ordinary
 worktrees and bare Git directories; there is no default-checkout requirement.
-Herdsman's existing restrictions on linked source workspaces still apply to its
-launches. Its TOML and JSON formats and Go consumers are unchanged.
 
 `directory` combines an Emacs connection with the default browsing directory.
 The local default is `~/work/`; remote records must specify it explicitly,
@@ -119,27 +117,27 @@ probe hosts, query Git, create worktrees, or launch sessions. The separate
 [human-operated session launcher](agent-session.md) consumes machine connections,
 repository sources and default base refs from this catalogue. It does not apply
 catalogue model/thinking defaults: Pi keeps its own defaults unless a task
-independently overrides either field. Herdsman's existing JSON remains under
-`herdsman/` for its own consumers; Emacs no longer reads it.
+independently overrides either field.
 
 ## Migration and verification
 
-Move `herdsman.machines` to `brucenunk.homeManager.machines`, replace
-`herdsman.machineName` with `isLocal = true` on that record, and supply remote
-`directory` values. Move local `git.repositories` there too; do not keep a
-second inventory. Keep Pi deployment's `models` and the local inventory record
-wired to the same Nix value. Herdsman's operational `herdsman.config` stays in
-place. Import `agent-catalogue` wherever Emacs capture is used. Removing
-Herdsman later does not remove machine options, Git maintenance, or the Emacs
-catalogue.
+Keep machine inventory under `brucenunk.homeManager.machines`, with one
+`isLocal = true` record and explicit remote `directory` values. Keep repository
+definitions there rather than maintaining a second inventory. Pi deployment's
+`models` and the local inventory record should use the same Nix value. Import
+`agent-catalogue` wherever Emacs capture or the human-operated launcher is used.
+Machine options, Git maintenance, and the Emacs catalogue remain independent
+of the [retired launchers](agent-retirement.md). The machine name `local` is
+no longer reserved; it is an ordinary catalogue key, not a routing alias.
 
 `agent-catalogue-home-manager-module` tests Nix serialization (including quotes,
 backslashes, and Unicode), Nix option errors, private-field exclusion, and isolated
 configuration loading/reload/capture/list ERT tests. The capture regression runs Vertico's
 real candidate update, navigation, and Return command in a headless test buffer;
 it is not live UI/runtime-pickup evidence. `git-home-manager-module` checks that only local
-repositories participate in maintenance. Herdsman's existing check retains its
-JSON/TOML assertions and model-default cases. See [home-manager-checks.md](home-manager-checks.md).
+repositories participate in maintenance. Catalogue checks retain model-default
+coverage and accept an ordinary machine named `local`. See
+[home-manager-checks.md](home-manager-checks.md).
 
 The required Wampa build is isolated verification, not activation or runtime
 pickup. Deployment follows [activation.md](activation.md) only when explicitly

@@ -11,7 +11,7 @@ The task note is a bootstrap artifact, not the main collaboration surface. Use c
 
 ## Invariants
 
-- **Branch management:** the task system or approved task-launch tooling has already selected the correct local branch and worktree. Never create, rename, or switch local branches. Accept a readable `jamesl/<task-slug>` branch created by approved Herdr task tooling; otherwise the task system's conventional branch may be `jamesl-{task-id}`.
+- **Branch management:** the human-operated Emacs launcher or other explicitly approved human setup has already selected the correct local branch and worktree. Never create, rename, or switch local branches, or create worktrees manually. Preserve the launcher's selected names; do not infer a branch naming convention from the task identifier.
 - **Pushing:** pushing is not part of the default handoff. Push only when explicitly requested or required by repo workflow, using the applicable finish guidance.
 - **Waiting:** waiting means a blocking message has been sent and the agent is paused for user input. Do not use task waiting-marker commands or backend waiting hooks.
 - **Task note:** read it as durable bootstrap context. Verbatim task-note content supplied in the initial conversation satisfies this requirement when the canonical file is on another machine. Do not turn it into a running work log or add phase markers, status history, or dense verification transcripts.

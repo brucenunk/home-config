@@ -13,8 +13,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 FUZZEL_THEME_DIR = REPO_ROOT / "config/fuzzel/themes"
 GHOSTTY_THEME_DIR = REPO_ROOT / "config/ghostty/themes"
-HERDR_THEME_DIR = REPO_ROOT / "config/herdr/themes"
-HERDSMAN_THEME_DIR = REPO_ROOT / "config/herdsman/themes"
 NIRI_THEME_DIR = REPO_ROOT / "config/niri/themes"
 PI_THEME_DIR = REPO_ROOT / "config/pi/themes"
 WAYBAR_THEME_DIR = REPO_ROOT / "config/waybar/themes"
@@ -209,66 +207,6 @@ def ghostty_theme_text(theme: dict[str, str]) -> str:
             "# white",
             f"palette = 7={theme['fg_main']}",
             f"palette = 15={theme['fg_main']}",
-            "",
-        ]
-    )
-
-
-def herdr_theme_text(theme: dict[str, str]) -> str:
-    colors = {
-        "accent": theme["fg_accent"],
-        "panel_bg": theme["bg_main"],
-        "sidebar_bg": theme["bg_main"],
-        "active_row_bg": theme["bg_accent"],
-        "selection_bg": theme["bg_shadow_intense"],
-        "surface0": theme["bg_shadow_subtle"],
-        "surface1": theme["bg_neutral"],
-        "surface_dim": theme["bg_shadow_intense"],
-        # Herdr also uses overlay0 for agent names and other secondary text.
-        "overlay0": theme["fg_neutral"],
-        "overlay1": theme["fg_shadow_subtle"],
-        "text": theme["fg_main"],
-        "subtext0": theme["fg_neutral"],
-        "mauve": theme["fg_magenta"],
-        "green": theme["fg_green"],
-        "yellow": theme["fg_yellow"],
-        "red": theme["fg_red"],
-        "blue": theme["fg_blue"],
-        "teal": theme["fg_cyan"],
-        "peach": theme["fg_accent"],
-    }
-    return "\n".join(
-        [
-            f"# Generated from the installed Emacs doric-themes palette: {theme['name']}.",
-            "# Do not edit directly; regenerate with build-doric-themes.py.",
-            f"# Background mode: {theme['background_mode']}.",
-            "",
-            "[theme.custom]",
-            *(f'{name} = "{color}"' for name, color in colors.items()),
-            "",
-        ]
-    )
-
-
-def herdsman_theme_text(theme: dict[str, str]) -> str:
-    colors = {
-        "text": theme["fg_main"],
-        "muted": theme["fg_neutral"],
-        "accent": theme["fg_accent"],
-        "selection_background": theme["bg_accent"],
-        "selection_text": theme["fg_main"],
-        "filename_secondary": theme["fg_shadow_intense"],
-        "filename_muted": theme["fg_shadow_subtle"],
-        "match": theme["fg_accent"],
-        "error": theme["fg_red"],
-    }
-    return "\n".join(
-        [
-            f"# Generated from the installed Emacs doric-themes palette: {theme['name']}.",
-            "# Do not edit directly; regenerate with build-doric-themes.py.",
-            "",
-            "[colors]",
-            *(f'{name} = "{color}"' for name, color in colors.items()),
             "",
         ]
     )
@@ -471,15 +409,9 @@ def css_filename(theme_name: str) -> str:
     return f"{theme_name}.css"
 
 
-def toml_filename(theme_name: str) -> str:
-    return f"{theme_name}.toml"
-
-
 TARGETS = {
     "fuzzel": Target(FUZZEL_THEME_DIR, ini_filename, fuzzel_theme_text),
     "ghostty": Target(GHOSTTY_THEME_DIR, unchanged_filename, ghostty_theme_text),
-    "herdr": Target(HERDR_THEME_DIR, toml_filename, herdr_theme_text),
-    "herdsman": Target(HERDSMAN_THEME_DIR, toml_filename, herdsman_theme_text),
     "niri": Target(NIRI_THEME_DIR, kdl_filename, niri_theme_text),
     "pi": Target(PI_THEME_DIR, json_filename, pi_theme_json),
     "waybar": Target(WAYBAR_THEME_DIR, css_filename, waybar_theme_text),

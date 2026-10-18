@@ -101,27 +101,16 @@ and platform boundaries.
   `brucenunk.homeManager.ghostty.package`, append `extraConfig`, and control
   `canonicalLinuxService.enable`. A consumer that disables the canonical
   service owns its replacement service and session environment.
-- `herdr` deploys the pinned Herdr package with the temporary worktree-config
-  discovery patch, generated Doric light/dark
-  theme policy, and release-matched Pi integration. Consumers may select only
-  the typed `brucenunk.homeManager.herdr.ui.toast.delivery` host policy.
-  `flake.lib.herdr.packageFor` supplies the same patched variant to Herdsman
-  and any downstream custom package wiring; `packages.<system>.herdr` exposes it
-  directly. See [the compatibility-patch notes](herdsman.md#pinned-herdr-compatibility-patch).
 - `machines` declares the shared, data-only inventory under
   `brucenunk.homeManager.machines`. Host composition supplies repository/model
-  definitions, browsing directories, and one `isLocal` record. Git, Herdsman,
-  and `agent-catalogue` import these option declarations, not each other's
+  definitions, browsing directories, and one `isLocal` record. Git and
+  `agent-catalogue` import these option declarations, not each other's
   behavior. See [`agent-catalogue.md`](agent-catalogue.md).
 - `agent-catalogue` generates trusted executable Elisp configuration for Emacs
   from that inventory, setting `my/agent-machines` at startup with explicit reload.
-  It installs neither Emacs nor Herdsman. Hosts/downstream consumers opt in
+  It does not install Emacs. Hosts/downstream consumers opt in
   explicitly; capture and the separate human-operated Emacs session launcher
   consume it. See [`agent-session.md`](agent-session.md).
-- `herdsman` packages the Go companion launcher. It consumes the shared machine
-  inventory; operational settings and themes remain under `herdsman.config`.
-  Its operational TOML and companion JSON formats are unchanged, and Emacs no
-  longer reads that JSON. See [`herdsman.md`](herdsman.md).
 - `pi` exposes its deployment interface under
   `brucenunk.homeManager.pi`. Its public theme and extension directories are
   defaults, so provider or transport adapters can replace them without
