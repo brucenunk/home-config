@@ -8,6 +8,7 @@ Repositories under `~/work` use `~/work/{owner}/{repo}/{worktree}`. Preserve the
 
 - **UI screenshots**: Use `screencapture` on macOS or `niri msg action screenshot` in a Niri session when exact UI state matters.
 - **Search and path discovery**: Prefer `rg` for content and `fd` for paths; use `find` only when `fd` cannot express the query.
+- **Web research**: Use the custom `web_search` and `web_fetch` tools for public web searches and retrieval rather than shell HTTP clients. For GitHub lookups and URLs (including raw content and API URLs), use `gh` or `gh api` instead. Never use `curl`, `wget`, or another direct HTTP client for GitHub, including as a fallback when a web tool fails or is unavailable. If `gh` cannot access the required content, report the limitation rather than bypassing it.
 - **Structured data**: Prefer `jq` for JSON and `yq` for YAML or TOML rather than ad hoc text parsing.
 - **GNU text tools**: GNU `sed` and `awk` are installed via Nix and available on `$PATH`.
 
