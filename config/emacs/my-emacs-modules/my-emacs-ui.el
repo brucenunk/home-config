@@ -106,9 +106,19 @@ error.  Evaluate the theme's package source once and retry to register it."
 
 (use-package mixed-pitch
   :ensure nil
-  :hook (markdown-mode . mixed-pitch-mode)
+  :hook ((markdown-mode . mixed-pitch-mode)
+         (agent-shell-viewport-view-mode . mixed-pitch-mode)
+         (agent-shell-viewport-edit-mode . mixed-pitch-mode))
   :config
-  (add-to-list 'mixed-pitch-fixed-pitch-faces 'markdown-table-face)
+  ;; The renderer's base faces also cover source labels, syntax-highlighted
+  ;; bodies, and table headers/borders through inheritance.  Remap them only
+  ;; in mixed-pitch buffers; ordinary shell buffers keep their own font.
+  ;; Compose has no Markdown faces: raw draft code/tables stay variable-pitch.
+  (dolist (face '(markdown-table-face
+                  agent-shell-markdown-inline-code
+                  agent-shell-markdown-source-block
+                  agent-shell-markdown-table))
+    (add-to-list 'mixed-pitch-fixed-pitch-faces face))
   (add-hook 'fontaine-set-preset-hook #'my/refresh-mixed-pitch-mode))
 
 (use-package pulsar

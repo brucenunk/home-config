@@ -217,6 +217,14 @@ in
               epkgs.denote
               epkgs.yaml
               epkgs.vertico
+              epkgs.mixed-pitch
+              epkgs.markdown-mode
+              epkgs.doric-themes
+              epkgs.auto-dark
+              epkgs.fontaine
+              epkgs.spacious-padding
+              epkgs.pulsar
+              epkgs.lin
               (import ../../pkgs/tramp-rpc.nix { inherit inputs pkgs epkgs; })
               epkgs.use-package
             ]);
@@ -281,6 +289,8 @@ in
                 -l my-agent-session-tests -f ert-run-tests-batch-and-exit
               emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
                 -l my-agent-shell-tests -f ert-run-tests-batch-and-exit
+              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+                -l my-emacs-ui-tests -f ert-run-tests-batch-and-exit
               touch "$out"
             '';
 

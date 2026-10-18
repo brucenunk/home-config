@@ -276,6 +276,54 @@ or agent-to-agent control. GC above is separate idle housekeeping, not a launch
 failure rollback or task-completion signal. Launching another conversation does
 not grant the agent tools to operate it.
 
+## Viewport typography
+
+Conversation view (`agent-shell-viewport-view-mode`) uses the same mixed-pitch
+and Fontaine policy as Markdown buffers: variable-pitch prose, fixed-pitch
+inline code, rendered fenced code and tables. The renderer's base faces cover
+syntax-highlighted code, source labels, table headers, borders and zebra rows
+through face composition/inheritance. Fontaine preset changes refresh active
+mixed-pitch buffers. Ordinary shell/tool buffers are not opted into mixed pitch.
+Within conversation view, unfenced tool-result text has no dedicated fixed-pitch
+face and follows the variable-pitch default too. Whitespace-aligned raw logs or
+source in those results may not align; only rendered code/table regions are
+explicitly kept monospaced. This is an accepted limitation of the viewport-wide
+typography policy, not a renderer change.
+An unfinished streamed fence remains raw until the renderer can close it; this
+configuration does not change that rendering lifecycle.
+
+Compose (`agent-shell-viewport-edit-mode`) also enables mixed-pitch, but deliberately
+without Markdown-aware fontification: prose, raw inline/fenced code and draft
+tables all use variable pitch. The mode derives from `text-mode` and does not
+supply Markdown faces while typing. The installed Markdown package installs its
+fontification together with its major-mode syntax/editing setup, not through a
+standalone fontification minor mode. We accept variable-pitch raw code/tables in
+drafts rather than copy Markdown internals, add a parser or replace agent-shell's
+major mode. Native completion, indentation and composition setup remain in place;
+the cursor follows the existing mixed-pitch cursor policy. Rendered conversation
+code and tables remain monospaced independently of this compose compromise.
+
+Rainbow-delimiters in rendered fences is deferred. The pinned renderer fontifies
+code in temporary language buffers with mode hooks delayed, so the configured
+programming-mode hook does not enable rainbow-delimiters there. It has no dedicated
+public hook for augmenting that code-fontification step. Its external-renderer
+hook is for claiming/rendering regions, not simply augmenting built-in code
+fontification. A focused upstream integration point is preferable to running
+arbitrary mode hooks, advising private functions or taking over fenced rendering.
+Enabling rainbow-delimiters over the whole viewport is not a solution.
+
+The focused UI ERT suite in `emacs-agent-shell` checks mode-hook scope, fixed-pitch
+remappings, raw variable-pitch compose content and native editing setup,
+representative rendered code/table faces, streamed fence completion, and refresh
+across font-family and Doric theme changes in Markdown and both viewport modes. This is isolated
+configuration evidence, not proof of visual alignment or editing behaviour.
+After approved downstream deployment and Emacs pickup, compare prose, inline
+code, labelled/nested fenced code and tables in conversation view, including
+streamed updates and unfenced tool output. Check that switching to compose gives
+variable-pitch drafts (including raw code/tables), the expected mixed-pitch cursor,
+and working indentation/completion, and that existing Markdown buffers remain
+unchanged. These human checks are not marked passed by batch tests.
+
 ## Verification, activation and smoke tests
 
 `emacs-agent-shell` runs ERT with the pinned packages: temporary real repositories
