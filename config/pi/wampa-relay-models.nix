@@ -25,7 +25,7 @@
             "image"
           ];
           maxTokens = 128000;
-          name = "GPT-6 Astra (OpenAI Proxy)";
+          name = "GPT-6 Astra";
           reasoning = true;
           thinkingLevelMap = {
             off = null;
@@ -48,7 +48,7 @@
             "image"
           ];
           maxTokens = 128000;
-          name = "GPT-6 Sol (OpenAI Proxy)";
+          name = "GPT-6 Sol";
           reasoning = true;
           thinkingLevelMap = {
             off = "none";
@@ -71,7 +71,7 @@
             "image"
           ];
           maxTokens = 128000;
-          name = "GPT-6 Luna (OpenAI Proxy)";
+          name = "GPT-6 Luna";
           reasoning = true;
           thinkingLevelMap = {
             off = "none";
@@ -94,7 +94,7 @@
             "image"
           ];
           maxTokens = 128000;
-          name = "GPT-6.1 Sol (OpenAI Proxy)";
+          name = "GPT-6.1 Sol";
           reasoning = true;
           thinkingLevelMap = {
             off = null;
@@ -117,7 +117,7 @@
             "image"
           ];
           maxTokens = 128000;
-          name = "GPT-5.6 Sol (OpenAI Proxy)";
+          name = "GPT-5.6 Sol";
           reasoning = true;
           thinkingLevelMap = {
             off = "none";
@@ -140,7 +140,7 @@
             "image"
           ];
           maxTokens = 128000;
-          name = "GPT-5.6 Terra (OpenAI Proxy)";
+          name = "GPT-5.6 Terra";
           reasoning = true;
           thinkingLevelMap = {
             off = "none";
@@ -163,7 +163,7 @@
             "image"
           ];
           maxTokens = 128000;
-          name = "GPT-5.6 Luna (OpenAI Proxy)";
+          name = "GPT-5.6 Luna";
           reasoning = true;
           thinkingLevelMap = {
             off = "none";
@@ -190,7 +190,7 @@
           id = "global.xai.grok-4.6";
           input = [ "text" ];
           maxTokens = 500000;
-          name = "Grok 4.6 (Bedrock Proxy)";
+          name = "Grok 4.6";
           # Pi's Bedrock transport currently sends reasoning fields only for
           # Claude models.
           reasoning = false;
@@ -206,7 +206,7 @@
           id = "global.xai.grok-4.7";
           input = [ "text" ];
           maxTokens = 500000;
-          name = "Grok 4.7 (Bedrock Proxy)";
+          name = "Grok 4.7";
           # Pi's Bedrock transport currently sends reasoning fields only for
           # Claude models.
           reasoning = false;
@@ -222,7 +222,7 @@
           id = "global.anthropic.claude-fable-5";
           input = [ "text" ];
           maxTokens = 128000;
-          name = "Claude Fable 5 (Bedrock Proxy)";
+          name = "Claude Fable 5";
           reasoning = true;
           thinkingLevelMap = {
             off = null;
@@ -241,7 +241,7 @@
           id = "global.anthropic.claude-opus-5";
           input = [ "text" ];
           maxTokens = 128000;
-          name = "Claude Opus 5 (Bedrock Proxy)";
+          name = "Claude Opus 5";
           reasoning = true;
           thinkingLevelMap = {
             xhigh = "xhigh";
@@ -259,7 +259,7 @@
           id = "global.anthropic.claude-sonnet-5";
           input = [ "text" ];
           maxTokens = 128000;
-          name = "Claude Sonnet 5 (Bedrock Proxy)";
+          name = "Claude Sonnet 5";
           reasoning = true;
           thinkingLevelMap = {
             xhigh = "xhigh";
@@ -277,7 +277,7 @@
           id = "global.anthropic.claude-sonnet-5-5";
           input = [ "text" ];
           maxTokens = 128000;
-          name = "Claude Sonnet 5.5 (Bedrock Proxy)";
+          name = "Claude Sonnet 5.5";
           reasoning = true;
           thinkingLevelMap = {
             xhigh = "xhigh";
