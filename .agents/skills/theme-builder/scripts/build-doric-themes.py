@@ -16,10 +16,7 @@ GHOSTTY_THEME_DIR = REPO_ROOT / "config/ghostty/themes"
 NIRI_THEME_DIR = REPO_ROOT / "config/niri/themes"
 PI_THEME_DIR = REPO_ROOT / "config/pi/themes"
 WAYBAR_THEME_DIR = REPO_ROOT / "config/waybar/themes"
-PI_THEME_SCHEMA = (
-    "https://raw.githubusercontent.com/badlogic/pi-mono/main/"
-    "packages/coding-agent/src/modes/interactive/theme/theme-schema.json"
-)
+PI_THEME_SCHEMA = "https://pi.dev/schemas/theme.schema.json"
 EMACS_EXTRACT = r"""
 (progn
   (require 'json)
