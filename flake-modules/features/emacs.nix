@@ -260,7 +260,11 @@ in
                                (eq agent-shell-path-resolver-function
                                    (quote agent-shell-tramp-resolve-path))
                                (eq agent-shell-transcript-file-path-function
-                                   (quote my/agent-shell--transcript-file-path)))
+                                   (quote my/agent-shell--transcript-file-path))
+                               (eq agent-shell-dot-subdir-function
+                                   (quote my/agent-shell--dot-subdir))
+                               (equal my/agent-shell-transcript-directory
+                                      (expand-file-name "~/work/agent-shell/transcripts/" "/")))
                     (error "Agent shell defaults or TRAMP integration are missing"))
                   (unless (version<= agent-shell--shell-maker-minimum-version shell-maker-version)
                     (error "shell-maker is too old: %s" shell-maker-version))

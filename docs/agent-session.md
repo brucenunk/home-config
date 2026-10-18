@@ -182,7 +182,7 @@ TRAMP RPC 0.15.0. The current Pi ACP package is 0.0.34.
 ## Transcripts
 
 All agent-shell sessions, including ordinary launches outside these commands, use
-`~/work/agent-shell-transcripts/` on the **machine running Emacs**. A remote
+`~/work/agent-shell/transcripts/` on the **machine running Emacs**. A remote
 session never stores its transcript on the agent host or in its worktree.
 Each transcript is a timestamped, randomized Markdown file **directly under the
 root**, with no machine/project or per-session subdirectories. Existing filenames
@@ -197,9 +197,97 @@ so a mode hook reapplies our policy after enabling/disabling it, leaving its
 remote path resolver intact. This does not patch either package.
 
 Ordinary startup/submission creates neither `.agent-shell/` nor Git exclusions
-or repository files. Existing transcripts and worktrees are not moved or
-deleted. Screenshots and other explicit attachment operations are outside this
-transcript-only policy. Clean-worktree prerequisites remain unchanged.
+or repository files. Existing transcripts under `~/work/agent-shell-transcripts/`
+and existing worktrees are not moved or deleted. Clean-worktree prerequisites
+remain unchanged.
+
+## Screenshots and clipboard images
+
+Capture on the **machine running Emacs**, then attach in viewport compose:
+
+| Host | Native capture to clipboard | Attach without sending |
+| --- | --- | --- |
+| macOS | `Ctrl+Cmd+Shift+4`, select a region | `C-c C-y` |
+| Wampa (Niri/Wayland) | `Print`, select and confirm in Niri's capture UI | `C-c C-y` |
+
+`C-c C-y` runs public `agent-shell-send-clipboard-image`. The pinned command
+requires graphical Emacs and selects the first available clipboard handler.
+Wampa already declares wl-clipboard (`wl-paste`); Niri's existing screenshot
+bindings/configuration are unchanged, including its separate save to Pictures.
+Woowoo needs `pngpaste`, installed separately through the private
+`canvanauts/jamesl-home-config` configuration. Until that package is deployed
+and visible to GUI Emacs, clipboard attachment on macOS reports a missing tool.
+No screenshot or clipboard packages are added by this public change.
+
+On macOS, `C-c C-s` runs public `agent-shell-send-screenshot` using the existing
+`/usr/sbin/screencapture -i` default. Select the capture region, or press Escape
+to cancel. macOS may require Screen Recording permission for the application
+hosting Emacs; check **System Settings → Privacy & Security → Screen & System
+Audio Recording** (called **Screen Recording** on older releases), and restart
+the affected application if requested. Permission behavior needs a human check;
+it was not tested by capturing the screen. Linux has no direct-capture binding:
+the upstream X11 ImageMagick default is not configured or installed here.
+
+Both attachment commands append to the current compose draft. Add explanatory
+text and send explicitly with `C-c C-c`; attaching never submits a prompt.
+They are also available through `M-x`. Capture/tool errors and an empty or
+non-image clipboard report an error without changing the draft. A cancelled
+capture with no output also leaves the draft intact. Empty external directories
+or failed capture files may remain; there is no cleanup/retention system.
+
+Public `agent-shell-dot-subdir-function` redirects artifact subdirectories to
+`~/work/agent-shell/` on the Emacs host. Captures and clipboard PNGs go directly
+under `screenshots/`, including for remote RPC conversations. There is no
+per-session directory, reservation or artifact registry. Native image previews,
+@file attachment semantics, and transcript naming remain unchanged. Upstream
+image filenames have one-second precision: avoid repeated captures of the same
+kind within one second, which can overwrite a previous attachment (or reuse it
+if a subsequent capture exits successfully without producing a file). This
+upstream limitation is deliberately retained rather than adding capture machinery.
+
+### Image delivery and verification boundaries
+
+The inspected installed versions are agent-shell `20261013.250`, ACP `0.17.1`
+and Pi ACP `0.0.34`. With the agent's image capability advertised, agent-shell
+reads an attached local PNG and embeds its base64 bytes and MIME type in an ACP
+image block. Pi ACP's translator forwards those bytes to Pi, rather than opening
+the block's file URI. Thus a remote Pi agent does not need access to the
+Emacs-local image path. This depends on the actual remote adapter/version and
+advertised capabilities: a plain @path or resource link is not proof of image
+delivery, and a different agent may not support this path.
+
+Isolated ERT uses a synthetic PNG and mocked capture/clipboard processes. It
+checks destination paths, macOS/Wayland handler selection, failures, cancellation,
+draft-preserving native insertion, clean Git worktrees/exclusions and image bytes
+for local and simulated RPC CWDs. The remote CWD fixture is not a live RPC
+connection or remote delivery test. Actual clipboard contents, screenshots and
+model submissions are never used in these automated checks.
+
+A separate isolated check of the installed Pi ACP `0.0.34` translator preserved
+the fixture's PNG bytes and MIME type with a deliberately unusable file URI.
+It evaluated only the adapter's pure translation function, without starting Pi
+or uploading the fixture; live local/remote model delivery remains unverified.
+
+After approved deployment and runtime pickup, a human should check:
+
+1. On macOS, `executable-find` finds pngpaste in GUI Emacs. Capture a harmless
+   region to the clipboard, attach with `C-c C-y`, and confirm the existing draft
+   remains editable and unsent. Repeat with direct `C-c C-s`, then cancellation.
+2. On Wampa, verify `niri --version`, `wl-paste --version` and graphical Emacs's
+   tool visibility, then use Print and `C-c C-y`. Check empty/non-image clipboard
+   errors leave the draft intact. Wampa's installed versions remain unverified
+   while SSH is unavailable.
+3. In approved disposable local Pi and remote RPC conversations, attach a harmless
+   image and explicitly send a question about its contents. Confirm the agent
+   receives the image, not just its filename. Do not copy it to the remote host
+   manually as a substitute for verifying embedded delivery.
+4. Confirm new images and transcripts are under `~/work/agent-shell/` on the
+   Emacs host, old transcripts are untouched, and the project remains Git-clean
+   with no `.agent-shell/` or exclusion edits.
+
+These human checks are pending; package deployment, activation and runtime
+pickup are separate proof points. Never load feature-worktree code into the
+shared daemon to perform them.
 
 ## Automatic session cleanup
 

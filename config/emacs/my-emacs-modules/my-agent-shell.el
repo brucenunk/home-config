@@ -3,13 +3,22 @@
 ;;; Commentary:
 
 ;; Use Pi with agent-shell's viewport interface.
-;; Map remote project paths through TRAMP; keep all transcripts outside projects.
+;; Map remote project paths through TRAMP; keep artifacts outside projects.
 ;; Nix provides the Emacs packages and the pi-acp adapter.
 
 ;;; Code:
 
+(defvar my/agent-shell-directory
+  (expand-file-name "~/work/agent-shell/" "/")
+  "Local artifact root on the machine running Emacs.")
+
+(defun my/agent-shell--dot-subdir (subdir)
+  "Return local artifact path for SUBDIR without creating it.
+Use an explicit local root even when the current directory is remote."
+  (expand-file-name subdir my/agent-shell-directory))
+
 (defvar my/agent-shell-transcript-directory
-  (expand-file-name "~/work/agent-shell-transcripts/" "/")
+  (my/agent-shell--dot-subdir "transcripts/")
   "Local transcript root on the machine running Emacs.")
 
 (defun my/agent-shell--transcript-file-path ()
@@ -25,10 +34,18 @@ Random names separate same-second sessions; skip existing Markdown paths."
 
 (use-package agent-shell
   :ensure nil
+  :bind (:map agent-shell-viewport-edit-mode-map
+              ("C-c C-y" . agent-shell-send-clipboard-image))
   :custom
+  (agent-shell-dot-subdir-function #'my/agent-shell--dot-subdir)
   (agent-shell-transcript-file-path-function #'my/agent-shell--transcript-file-path)
   (agent-shell-preferred-agent-config 'pi)
-  (agent-shell-prefer-viewport-interaction t))
+  (agent-shell-prefer-viewport-interaction t)
+  :config
+  ;; Keep Linux clipboard-first: the upstream direct default uses X11 import.
+  (when (eq system-type 'darwin)
+    (define-key agent-shell-viewport-edit-mode-map (kbd "C-c C-s")
+                #'agent-shell-send-screenshot)))
 
 (use-package agent-shell-tramp
   :ensure nil

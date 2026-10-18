@@ -1,4 +1,4 @@
-;;; my-agent-shell-tests.el --- Isolated GC policy tests -*- lexical-binding: t -*-
+;;; my-agent-shell-tests.el --- Isolated agent-shell policy tests -*- lexical-binding: t -*-
 
 ;;; Commentary:
 ;; No daemon, live agents, remote connections or user worktrees are used.
@@ -20,6 +20,7 @@
   `(let* ((root (make-temp-file "agent-gc-policy-" t))
           (default-directory (file-name-as-directory root))
           (user-emacs-directory default-directory)
+          (my/agent-shell-directory (expand-file-name "artifacts/" root))
           (my/agent-shell-transcript-directory (expand-file-name "transcripts/" root))
           (agent-shell-gc-store-file (expand-file-name "gc/state.eld" root))
           (agent-shell-gc--sessions (make-hash-table :test 'equal))
@@ -93,6 +94,154 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
         (setq main source)))
     (my/agent-shell-test--git main "worktree" "add" "-qb" "task" task)
     (list main task)))
+
+(defconst my/agent-shell-test--png
+  (base64-decode-string
+   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=")
+  "Synthetic one-pixel PNG; never uses screen or clipboard contents.")
+
+(defun my/agent-shell-test--write-png (path)
+  "Write the synthetic PNG to PATH."
+  (let ((coding-system-for-write 'binary))
+    (write-region my/agent-shell-test--png nil path nil 'silent)))
+
+(ert-deftest my/agent-shell-artifact-paths-and-bindings ()
+  (my/agent-shell-test--isolated
+    (should (eq agent-shell-dot-subdir-function #'my/agent-shell--dot-subdir))
+    (should (equal (lookup-key agent-shell-viewport-edit-mode-map (kbd "C-c C-y"))
+                   #'agent-shell-send-clipboard-image))
+    (should (eq (lookup-key agent-shell-viewport-edit-mode-map (kbd "C-c C-s"))
+                (when (eq system-type 'darwin) #'agent-shell-send-screenshot)))
+    (when (eq system-type 'darwin)
+      (should (equal agent-shell-screenshot-command '("/usr/sbin/screencapture" "-i"))))
+    (dolist (cwd (list root "/rpc:user@fixture.invalid:/srv/repo/"))
+      (let ((default-directory cwd))
+        (should (equal (funcall agent-shell-dot-subdir-function "screenshots")
+                       (expand-file-name "screenshots" my/agent-shell-directory)))
+        (should-not (file-remote-p (my/agent-shell--transcript-file-path)))))
+    (should-not (file-exists-p my/agent-shell-directory))
+    (should-not (file-exists-p my/agent-shell-transcript-directory))))
+
+(ert-deftest my/agent-shell-attachments-preserve-draft-and-clean-worktree ()
+  (my/agent-shell-test--isolated
+    (pcase-let* ((`(,source ,task) (my/agent-shell-test--repo root))
+                 (default-directory (file-name-as-directory task))
+                 (exclude (expand-file-name ".git/info/exclude" source))
+                 (before (with-temp-buffer (insert-file-contents exclude) (buffer-string)))
+                 (shell (my/agent-shell-test--shell))
+                 (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+                 (real-call-process (symbol-function 'call-process))
+                 (real-executable-find (symbol-function 'executable-find)))
+      (cl-letf (((symbol-function 'window-system) (lambda (&optional _) 'fixture))
+                ((symbol-function 'executable-find)
+                 (lambda (name &rest args)
+                   (cond ((equal name "pngpaste") "/fixture/pngpaste")
+                         ((member name '("wl-paste" "xclip" "powershell")) nil)
+                         (t (apply real-executable-find name args)))))
+                ((symbol-function 'call-process)
+                 (lambda (program &rest args)
+                   (if (equal (file-name-nondirectory program) "git")
+                       (apply real-call-process program args)
+                     (should (member program '("pngpaste" "/usr/sbin/screencapture")))
+                     (my/agent-shell-test--write-png (car (last args)))
+                     0)))
+                ((symbol-function 'agent-shell--display-buffer) #'ignore)
+                ((symbol-function 'agent-shell--send-request)
+                 (lambda (&rest _) (ert-fail "Attachment submitted a prompt"))))
+        (with-current-buffer viewport
+          (agent-shell-viewport-edit-mode)
+          (erase-buffer)
+          (insert "Existing draft")
+          (agent-shell-send-clipboard-image)
+          (let ((agent-shell-screenshot-command '("/usr/sbin/screencapture" "-i")))
+            (agent-shell-send-screenshot))
+          (should (derived-mode-p 'agent-shell-viewport-edit-mode))
+          (should (string-prefix-p "Existing draft" (buffer-string)))
+          (should (= 2 (length (agent-shell--parse-file-mentions (buffer-string)))))
+          ;; Still editable; no submission was needed to append more text.
+          (goto-char (point-max))
+          (insert "\nPlease explain this image.")
+          (dolist (mention (agent-shell--parse-file-mentions (buffer-string)))
+            (let ((path (map-elt mention :path)))
+              (should (file-in-directory-p path my/agent-shell-directory))
+              (should-not (file-remote-p path)))))
+        (should (equal "" (my/agent-shell-test--git task "status" "--porcelain" "--untracked-files=all")))
+        (should-not (file-exists-p (expand-file-name ".agent-shell" task)))
+        (should (equal before (with-temp-buffer (insert-file-contents exclude) (buffer-string))))))))
+
+(ert-deftest my/agent-shell-attachment-failures-leave-draft-intact ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+           (agent-shell-screenshot-command '("fixture-capture")))
+      (cl-letf (((symbol-function 'window-system) (lambda (&optional _) 'fixture))
+                ((symbol-function 'agent-shell--send-request)
+                 (lambda (&rest _) (ert-fail "Failure submitted a prompt"))))
+        (with-current-buffer viewport
+          (agent-shell-viewport-edit-mode)
+          (erase-buffer)
+          (insert "Keep this draft")
+          ;; Nonzero capture, cancellation with no output, and empty output.
+          (dolist (result '(failure cancelled empty))
+            (cl-letf (((symbol-function 'call-process)
+                       (lambda (_program &rest args)
+                         (when (eq result 'empty)
+                           (write-region "" nil (car (last args)) nil 'silent))
+                         (if (eq result 'failure) 1 0))))
+              (should-error (agent-shell-send-screenshot))
+              (should (equal "Keep this draft" (buffer-string)))))
+          ;; Missing tool, tool error (including non-image clipboard), and empty PNG.
+          (dolist (result '(missing failure empty))
+            (cl-letf (((symbol-function 'executable-find)
+                       (lambda (name &rest _)
+                         (when (and (not (eq result 'missing)) (equal name "pngpaste"))
+                           "/fixture/pngpaste")))
+                      ((symbol-function 'call-process)
+                       (lambda (_program &rest args)
+                         (when (eq result 'empty)
+                           (write-region "" nil (car (last args)) nil 'silent))
+                         (if (eq result 'failure) 1 0))))
+              (should-error (agent-shell-send-clipboard-image))
+              (should (equal "Keep this draft" (buffer-string))))))))))
+
+(ert-deftest my/agent-shell-wayland-handler-writes-fixture-bytes ()
+  (my/agent-shell-test--isolated
+    (let ((destination (agent-shell--dot-subdir "screenshots")))
+      (cl-letf (((symbol-function 'executable-find)
+                 (lambda (name &rest _) (when (equal name "wl-paste") "/fixture/wl-paste")))
+                ((symbol-function 'call-process)
+                 (lambda (program infile output _display &rest args)
+                   (should (equal program "wl-paste"))
+                   (should-not infile)
+                   (should (equal output '(t nil)))
+                   (should (equal args '("--type" "image/png")))
+                   (insert my/agent-shell-test--png)
+                   0)))
+        (let ((path (agent-shell--save-clipboard-image :destination-dir destination)))
+          (with-temp-buffer
+            (set-buffer-multibyte nil)
+            (insert-file-contents-literally path)
+            (should (equal my/agent-shell-test--png (buffer-string)))))))))
+
+(ert-deftest my/agent-shell-local-images-embed-bytes-for-local-and-rpc-agents ()
+  (my/agent-shell-test--isolated
+    (let ((image (expand-file-name "fixture.png" root)))
+      (my/agent-shell-test--write-png image)
+      (dolist (cwd (list root "/rpc:user@fixture.invalid:/srv/repo/"))
+        (let ((agent-shell-cwd-function (lambda () cwd))
+              (agent-shell--state '((:prompt-capabilities . ((:image . t))))))
+          (cl-letf (((symbol-function 'tramp-maybe-open-connection)
+                     (lambda (&rest _) (ert-fail "Image encoding attempted a remote connection"))))
+            (let* ((blocks (agent-shell--build-content-blocks
+                            (concat "Explain " (agent-shell--file-mention image))))
+                   (block (seq-find (lambda (item) (equal (map-elt item 'type) "image")) blocks)))
+              (should block)
+              (should (equal (map-elt block 'mimeType) "image/png"))
+              (should (equal (base64-decode-string (map-elt block 'data)) my/agent-shell-test--png))
+              ;; Optional fixture artifact for the installed Pi ACP translator check.
+              (when-let* ((output (getenv "MY_AGENT_SHELL_IMAGE_BLOCKS")))
+                (with-temp-file output
+                  (insert (json-encode (vconcat blocks))))))))))))
 
 (ert-deftest my/agent-shell-gc-configured-mode-and-settings ()
   (my/agent-shell-test--isolated

@@ -159,7 +159,7 @@ Directory browsing starts at the machine's configured directory and the exact
 chosen directory is retained as the agent CWD.
 
 Local and remote transcripts are uniquely named Markdown files directly under
-`~/work/agent-shell-transcripts/` on the Emacs host. Identifying metadata stays
+`~/work/agent-shell/transcripts/` on the Emacs host. Identifying metadata stays
 in agent-shell's normal header; no transcript directories or Git exclusions are
 created inside worktrees. Existing transcripts/worktrees are left untouched.
 
