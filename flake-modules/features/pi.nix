@@ -186,6 +186,8 @@ let
         (lib.mkIf cfg.enable {
           home.packages = [
             cfg.package
+            # Standard-library HTML extraction for the local web extension.
+            pkgs.python3
             # ACP clients such as agent-shell need the adapter, not just the CLI.
             (pkgs.llm-agents.pi-acp.override { pi = cfg.package; })
           ];
@@ -380,6 +382,26 @@ in
               chmod -R u+w ./apply-patch
               ln -s ${piNode}/lib/node_modules/@earendil-works/pi-coding-agent/node_modules ./apply-patch/node_modules
               node --test ./apply-patch/renderers.test.ts
+              touch "$out"
+            '';
+
+        pi-web-tests =
+          pkgs.runCommand "pi-web-tests"
+            {
+              nativeBuildInputs = [
+                pkgs.nodejs
+                pkgs.python3
+              ];
+            }
+            ''
+              node --test ${../../config/pi/extensions/web}/web.test.ts
+              cp -r ${../../config/pi/extensions/web} ./web
+              chmod -R u+w ./web
+              mkdir -p ./web/node_modules/@earendil-works
+              ln -s ${piNode}/lib/node_modules/@earendil-works/pi-coding-agent ./web/node_modules/@earendil-works/pi-coding-agent
+              ln -s ${piNode}/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai ./web/node_modules/@earendil-works/pi-ai
+              ln -s ${piNode}/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox ./web/node_modules/typebox
+              node --test ./web/execution.test.ts
               touch "$out"
             '';
 
