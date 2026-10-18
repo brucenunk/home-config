@@ -6,9 +6,30 @@
 
 ;;; Code:
 
+(require 'face-remap)
+
 (declare-function mixed-pitch-mode "mixed-pitch" (&optional arg))
 
 (defvar mixed-pitch-mode)
+
+(defvar-local my/agent-shell-header-face-cookies nil
+  "Remapping cookies for agent-shell header underlines.")
+
+(defun my/agent-shell-header-no-underline ()
+  "Suppress face underlines beneath agent-shell headers locally."
+  (mapc #'face-remap-remove-relative my/agent-shell-header-face-cookies)
+  (setq my/agent-shell-header-face-cookies nil)
+  (when (derived-mode-p 'agent-shell-mode
+                        'agent-shell-viewport-view-mode
+                        'agent-shell-viewport-edit-mode)
+    (dolist (face '(header-line header-line-inactive))
+      (when (facep face)
+        (push (face-remap-add-relative face :underline nil)
+              my/agent-shell-header-face-cookies)))))
+
+(add-hook 'agent-shell-mode-hook #'my/agent-shell-header-no-underline)
+(add-hook 'agent-shell-viewport-view-mode-hook #'my/agent-shell-header-no-underline)
+(add-hook 'agent-shell-viewport-edit-mode-hook #'my/agent-shell-header-no-underline)
 
 (defvar-local my/viewport-prompt-face-cookie nil
   "Remapping cookie for the echoed viewport prompt.")

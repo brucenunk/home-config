@@ -366,6 +366,15 @@ not grant the agent tools to operate it.
 
 ## Viewport typography
 
+Normal `agent-shell-mode` buffers and both viewport modes keep the configured
+header style and its model/state/context indicators, but suppress `header-line`
+and (when available)
+`header-line-inactive` underlines through buffer-local face remapping. This
+avoids the gapped line beneath the graphical header's embedded SVG without
+changing the renderer, global faces, mode lines or spacious-padding's subtle
+lines in unrelated buffers (including ordinary Comint, Markdown and programming
+buffers).
+
 Conversation view (`agent-shell-viewport-view-mode`) uses the same mixed-pitch
 and Fontaine policy as Markdown buffers: variable-pitch prose, fixed-pitch
 inline code, rendered fenced code and tables. The renderer's base faces cover
@@ -403,13 +412,19 @@ fontification. A focused upstream integration point is preferable to running
 arbitrary mode hooks, advising private functions or taking over fenced rendering.
 Enabling rainbow-delimiters over the whole viewport is not a solution.
 
-The focused UI ERT suite in `emacs-agent-shell` checks mode-hook scope, fixed-pitch
+The focused UI ERT suite in `emacs-agent-shell` checks local header underline
+remapping in normal agent-shell buffers and both viewport modes, repeatable
+setup and mode switches, mode-hook scope, fixed-pitch
 remappings, raw variable-pitch compose content and native editing setup,
 representative rendered code/table faces, streamed fence completion, and refresh
-across font-family and Doric theme changes in Markdown and both viewport modes. This is isolated
+across font-family and Doric theme changes in normal agent-shell buffers,
+Markdown and both viewport modes. This is isolated
 configuration evidence, not proof of visual alignment or editing behaviour.
-After approved downstream deployment and Emacs pickup, compare prose, inline
-code, labelled/nested fenced code and tables in conversation view, including
+After approved downstream deployment and Emacs pickup, check the graphical
+header in normal agent-shell buffers and both viewport modes: the header/context data
+should remain visible without underline gaps, including inactive windows, while
+other buffers retain their subtle lines. Also compare prose, inline code,
+labelled/nested fenced code and tables in conversation view, including
 streamed updates and unfenced tool output. Check that switching to compose gives
 variable-pitch drafts (including raw code/tables), the expected mixed-pitch cursor,
 and working indentation/completion, and that existing Markdown buffers remain

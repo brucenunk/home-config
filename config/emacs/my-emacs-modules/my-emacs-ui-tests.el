@@ -21,6 +21,15 @@
           ((symbol-function 'lin-global-mode) #'ignore))
   (require 'my-emacs-ui))
 
+;; Native startup regenerates agent-shell-mode through shell-maker-start-v2.
+;; The pinned package's initial definition embeds an unquoted keymap and cannot
+;; be called directly before that startup. Follow the native definition path,
+;; suppressing only process initialization in this isolated typography suite.
+(with-temp-buffer
+  (cl-letf (((symbol-function 'shell-maker--initialize) #'ignore))
+    (shell-maker-start-v2 :config (agent-shell--make-shell-maker-config)
+                          :buffer-name (buffer-name) :no-focus t)))
+
 (defun my/ui-test--remapped-family (face)
   "Return the family installed by mixed-pitch for FACE."
   (plist-get (cadr (assq face face-remapping-alist)) :family))
@@ -44,7 +53,7 @@
   ;; Header generation needs session state, unrelated to mode typography.
   (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
     (dolist (mode '(markdown-mode agent-shell-viewport-view-mode
-                   agent-shell-viewport-edit-mode text-mode comint-mode
+                   agent-shell-viewport-edit-mode agent-shell-mode text-mode comint-mode
                    emacs-lisp-mode))
       (with-temp-buffer
         (funcall mode)
@@ -62,6 +71,67 @@
                 (should (equal (my/ui-test--remapped-family face)
                                (face-attribute 'default :family)))))
           (should-not (bound-and-true-p mixed-pitch-mode)))))))
+
+(defun my/ui-test--header-remappings (agent-shell-p)
+  "Check header underline remappings, expected only when AGENT-SHELL-P."
+  (dolist (face '(header-line header-line-inactive))
+    (if (and agent-shell-p (facep face))
+        ;; Exactly one relative entry; keep the global face as the base.
+        (should (equal (assq face face-remapping-alist)
+                       (list face '(:underline nil) face)))
+      (should-not (assq face face-remapping-alist)))))
+
+(ert-deftest my/ui-agent-shell-header-underlines-are-local-and-repeatable ()
+  (let* ((faces (seq-filter #'facep '(header-line header-line-inactive
+                                    mode-line mode-line-inactive)))
+         (attributes (mapcar #'face-all-attributes faces)))
+    (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
+      (dolist (mode '(agent-shell-mode
+                     agent-shell-viewport-view-mode agent-shell-viewport-edit-mode
+                     markdown-mode text-mode comint-mode emacs-lisp-mode))
+        (with-temp-buffer
+          (funcall mode)
+          (let ((agent-shell-p (memq mode '(agent-shell-mode
+                                           agent-shell-viewport-view-mode
+                                           agent-shell-viewport-edit-mode))))
+            (my/ui-test--header-remappings agent-shell-p)
+            ;; Reapplying setup must leave other buffer-local policy intact.
+            (face-remap-add-relative 'mode-line :weight 'bold)
+            (let ((others (seq-remove
+                           (lambda (entry) (memq (car entry) faces))
+                           (copy-tree face-remapping-alist))))
+              (dotimes (_ 3) (my/agent-shell-header-no-underline))
+              (my/ui-test--header-remappings agent-shell-p)
+              (should (equal others
+                             (seq-remove
+                              (lambda (entry) (memq (car entry) faces))
+                              face-remapping-alist)))
+              (should (equal (cadr (assq 'mode-line face-remapping-alist))
+                             '(:weight bold)))))))
+      ;; Major-mode changes clear local cookies/remaps; each hook reinstalls
+      ;; only the policy for its mode, including a later unrelated mode.
+      (with-temp-buffer
+        (dolist (mode '(agent-shell-mode agent-shell-viewport-view-mode
+                       agent-shell-viewport-edit-mode agent-shell-mode text-mode))
+          (funcall mode)
+          (my/ui-test--header-remappings (not (eq mode 'text-mode))))))
+    (should (equal attributes (mapcar #'face-all-attributes faces)))
+    (should-not (default-value 'my/agent-shell-header-face-cookies))))
+
+(ert-deftest my/ui-agent-shell-header-tolerates-missing-inactive-face ()
+  (let ((original-facep (symbol-function 'facep)))
+    (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore)
+              ((symbol-function 'facep)
+               (lambda (face)
+                 (unless (eq face 'header-line-inactive)
+                   (funcall original-facep face)))))
+      (dolist (mode '(agent-shell-mode
+                     agent-shell-viewport-view-mode agent-shell-viewport-edit-mode))
+        (with-temp-buffer
+          (funcall mode)
+          (my/agent-shell-header-no-underline)
+          (my/ui-test--header-remappings t)
+          (should (= (length my/agent-shell-header-face-cookies) 1)))))))
 
 (ert-deftest my/ui-compose-keeps-raw-markdown-and-native-editing-setup ()
   (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
@@ -181,7 +251,7 @@
         (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore)
                   ;; :after configuration can run again when theme files load.
                   ((symbol-function 'auto-dark-mode) #'ignore))
-          (dolist (mode '(markdown-mode agent-shell-viewport-view-mode
+          (dolist (mode '(agent-shell-mode markdown-mode agent-shell-viewport-view-mode
                           agent-shell-viewport-edit-mode))
             (with-temp-buffer
               (funcall mode)
@@ -191,16 +261,21 @@
                 (set-face-attribute 'default nil :family "Test Fixed")
                 (set-face-attribute 'variable-pitch nil :family "Test Variable")
                 (run-hooks 'fontaine-set-preset-hook)
-                (should mixed-pitch-mode)
-                (should (equal (my/ui-test--remapped-family 'default) "Test Variable"))
+                (my/ui-test--header-remappings (not (eq mode 'markdown-mode)))
+                (if (eq mode 'agent-shell-mode)
+                    (progn
+                      (should-not (bound-and-true-p mixed-pitch-mode))
+                      (should-not (assq 'default face-remapping-alist)))
+                  (should mixed-pitch-mode)
+                  (should (equal (my/ui-test--remapped-family 'default) "Test Variable"))
+                  (should (equal (my/ui-test--remapped-family 'font-lock-doc-face) "Test Fixed"))
+                  (dolist (face '(markdown-table-face agent-shell-markdown-inline-code
+                                  agent-shell-markdown-source-block agent-shell-markdown-table))
+                    (should (equal (my/ui-test--remapped-family face) "Test Fixed"))))
                 (if (eq mode 'agent-shell-viewport-view-mode)
                     (should (equal (my/ui-test--remapped-family 'agent-shell-viewport-prompt)
                                    "Test Variable"))
                   (should-not (assq 'agent-shell-viewport-prompt face-remapping-alist)))
-                (should (equal (my/ui-test--remapped-family 'font-lock-doc-face) "Test Fixed"))
-                (dolist (face '(markdown-table-face agent-shell-markdown-inline-code
-                                agent-shell-markdown-source-block agent-shell-markdown-table))
-                  (should (equal (my/ui-test--remapped-family face) "Test Fixed")))
                 (should (my/ui-test--inherits-p 'agent-shell-markdown-table-border
                                                'agent-shell-markdown-table))))))
       (mapc #'disable-theme custom-enabled-themes)
