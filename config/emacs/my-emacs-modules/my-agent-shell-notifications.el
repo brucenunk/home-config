@@ -2,18 +2,11 @@
 
 ;;; Commentary:
 ;; agent-shell-notifications owns event delivery, delays and dismissal.
-;; Our adapter adds text-only KnockKnock popups, local sound and navigation.
-;; Never load the upstream KnockKnock backend: it temporarily rebinds RET.
+;; Our audio-only adapter adds local sound and waiting-session navigation.
 
 ;;; Code:
 
 (require 'cl-lib)
-;; The pinned dependency otherwise truncates a predictable shared /tmp path
-;; during require.  Redirect diagnostics before even loading its bytecode.
-(eval-and-compile
-  (defvar knockknock--log-file)
-  (setq knockknock--log-file null-device))
-(require 'knockknock)
 
 (defgroup my/agent-notifications nil
   "Local agent-shell attention cues."
@@ -28,7 +21,6 @@
   "Seconds without Emacs input before the selected session counts as AFK."
   :type 'natnum)
 
-(defvar my/agent-notification--popup-id nil)
 (defvar-local my/agent-notification--subscription nil)
 (defvar-local my/agent-notification--reply-pending nil)
 (defvar-local my/agent-notification--permissions nil)
@@ -51,31 +43,15 @@
                            (message "Agent chime failed: %s" (process-exit-status process))))))
         (error (message "Agent chime unavailable: %s" (error-message-string err)))))))
 
-(defun my/agent-notification--send (notification)
-  "Display NOTIFICATION without stealing focus or installing a keymap."
-  (let ((id (gensym "agent-popup-")))
-    ;; KnockKnock's startup queue renders the oldest item.  Its single popup
-    ;; slot must contain only our latest cue, including before frame readiness.
-    (setq my/agent-notification--popup-id id
-          knockknock--pending-notifications nil)
-    (when (display-graphic-p)
-      (knockknock-notify :title (plist-get notification :title)
-                        :message (plist-get notification :body)
-                        :duration (plist-get notification :timeout)))
-    (my/agent-notification--play)
-    id))
+(defun my/agent-notification--send (_notification)
+  "Play one local chime without displaying a notification."
+  (my/agent-notification--play)
+  ;; The core tracks provider IDs independently for each session.
+  (gensym "agent-chime-"))
 
-(defun my/agent-notification--close (id)
-  "Dismiss ID only if it still owns the single popup slot."
-  (when (eq id my/agent-notification--popup-id)
-    (setq my/agent-notification--popup-id nil)
-    ;; The pinned KnockKnock's public close doesn't cancel queued rendering.
-    ;; Cancel it too, so acknowledgement cannot resurrect an old popup.
-    (when (timerp knockknock--debounce-timer)
-      (cancel-timer knockknock--debounce-timer))
-    (setq knockknock--debounce-timer nil
-          knockknock--pending-notifications nil)
-    (when (display-graphic-p) (knockknock-close))))
+(defun my/agent-notification--close (_id)
+  "Nothing to dismiss for an already-started, one-shot chime."
+  nil)
 
 ;; Configure the public provider API before loading the library: it validates
 ;; these functions at load time, even when automatic provider loading is off.
@@ -87,7 +63,7 @@
       agent-shell-notifications-close-function #'my/agent-notification--close)
 (require 'agent-shell-notifications)
 ;; The pinned core resolves :app-icon before calling our provider, even though
-;; text-only cues discard it.  Prevent synchronous network I/O on this path.
+;; audio-only cues discard it.  Prevent synchronous network I/O on this path.
 (advice-add 'agent-shell-notifications--icon-file :override #'ignore)
 
 (defun my/agent-notification--active-p (shell)
@@ -176,11 +152,7 @@ This inhibit hook always permits delivery; upstream still filters cancellation."
       (agent-shell-notifications--switch-to-shell shell)
       (with-current-buffer shell (setq my/agent-notification--reply-pending nil)))))
 
-(setq knockknock-use-svg-layout nil
-      knockknock-use-icons nil
-      knockknock-poshandler #'posframe-poshandler-frame-top-right-corner
-      agent-shell-notifications-timeout 5
-      agent-shell-notifications-idle-timeout my/agent-notification-active-seconds
+(setq agent-shell-notifications-idle-timeout my/agent-notification-active-seconds
       agent-shell-notifications-shell-visible-function #'my/agent-notification--active-p
       agent-shell-notifications-format-function #'my/agent-notification--format)
 ;; Upstream mode's lighter says "libnotify", regardless of provider.  Keep the

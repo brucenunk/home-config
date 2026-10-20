@@ -11,7 +11,11 @@ epkgs.trivialBuild {
   };
   packageRequires = [
     (import ./agent-shell.nix { inherit pkgs epkgs; })
-    (import ./knockknock.nix { inherit pkgs epkgs; })
   ];
+  # The optional backend requires KnockKnock during byte compilation.  Do not
+  # ship it: our provider is audio-only and needs only the notification core.
+  postPatch = ''
+    rm agent-shell-notifications-knockknock.el
+  '';
   meta.license = pkgs.lib.licenses.gpl3Plus;
 }
