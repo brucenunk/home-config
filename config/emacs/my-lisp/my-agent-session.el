@@ -3,7 +3,7 @@
 ;; Author: James Lee
 ;; URL: https://github.com/brucenunk/home-config
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "30.1") (denote "4.2") (yaml "1.2"))
+;; Package-Requires: ((emacs "30.1") (denote "4.2") (yaml "1.2") (marginalia "1.0"))
 
 ;;; Commentary:
 
@@ -19,6 +19,7 @@
 (require 'subr-x)
 (require 'denote)
 (require 'yaml)
+(require 'marginalia)
 (require 'agent-shell)
 (require 'agent-shell-pi)
 (require 'my-agent-catalogue)
@@ -26,38 +27,95 @@
 (defvar vertico-preselect)
 
 (defun my/agent-session--task-candidates (root)
-  "Return completion labels paired with task files recursively under ROOT.
-Use only Denote filename metadata, never task bodies.  Include epic/date
-identity so duplicate titles remain selectable."
-  (let ((counts (make-hash-table :test #'equal)) entries)
-    (when (file-directory-p root)
-      (dolist (file (directory-files-recursively
-                    root "\\`[0-9]\\{8\\}T[0-9]\\{6\\}==todo--.+\\.md\\'"))
-        (let* ((title (replace-regexp-in-string "-" " " (or (denote-retrieve-filename-title file) "Untitled task")))
-               (epic (directory-file-name (or (file-name-directory (file-relative-name file root)) "tasks")))
-               (id (denote-retrieve-filename-identifier file))
-               (label (concat (propertize title 'face 'denote-faces-title)
-                              "  [" (propertize epic 'face 'denote-faces-subdirectory)
-                              " · " (propertize (concat (denote-id-to-date id) " "
-                                                       (substring id 9 11) ":" (substring id 11 13) ":" (substring id 13 15))
-                                               'face 'denote-faces-date) "]")))
-          (puthash label (1+ (gethash label counts 0)) counts)
-          (push (cons label file) entries))))
-    (mapcar (lambda (entry)
-              ;; Even duplicate identifiers (e.g. copied notes with
-              ;; different keyword suffixes) retain distinct file paths.
-              (if (> (gethash (car entry) counts) 1)
-                  (cons (concat (car entry) " " (file-relative-name (cdr entry) root)) (cdr entry))
-                entry))
-            (nreverse entries))))
+  "Return filename titles paired with todo Markdown files under ROOT.
+Discovery is recursive and filename-only, ordered by Denote identifier
+oldest first.  Titles need not be unique; the picker resolves saved titles."
+  (when (file-directory-p root)
+    (let ((denote-directory root))
+      (mapcar (lambda (file)
+                (cons (propertize
+                       (replace-regexp-in-string
+                        "-" " " (or (denote-retrieve-filename-title file) "Untitled task"))
+                       'face 'denote-faces-title)
+                      file))
+              (denote-sort-files
+               (denote-directory-files
+                "\\(?:\\`\\|/\\)[0-9]\\{8\\}T[0-9]\\{6\\}==todo--.+\\.md\\'")
+               'identifier)))))
+
+(defun my/agent-session--task-hints (file)
+  "Return display-only title, repo and machine hints as a plist for FILE.
+Read at most 16 KiB and parse only a complete opening YAML block.  Missing,
+invalid or unreadable values yield nil for title and an em dash for hints.
+Launch validation is separate."
+  (let ((metadata
+         (condition-case nil
+             (with-temp-buffer
+               (insert-file-contents file nil 0 (* 16 1024))
+               (goto-char (point-min))
+               (when (looking-at "---\r?\n")
+                 (goto-char (match-end 0))
+                 (let ((start (point)))
+                   (when (re-search-forward "^---\r?$" nil t)
+                     (yaml-parse-string
+                      (buffer-substring-no-properties start (match-beginning 0))
+                      :object-type 'alist :object-key-type 'string :string-values t)))))
+           (error nil))))
+    (cl-flet ((hint (key)
+                (let ((value (and (listp metadata) (cdr (assoc key metadata)))))
+                  (if (and (stringp value)
+                           (not (string-empty-p (string-trim value)))
+                           (not (string-match-p "[[:cntrl:]]" value)))
+                      (string-trim value)
+                    nil))))
+      (list :title (hint "title")
+            :repo (or (hint "repo") "—")
+            :machine (or (hint "machine") "—")))))
+
+(defun my/agent-session--task-annotate (annotations repo-width candidate)
+  "Annotate CANDIDATE from ANNOTATIONS, padding its repo to REPO-WIDTH.
+Marginalia aligns the first column across candidates; padding aligns machine."
+  (when-let* ((hints (cdr (assoc candidate annotations))))
+    (marginalia--fields
+     ((truncate-string-to-width (car hints) (min repo-width (/ marginalia-field-width 2))
+                                0 ?\s "…")
+      :face 'shadow)
+     ((cdr hints) :truncate 0.5 :face 'shadow))))
 
 (defun my/agent-session--task-select ()
-  "Select a todo task file using styled, filename-only completion."
-  (let* ((candidates (my/agent-session--task-candidates (expand-file-name "~/work/tasks/" "/")))
+  "Select a task oldest first with Marginalia repo/machine annotations.
+Duplicate titles intentionally remain verbatim and resolve to the first file."
+  (let* ((root (expand-file-name "~/work/tasks/" "/"))
+         (candidates (my/agent-session--task-candidates root))
          (_ (unless candidates (user-error "No todo task notes under ~/work/tasks/")))
+         metadata
+         (candidates
+          (mapcar (lambda (entry)
+                    (let* ((hints (my/agent-session--task-hints (cdr entry)))
+                           (label (propertize (or (plist-get hints :title) (car entry))
+                                              'face 'denote-faces-title)))
+                      (push (cons (cdr entry) hints) metadata)
+                      (cons label (cdr entry))))
+                  candidates))
+         (annotations (mapcar (lambda (entry)
+                                (let ((hints (cdr (assoc (cdr entry) metadata))))
+                                  (cons (car entry) (cons (plist-get hints :repo)
+                                                         (plist-get hints :machine)))))
+                              candidates))
+         (repo-width (apply #'max (mapcar (lambda (entry) (string-width (cadr entry)))
+                                         annotations)))
+         ;; Scope both metadata and registration to this invocation.  Filtering
+         ;; and redisplay perform no file reads and leave other pickers alone.
+         (marginalia-annotators
+          (cons (list 'my-agent-session
+                      (apply-partially #'my/agent-session--task-annotate annotations repo-width)
+                      'none)
+                marginalia-annotators))
          (table (denote-get-completion-table
                  (mapcar #'car candidates)
-                 '(category . my-agent-session)))
+                 '(category . my-agent-session)
+                 '(display-sort-function . identity)
+                 '(cycle-sort-function . identity)))
          (selection (completing-read "Task: " table nil t))
          (entry (assoc selection candidates)))
     (unless entry (user-error "Select a todo task"))
