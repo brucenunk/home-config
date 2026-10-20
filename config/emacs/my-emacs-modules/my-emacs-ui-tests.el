@@ -34,6 +34,47 @@
     (shell-maker-start-v2 :config (agent-shell--make-shell-maker-config)
                           :buffer-name (buffer-name) :no-focus t)))
 
+(ert-deftest my/ui-writeroom-is-opt-in-and-restores-writing-layout ()
+  (should (commandp 'writeroom-mode))
+  (require 'writeroom-mode)
+  (should (= writeroom-width 80))
+  (should writeroom-restore-window-config)
+  (should (equal writeroom-local-effects '(visual-line-mode)))
+  (should-not (bound-and-true-p global-writeroom-mode))
+  ;; Frame effects need a graphical manual check.  Exercise the real buffer
+  ;; effects and window restoration without changing fullscreen in batch.
+  (let ((writeroom-global-effects nil))
+    (dolist (mode '(text-mode markdown-mode))
+      (save-window-excursion
+        (with-temp-buffer
+          (funcall mode)
+          (should-not (bound-and-true-p writeroom-mode))
+          (insert (make-string 200 ?a) " " (make-string 200 ?b))
+          (set-buffer-modified-p nil)
+          (switch-to-buffer (current-buffer))
+          (delete-other-windows)
+          (split-window-below)
+          (let ((text (buffer-string))
+                (modeline mode-line-format)
+                (mixed (bound-and-true-p mixed-pitch-mode)))
+            (unwind-protect
+                (progn
+                  (writeroom-mode 1)
+                  (should (= (length (window-list)) 1))
+                  (should visual-line-mode)
+                  (should visual-fill-column-mode)
+                  (should (= visual-fill-column-width 80))
+                  (should visual-fill-column-center-text)
+                  (should-not mode-line-format)
+                  (should (eq mixed (bound-and-true-p mixed-pitch-mode))))
+              (writeroom-mode -1))
+            (should (= (length (window-list)) 2))
+            (should (equal modeline mode-line-format))
+            (should-not visual-line-mode)
+            (should-not visual-fill-column-mode)
+            (should (equal text (buffer-string)))
+            (should-not (buffer-modified-p))))))))
+
 (defun my/ui-test--remapped-family (face)
   "Return the family installed by mixed-pitch for FACE."
   (plist-get (cadr (assq face face-remapping-alist)) :family))

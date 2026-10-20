@@ -58,6 +58,7 @@ let
           (import ../../pkgs/tramp-rpc.nix { inherit inputs pkgs epkgs; })
           vertico
           wgrep
+          writeroom-mode
           ws-butler
           yaml
           yaml-mode
@@ -240,6 +241,7 @@ in
               epkgs.auto-dark
               epkgs.fontaine
               epkgs.spacious-padding
+              epkgs.writeroom-mode
               epkgs.pulsar
               epkgs.lin
               (import ../../pkgs/tramp-rpc.nix { inherit inputs pkgs epkgs; })

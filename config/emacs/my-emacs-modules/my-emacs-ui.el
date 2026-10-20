@@ -159,6 +159,15 @@ error.  Evaluate the theme's package source once and retry to register it."
   (add-hook 'mixed-pitch-mode-hook #'my/viewport-prompt-variable-pitch)
   (add-hook 'fontaine-set-preset-hook #'my/refresh-mixed-pitch-mode))
 
+;; On-demand writing view; Nix supplies the package and its dependencies.
+(use-package writeroom-mode
+  :ensure nil
+  :commands (writeroom-mode)
+  :custom
+  (writeroom-width 80)
+  (writeroom-restore-window-config t)
+  (writeroom-local-effects '(visual-line-mode)))
+
 (use-package pulsar
   :ensure nil
   :custom
