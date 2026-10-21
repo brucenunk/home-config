@@ -160,13 +160,29 @@ error.  Evaluate the theme's package source once and retry to register it."
   (add-hook 'fontaine-set-preset-hook #'my/refresh-mixed-pitch-mode))
 
 ;; On-demand writing view; Nix supplies the package and its dependencies.
+(defvar-local my/writeroom-saved-text-scale nil
+  "Text scaling state to restore when leaving Writeroom.
+Stored as (MODE AMOUNT), or nil outside the writing view.")
+
+(defun my/writeroom-text-scale (arg)
+  "Enlarge writing text locally for positive ARG; otherwise restore it."
+  (if (> arg 0)
+      (unless my/writeroom-saved-text-scale
+        (setq my/writeroom-saved-text-scale
+              (list text-scale-mode text-scale-mode-amount))
+        (text-scale-set (1+ (if text-scale-mode text-scale-mode-amount 0))))
+    (when my/writeroom-saved-text-scale
+      (setq text-scale-mode-amount (cadr my/writeroom-saved-text-scale))
+      (text-scale-mode (if (car my/writeroom-saved-text-scale) 1 -1))
+      (setq my/writeroom-saved-text-scale nil))))
+
 (use-package writeroom-mode
   :ensure nil
   :commands (writeroom-mode)
   :custom
   (writeroom-width 80)
   (writeroom-restore-window-config t)
-  (writeroom-local-effects '(visual-line-mode)))
+  (writeroom-local-effects '(visual-line-mode my/writeroom-text-scale)))
 
 (use-package pulsar
   :ensure nil

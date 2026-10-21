@@ -39,7 +39,8 @@
   (require 'writeroom-mode)
   (should (= writeroom-width 80))
   (should writeroom-restore-window-config)
-  (should (equal writeroom-local-effects '(visual-line-mode)))
+  (should (equal writeroom-local-effects
+                 '(visual-line-mode my/writeroom-text-scale)))
   (should-not (bound-and-true-p global-writeroom-mode))
   ;; Frame effects need a graphical manual check.  Exercise the real buffer
   ;; effects and window restoration without changing fullscreen in batch.
@@ -62,6 +63,8 @@
                   (writeroom-mode 1)
                   (should (= (length (window-list)) 1))
                   (should visual-line-mode)
+                  (should text-scale-mode)
+                  (should (= text-scale-mode-amount 1))
                   (should visual-fill-column-mode)
                   (should (= visual-fill-column-width 80))
                   (should visual-fill-column-center-text)
@@ -71,9 +74,52 @@
             (should (= (length (window-list)) 2))
             (should (equal modeline mode-line-format))
             (should-not visual-line-mode)
+            (should-not text-scale-mode)
+            (should (= text-scale-mode-amount 0))
             (should-not visual-fill-column-mode)
             (should (equal text (buffer-string)))
             (should-not (buffer-modified-p))))))))
+
+(ert-deftest my/ui-writeroom-restores-prior-buffer-text-scaling ()
+  (require 'writeroom-mode)
+  (let ((writeroom-global-effects nil))
+    (save-window-excursion
+      (with-temp-buffer
+        (let ((other-buffer (current-buffer)))
+          (text-scale-set 2)
+          ;; Include a disabled scale whose remembered amount is nonzero.
+          (dolist (state '((nil 0) (t 2) (t -1) (nil 3)))
+            (with-temp-buffer
+              (text-mode)
+              (switch-to-buffer (current-buffer))
+              ;; Set the baseline directly: batch frames clamp negative
+              ;; amounts in `text-scale-set' because of their font metrics.
+              (setq text-scale-mode-amount (cadr state))
+              (text-scale-mode (if (car state) 1 -1))
+              (dotimes (_ 2)
+                (unwind-protect
+                    (progn
+                      (writeroom-mode 1)
+                      (should (eq (not (null text-scale-mode))
+                                  (not (equal state '(t -1)))))
+                      (should (= text-scale-mode-amount
+                                 (1+ (if (car state) (cadr state) 0))))
+                      ;; Re-enabling must not overwrite the saved baseline.
+                      (writeroom-mode 1)
+                      (should (= text-scale-mode-amount
+                                 (1+ (if (car state) (cadr state) 0))))
+                      ;; Manual adjustments during writing are temporary too.
+                      (text-scale-increase 2)
+                      (with-current-buffer other-buffer
+                        (should text-scale-mode)
+                        (should (= text-scale-mode-amount 2))
+                        (should-not my/writeroom-saved-text-scale)))
+                  (writeroom-mode -1))
+                (should (eq (not (null text-scale-mode)) (car state)))
+                (should (= text-scale-mode-amount (cadr state)))
+                (should-not my/writeroom-saved-text-scale)
+                (writeroom-mode -1)
+                (should (= text-scale-mode-amount (cadr state)))))))))))
 
 (defun my/ui-test--remapped-family (face)
   "Return the family installed by mixed-pitch for FACE."
