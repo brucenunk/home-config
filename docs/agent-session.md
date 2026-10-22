@@ -1,8 +1,7 @@
 # Human-operated agent-shell launches
 
 Three explicit commands are autoloaded by `init.el` and implemented in
-`config/emacs/my-lisp/my-agent-session.el`, separately from task capture/list
-packages. Each creates a **new Pi conversation**, never a reused project
+`config/emacs/my-lisp/my-agent-session.el`, separately from task capture. Each creates a **new Pi conversation**, never a reused project
 conversation. They require the generated [catalogue](agent-catalogue.md), the
 pinned agent-shell/ACP packages, and `pi-acp` on the selected machine.
 
@@ -13,12 +12,13 @@ pinned agent-shell/ACP packages, and `pi-acp` on the selected machine.
 Globally, **`C-c a f`** invokes this command with its normal task picker. The
 `C-c a` agent prefix leaves `d`, `w` and `r` unbound for future commands.
 
-Select a todo task note recursively under `~/work/tasks/`, including epic
-subdirectories. Only Denote Markdown filenames with the exact `==todo--`
-signature qualify; done/discarded notes, unrelated files, backups and lock
-files are excluded. Completion uses styled, readable filename titles plus
-epic/date annotations, without reading note bodies. Duplicate titles retain
-distinct file identities and normal completion narrowing applies.
+Select a Denote Markdown task note recursively under `~/work/docs/tasks/`,
+including epic subdirectories. Both unsigned and legacy signed filenames
+qualify; unrelated files, backups and lock files are excluded. Regular notes
+elsewhere under `~/work/docs/` are not task candidates. Completion uses saved
+front-matter titles (falling back to readable filename titles) with repository
+and machine annotations. Colliding titles gain relative-path suffixes so each file remains selectable;
+normal completion narrowing applies.
 
 Use a valid task repository hint, otherwise select a configured repository.
 Select an eligible machine, **always confirm the base ref**, then create a new
@@ -27,29 +27,12 @@ submit the complete saved snapshot and any skill instruction to that exact
 shell. Unsaved editor changes are not part of the snapshot.
 
 The optional Lisp argument `FILE` bypasses completion, not saved-task validation:
-`(my/agent-session-start-from-file file)`. The task-list action below supplies
-that argument directly. There is no direct-directory task path or generic
+`(my/agent-session-start-from-file file)`. There is no direct-directory task path or generic
 prompt-file mode.
 
-#### Launch from the task list
-
-In a task-list buffer, **`C-c a f`** runs `my/task-list-start-agent`: launch the
-saved todo task **at point**, without selecting the task again. Dired marks are
-ignored; this is not a batch action. The exact Dired path is passed to the public
-launcher, so duplicate display titles do not change file identity.
-
-Move to an existing Denote Markdown file with the exact `==todo--` filename
-signature. Header/empty lines, directories, unrelated files, backups and other
-signatures are rejected before launch, even if a broader list filter displays
-them. The action preserves epic/regex filters, sorting and marks. Ordinary Dired
-opening/navigation and the `C-c t` task/filter bindings are unchanged; other
-global agent-prefix bindings are inherited.
-
-The wrapper neither saves nor reverts visiting task buffers. If a task buffer
-differs from disk, the launcher asks you to save or revert before launching;
-resolve that deliberately and invoke the action again. Repository/machine/base
-choices, worktree creation, overrides, task/skill submission and failure handling
-remain exclusively in the launcher. Capture remains file-only.
+Task capture is `my/denote-task` on **`C-c n T`**. It creates unsigned Denote
+Markdown files under the task root without launching a session. There is no
+custom task-list UI or at-point launch binding.
 
 ### `M-x my/agent-session-start-new-worktree`
 

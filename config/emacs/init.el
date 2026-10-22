@@ -7,7 +7,7 @@
 ;; This configuration follows the structure from protesilaos/dotfiles:
 ;;
 ;; - my-lisp/        Custom Elisp libraries (pure functions)
-;;                   my-task.el, my-task-list.el
+;;                   my-denote-task.el
 ;;
 ;; - my-emacs-modules/  Package configuration (use-package, keybindings)
 ;;                      my-emacs-ui.el, my-emacs-completion.el, my-emacs-editing.el,

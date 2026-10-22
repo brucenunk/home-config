@@ -1,4 +1,4 @@
-;;; my-task-tests.el --- Tests for task file capture -*- lexical-binding: t -*-
+;;; my-denote-task-tests.el --- Tests for task file capture -*- lexical-binding: t -*-
 
 ;;; Commentary:
 
@@ -6,29 +6,30 @@
 
 ;;; Code:
 
-(require 'my-task-test-support)
+(require 'ert)
+(require 'cl-lib)
+(require 'my-denote-task)
 (require 'vertico)
 
-(defconst my/task-test--machines
+(defconst my/denote-task-test--machines
   '(("machine-a" :directory "~/work/"
      :repositories ((:name "example/project" :path "/work/project/main" :base-ref "origin/main"))
      :default-model "provider/vendor/model"
      :models ((:name "provider/vendor/model" :thinking-levels ("off" "medium" "high")
                :default-thinking "medium")))))
 
-(defmacro my/task-test--with-directory (&rest body)
+(defmacro my/denote-task-test--with-directory (&rest body)
   "Run BODY with an isolated shared task directory."
   (declare (indent 0) (debug t))
   `(let* ((root (make-temp-file "task-files-" t))
           (denote-directory root)
-          (my/agent-machines (copy-tree my/task-test--machines))
+          (my/agent-machines (copy-tree my/denote-task-test--machines))
           (denote-save-buffers t)
           (denote-templates '((task-workflow-v3 . "## Context\n\nCapture context.\n")
-                              (empty . "")))
-          (my/task-note-created-hook nil))
+                             (empty . ""))))
      (unwind-protect
          (progn
-           (cl-letf (((symbol-function 'my/task-directory) (lambda () root))
+           (cl-letf (((symbol-function 'my/denote-task-directory) (lambda () root))
                      ((symbol-function 'completing-read)
                       (lambda (_prompt choices &optional _predicate _require-match _initial _history default &rest _)
                         (or default (car choices)))))
@@ -40,16 +41,13 @@
              (kill-buffer buffer))))
        (delete-directory root t))))
 
-(ert-deftest my/task-add-creates-a-plain-note-with-skill ()
-  (my/task-test--with-directory
-   (let* ((notifications 0)
-          (my/task-note-created-hook (list (lambda () (cl-incf notifications))))
-          (file (my/task-add "New task")))
+(ert-deftest my/denote-task-creates-a-plain-note-with-skill ()
+  (my/denote-task-test--with-directory
+   (let ((file (my/denote-task "New task")))
      (should (file-exists-p file))
      (should (equal (file-name-directory file) (file-name-as-directory root)))
      (should (denote-file-has-denoted-filename-p file))
-     (should (string-match-p "==todo--" (file-name-nondirectory file)))
-     (should (= notifications 1))
+     (should-not (string-match-p "==" (file-name-nondirectory file)))
      (should-not (find-buffer-visiting file))
      (with-temp-buffer
        (insert-file-contents file)
@@ -65,23 +63,23 @@
        (goto-char (point-min))
        (should-not (re-search-forward "^base-ref:" nil t))))))
 
-(ert-deftest my/task-add-named-skill-uses-an-empty-template ()
-  (my/task-test--with-directory
-   (let ((file (my/task-add "Bump inputs" "bump-nix")))
+(ert-deftest my/denote-task-named-skill-uses-an-empty-template ()
+  (my/denote-task-test--with-directory
+   (let ((file (my/denote-task "Bump inputs" "bump-nix")))
      (with-temp-buffer
        (insert-file-contents file)
        (should (search-forward "skill:      bump-nix" nil t))
        (should-not (search-forward "## Context" nil t))))))
 
-(ert-deftest my/task-add-unscripted-note-has-no-skill ()
-  (my/task-test--with-directory
-   (let ((file (my/task-add "Plain note" "none")))
+(ert-deftest my/denote-task-unscripted-note-has-no-skill ()
+  (my/denote-task-test--with-directory
+   (let ((file (my/denote-task "Plain note" "none")))
      (with-temp-buffer
        (insert-file-contents file)
        (should-not (re-search-forward "^skill:" nil t))))))
 
-(ert-deftest my/task-add-interactive-streamlined-prompts ()
-  (my/task-test--with-directory
+(ert-deftest my/denote-task-interactive-streamlined-prompts ()
+  (my/denote-task-test--with-directory
    (let ((epic (expand-file-name "epic/" root))
          note-buffer)
      (make-directory epic)
@@ -97,15 +95,15 @@
                   (should (equal choices '("example/project")))
                   "example/project")))
        (let ((current-prefix-arg nil))
-         (call-interactively #'my/task-add))
+         (call-interactively #'my/denote-task))
        (setq note-buffer (current-buffer)))
      (with-current-buffer note-buffer
        (should (equal (file-name-directory buffer-file-name)
                       (file-name-as-directory epic)))
-       (should (my/task-file-p))))))
+       (should (my/denote-task-file-p))))))
 
-(ert-deftest my/task-add-prefix-prompts-in-capture-order ()
-  (my/task-test--with-directory
+(ert-deftest my/denote-task-prefix-prompts-in-capture-order ()
+  (my/denote-task-test--with-directory
    (let (prompts)
      (cl-letf (((symbol-function 'called-interactively-p) (lambda (&rest _) t))
                ((symbol-function 'denote-subdirectory-prompt) (lambda () nil))
@@ -118,15 +116,15 @@
                   (push prompt prompts)
                   (if (equal prompt "Workflow: ") "bump-nix" (or default (car choices))))))
        (let ((current-prefix-arg '(4)))
-         (call-interactively #'my/task-add))
+         (call-interactively #'my/denote-task))
        (goto-char (point-min))
        (should (search-forward "skill:      bump-nix" nil t)))
      (should (equal (nreverse prompts)
                     '("Title: " "Workflow: " "Repository: " "Model: " "Thinking: "))))))
 
-(ert-deftest my/task-add-both-interactive-forms-prompt-for-multiple-machines ()
-  (my/task-test--with-directory
-   (setq my/agent-machines (copy-tree my/task-test--two-machines))
+(ert-deftest my/denote-task-both-interactive-forms-prompt-for-multiple-machines ()
+  (my/denote-task-test--with-directory
+   (setq my/agent-machines (copy-tree my/denote-task-test--two-machines))
    (dolist (prefix '(nil (4)))
      (let (prompts)
        (cl-letf (((symbol-function 'called-interactively-p) (lambda (&rest _) t))
@@ -139,32 +137,32 @@
                     (push prompt prompts)
                     (or default (car choices)))))
          (let ((current-prefix-arg prefix))
-           (call-interactively #'my/task-add)))
+           (call-interactively #'my/denote-task)))
        (should (equal (nreverse prompts)
                       (if prefix
                           '("Workflow: " "Repository: " "Machine: " "Model: " "Thinking: ")
                         '("Repository: " "Machine: "))))))))
 
-(ert-deftest my/task-file-p-recognizes-existing-notes-without-mutating-them ()
-  (my/task-test--with-directory
+(ert-deftest my/denote-task-file-p-recognizes-existing-notes-without-mutating-them ()
+  (my/denote-task-test--with-directory
    (let* ((file (expand-file-name "20260324T103418==done--legacy.md" root))
           (contents "---\nrepo: example/project\n---\n\n## Dependencies\n\n- [ ] [denote:20260324T103419](Old task)\n"))
      (with-temp-file file (insert contents))
      (with-temp-buffer
        (setq-local buffer-file-name file)
-       (should (my/task-file-p)))
+       (should (my/denote-task-file-p)))
      (with-temp-buffer
        (insert-file-contents file)
        (should (equal (buffer-string) contents))))))
 
-(ert-deftest my/task-file-p-rejects-non-denote-files ()
-  (my/task-test--with-directory
+(ert-deftest my/denote-task-file-p-rejects-non-denote-files ()
+  (my/denote-task-test--with-directory
    (with-temp-buffer
      (setq-local buffer-file-name (expand-file-name "ordinary.md" root))
-     (should-not (my/task-file-p)))))
+     (should-not (my/denote-task-file-p)))))
 
-(defconst my/task-test--two-machines
-  (append my/task-test--machines
+(defconst my/denote-task-test--two-machines
+  (append my/denote-task-test--machines
           '(("machine-b" :directory "/rpc:remote.example:~/work/"
              :repositories ((:name "example/project" :path "/srv/project.git" :base-ref "origin/master")
                             (:name "remote/only" :path "/srv/only.git" :base-ref "origin/release/stable"))
@@ -172,27 +170,27 @@
              :models ((:name "other/off" :thinking-levels ("off") :default-thinking "off")
                       (:name "other/reasoner" :thinking-levels ("low" "high") :default-thinking ""))))))
 
-(ert-deftest my/task-capture-uses-loaded-configuration-and-nested-model-id ()
-  (my/task-test--with-directory
+(ert-deftest my/denote-task-capture-uses-loaded-configuration-and-nested-model-id ()
+  (my/denote-task-test--with-directory
    (let ((machine (cdr (assoc "machine-a" my/agent-machines))))
      (should (equal (plist-get (car (plist-get machine :models)) :name)
                     "provider/vendor/model"))
-     (should (equal (my/task--metadata-read nil)
+     (should (equal (my/denote-task--metadata-read nil)
                     '((repo . "example/project") (machine . "machine-a")
                       (model . "provider/vendor/model")
                       (thinking . "medium")))))))
 
-(ert-deftest my/task-metadata-insertion-retains-unicode-in-live-buffer ()
+(ert-deftest my/denote-task-metadata-insertion-retains-unicode-in-live-buffer ()
   (with-temp-buffer
     (insert "---\ntitle: \"Unicode\"\n---\n\nBody.\n")
-    (my/task--metadata-insert '((machine . "máquina-🦊") (base-ref . "upstream/déploiement")))
+    (my/denote-task--metadata-insert '((machine . "máquina-🦊") (base-ref . "upstream/déploiement")))
     (should (multibyte-string-p (buffer-string)))
     (should (string-match-p "machine: \"máquina-🦊\"" (buffer-string)))
     (should (string-match-p "base-ref: \"upstream/déploiement\"" (buffer-string)))))
 
-(ert-deftest my/task-capture-two-machines-prompts-and-filters-by-repo ()
-  (my/task-test--with-directory
-   (setq my/agent-machines (copy-tree my/task-test--two-machines))
+(ert-deftest my/denote-task-capture-two-machines-prompts-and-filters-by-repo ()
+  (my/denote-task-test--with-directory
+   (setq my/agent-machines (copy-tree my/denote-task-test--two-machines))
    (let (prompts)
      (cl-letf (((symbol-function 'completing-read)
                 (lambda (prompt choices &optional _p _r _i _h default &rest _)
@@ -205,7 +203,7 @@
                      "machine-b")
                     ("Thinking: " "high")
                     (_ (ert-fail "Unexpected prompt"))))))
-       (should (equal (my/task--metadata-read nil)
+       (should (equal (my/denote-task--metadata-read nil)
                       '((repo . "example/project") (machine . "machine-b")
                         (model . "other/reasoner") (thinking . "high")))))
      (should (equal (nreverse prompts) '("Repository: " "Machine: " "Thinking: "))))
@@ -220,15 +218,15 @@
                     ("Thinking: "
                      (should (equal choices '("low" "high"))) "high")
                     (_ (ert-fail "Streamlined capture must use defaults"))))))
-       (should (equal (my/task--metadata-read nil)
+       (should (equal (my/denote-task--metadata-read nil)
                       '((repo . "remote/only") (machine . "machine-b")
                         (model . "other/reasoner")
                         (thinking . "high")))))
      (should (equal (nreverse prompts) '("Repository: " "Thinking: "))))))
 
-(ert-deftest my/task-capture-extended-filters-model-and-thinking ()
-  (my/task-test--with-directory
-   (setq my/agent-machines (copy-tree my/task-test--two-machines))
+(ert-deftest my/denote-task-capture-extended-filters-model-and-thinking ()
+  (my/denote-task-test--with-directory
+   (setq my/agent-machines (copy-tree my/denote-task-test--two-machines))
    (let (prompts)
      (cl-letf (((symbol-function 'read-string)
                 (lambda (&rest _) (ert-fail "Capture must not ask for a base ref")))
@@ -246,24 +244,24 @@
                     ("Thinking: "
                      (should (equal default "off"))
                      (should (equal choices '("off"))) "off")))))
-       (should (equal (my/task--metadata-read t)
+       (should (equal (my/denote-task--metadata-read t)
                       '((repo . "example/project") (machine . "machine-b")
                         (model . "other/off")
                         (thinking . "off")))))
      (should (equal (nreverse prompts)
                     '("Repository: " "Machine: " "Model: " "Thinking: "))))))
 
-(ert-deftest my/task-capture-does-not-gather-base-ref-or-call-git ()
-  (my/task-test--with-directory
+(ert-deftest my/denote-task-capture-does-not-gather-base-ref-or-call-git ()
+  (my/denote-task-test--with-directory
    (dolist (extended '(nil t))
      (cl-letf (((symbol-function 'read-string) (lambda (&rest _) (ert-fail "No base-ref prompt")))
                ((symbol-function 'my/agent-catalogue-reload) (lambda (&rest _) (ert-fail "Capture uses loaded configuration")))
                ((symbol-function 'process-file) (lambda (&rest _) (ert-fail "No Git calls"))))
-       (should-not (assq 'base-ref (my/task--metadata-read extended)))))))
+       (should-not (assq 'base-ref (my/denote-task--metadata-read extended)))))))
 
-(ert-deftest my/task-capture-multiple-machines-requires-explicit-choice ()
-  (my/task-test--with-directory
-    (setq my/agent-machines (copy-tree my/task-test--two-machines))
+(ert-deftest my/denote-task-capture-multiple-machines-requires-explicit-choice ()
+  (my/denote-task-test--with-directory
+    (setq my/agent-machines (copy-tree my/denote-task-test--two-machines))
     (dolist (extended '(nil t))
       (cl-letf (((symbol-function 'completing-read)
                  (lambda (prompt _choices &optional _p require-match initial history default &rest _)
@@ -276,14 +274,14 @@
                       (should-not default)
                       "")
                      (_ (ert-fail "Must stop at empty machine choice"))))))
-        (should-error (my/task-add "No implicit machine" "task" extended) :type 'user-error)))
+        (should-error (my/denote-task "No implicit machine" "task" extended) :type 'user-error)))
     (should-not (directory-files root nil "\\.md\\'"))))
 
-(ert-deftest my/task-capture-vertico-does-not-preselect-a-machine ()
+(ert-deftest my/denote-task-capture-vertico-does-not-preselect-a-machine ()
   ;; Batch Emacs reads stdin instead of opening a minibuffer.  Supply a
   ;; headless frontend, but run Vertico's real candidate update, navigation,
   ;; and Return command rather than emulating its selection policy.
-  (let ((my/agent-machines (copy-tree my/task-test--two-machines))
+  (let ((my/agent-machines (copy-tree my/denote-task-test--two-machines))
         (vertico-preselect 'first))
     (dolist (navigate '(nil t))
       (let ((completing-read-function
@@ -310,52 +308,52 @@
                       returned)))
                  (_ (ert-fail "Unexpected capture prompt"))))))
         (if navigate
-            (should (equal (alist-get 'machine (my/task--metadata-read nil)) "machine-a"))
-          (should-error (my/task--metadata-read nil) :type 'user-error))))
+            (should (equal (alist-get 'machine (my/denote-task--metadata-read nil)) "machine-a"))
+          (should-error (my/denote-task--metadata-read nil) :type 'user-error))))
     (should (eq vertico-preselect 'first))))
 
-(ert-deftest my/task-capture-empty-inventory-choices-and-models-stop-before-note ()
-  (my/task-test--with-directory
+(ert-deftest my/denote-task-capture-empty-inventory-choices-and-models-stop-before-note ()
+  (my/denote-task-test--with-directory
     (dolist (machine '((:directory "~/work/" :repositories nil :default-model "" :models nil)
                        (:directory "~/work/"
                         :repositories ((:name "example/project" :path "/work/main" :base-ref "origin/main"))
                         :default-model "" :models nil)))
       (setq my/agent-machines (list (cons "machine-a" machine)))
-      (should-error (my/task-add "No choices") :type 'user-error)
+      (should-error (my/denote-task "No choices") :type 'user-error)
       (should-not (directory-files root nil "\\.md\\'")))))
 
-(ert-deftest my/task-capture-missing-configuration-stops-before-note-creation ()
-  (my/task-test--with-directory
+(ert-deftest my/denote-task-capture-missing-configuration-stops-before-note-creation ()
+  (my/denote-task-test--with-directory
    (let ((my/agent-machines nil))
-     (should-error (my/task-add "Never created") :type 'user-error)
+     (should-error (my/denote-task "Never created") :type 'user-error)
      (should-not (directory-files root nil "\\.md\\'")))
-   ;; Listing and identity do not consume the catalogue.
+   ;; File identity does not consume the catalogue.
    (with-temp-buffer
      (setq-local buffer-file-name (expand-file-name "20261005T100000==todo--existing.md" root))
-     (should (my/task-file-p)))))
+     (should (my/denote-task-file-p)))))
 
-(ert-deftest my/task-capture-unusable-model-or-thinking-stops-before-note ()
-  (my/task-test--with-directory
+(ert-deftest my/denote-task-capture-unusable-model-or-thinking-stops-before-note ()
+  (my/denote-task-test--with-directory
    (dolist (default '("unknown/model" ""))
      (setf (plist-get (cdar my/agent-machines) :default-model) default)
-     (should-error (my/task-add "Unusable model") :type 'user-error))
-   (setq my/agent-machines (copy-tree my/task-test--machines))
+     (should-error (my/denote-task "Unusable model") :type 'user-error))
+   (setq my/agent-machines (copy-tree my/denote-task-test--machines))
    (setf (plist-get (car (plist-get (cdar my/agent-machines) :models)) :default-thinking) "unsupported")
-   (should-error (my/task-add "Unusable thinking") :type 'user-error)
+   (should-error (my/denote-task "Unusable thinking") :type 'user-error)
    (should-not (directory-files root nil "\\.md\\'"))))
 
-(ert-deftest my/task-capture-cancellation-creates-no-files ()
-  (my/task-test--with-directory
+(ert-deftest my/denote-task-capture-cancellation-creates-no-files ()
+  (my/denote-task-test--with-directory
    (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) (signal 'quit nil))))
-     (should (eq (condition-case nil (my/task-add "Cancelled") (quit 'cancelled)) 'cancelled)))
+     (should (eq (condition-case nil (my/denote-task "Cancelled") (quit 'cancelled)) 'cancelled)))
    (should-not (directory-files root nil "\\.md\\'"))))
 
-(ert-deftest my/task-metadata-insertion-preserves-unrelated-yaml-and-body ()
+(ert-deftest my/denote-task-metadata-insertion-preserves-unrelated-yaml-and-body ()
   (let ((header "---\ntitle: \"Title\"\ntags: []\ncustom:\n  nested: true\nskill: review\n")
         (body "---\n\n## Context\n\nBody with repo: untouched\n---\n"))
     (with-temp-buffer
       (insert header body)
-      (my/task--metadata-insert '((repo . "example/project") (machine . "machine-a")
+      (my/denote-task--metadata-insert '((repo . "example/project") (machine . "machine-a")
                                   (base-ref . "local: # text") (model . "provider/vendor/model")
                                   (thinking . "high")))
       (should (string-prefix-p header (buffer-string)))
@@ -365,14 +363,25 @@
         (goto-char (point-min))
         (should (= (how-many (format "^%s:" key)) 1))))))
 
-(ert-deftest my/tasks-map-only-offers-capture-and-list ()
-  (should (eq (lookup-key my/tasks-map "a") #'my/task-add))
-  (should (eq (lookup-key my/tasks-map "l") #'my/task-list))
-  (dolist (key '("D" "F" "p" "X"))
-    (should-not (lookup-key my/tasks-map key)))
-  (dolist (feature '(my-task-finish my-task-session my-task-index my-agent
-				    my-agent-pi my-worktree-repair my-git my-repo my-worktree))
-    (should-not (featurep feature))))
+(ert-deftest my/denote-task-directory-is-under-docs ()
+  (should (equal (my/denote-task-directory)
+                 (expand-file-name "~/work/docs/tasks/"))))
 
-(provide 'my-task-tests)
-;;; my-task-tests.el ends here
+(ert-deftest my/denote-task-file-p-is-independent-of-global-denote-root ()
+  (my/denote-task-test--with-directory
+    (let ((denote-directory (file-name-directory root)))
+      (dolist (name '("20261022T100000--unsigned.md"
+                      "epic/20261022T100001==todo--legacy.md"))
+        (let ((file (expand-file-name name root)))
+          (make-directory (file-name-directory file) t)
+          (write-region "" nil file nil 'silent)
+          (with-temp-buffer
+            (setq-local buffer-file-name file)
+            (should (my/denote-task-file-p)))))
+      (with-temp-buffer
+        (setq-local buffer-file-name
+                    (expand-file-name "20261022T100002--regular-note.md" denote-directory))
+        (should-not (my/denote-task-file-p))))))
+
+(provide 'my-denote-task-tests)
+;;; my-denote-task-tests.el ends here

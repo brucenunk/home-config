@@ -70,4 +70,4 @@ Do not collapse deployment or apply success into runtime pickup success unless r
 
 ## Task Guidance
 
-When you need to resolve a Denote task identifier or create, defer, inspect, edit, link dependencies for, or complete a task, read `~/work/TASKS.md` before acting. It owns task identity, file format, handoff content, dependencies, and completion mechanics.
+When creating or editing task notes, read `~/work/TASKS.md` for file format and capture conventions. A launcher-supplied task snapshot is sufficient bootstrap context; agents do not need to locate the original note or resolve its Denote identifiers. The source note may exist only on the Emacs host, not the agent's machine.

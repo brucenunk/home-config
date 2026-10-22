@@ -2,39 +2,35 @@
 
 # Denote Task Files
 
-Task notes are ordinary files under `~/work/tasks/`, optionally grouped into
+Task notes are ordinary files under `~/work/docs/tasks/`, optionally grouped into
 subdirectories. Emacs provides capture, Denote links/identity, Dired file
-management, and filtering—not task status, dependency enforcement, or an agent
+management, and browsing—not task status, dependency enforcement, or an agent
 lifecycle. A human may explicitly launch a fresh conversation through the three Emacs commands
 described below; task capture itself performs no launch.
 
-## Identity and Resolution
+## Agent Task Context
 
-Denote links use stable identifiers, for example `denote:20260129T180405`.
-Resolve an identifier to its current path when needed:
-
-```bash
-emacsclient -e '(denote-get-path-by-id "IDENTIFIER")'
-```
-
-This returns a full path or `nil`. Do not infer identity from a title, agent
-session, repository, branch, or worktree name.
+A launcher-supplied task snapshot is sufficient context, including when the
+agent runs on another machine. Its provenance path and Denote links do not imply
+that the original note is accessible there. Do not try to locate the original
+note or resolve its Denote identifiers as a bootstrap step. If an explicitly
+requested note edit requires access you do not have, ask the local owner rather
+than creating or editing a substitute.
 
 ## Creating a Note
 
 When the user says “task,” default to a Denote note. Create one through
-`my/task-add` in Emacs, or create a Markdown file under `~/work/tasks/` using
+`my/denote-task` in Emacs, or create a Markdown file under `~/work/docs/tasks/` using
 Denote's naming convention:
 
 ```text
-{identifier}==todo--{title-slug}.md
+{identifier}--{title-slug}.md
 ```
 
 - **identifier**: `YYYYMMDDTHHMMSS`, matching the note's identifier field.
 - **title-slug**: lowercase with hyphens for spaces.
-- **`todo` signature**: retained as a filename convention so new captures match
-  the existing default `==todo--` list filter. It is not a managed status.
-  Other Denote names/signatures remain valid; use a different regex to show them.
+- New captures have no signature. Existing signed Denote Markdown filenames
+  remain valid; signatures are ordinary organisation, not managed status.
 
 ## New Note Template
 
@@ -85,10 +81,10 @@ launch hints.
 
 ## Capture Choices and Launch Hints
 
-`C-c t a` (`my/task-add`) asks for an optional epic/subdirectory, title, and
+`C-c n T` (`my/denote-task`) asks for an optional epic/subdirectory, title, and
 repository and, when multiple destinations qualify, machine. It uses
 `task-workflow-v3` and the shared catalogue's model and thinking defaults.
-`C-u C-c t a` additionally offers skill
+`C-u C-c n T` additionally offers skill
 selection and the capture hints in this order:
 
 1. Repository (always selected explicitly).
@@ -115,7 +111,7 @@ no local-machine identity. Capture uses this loaded value, not a fresh disk
 read. After activating inventory changes, run `M-x my/agent-catalogue-reload`
 or restart Emacs. Missing configuration or unusable
 required choices stop capture with an actionable error; cancellation creates no
-note. Listing and existing notes do not require the catalogue. The catalogue
+note. Browsing and existing notes do not require the catalogue. The catalogue
 does not implement an Emacs session launcher.
 
 These fields are optional launch hints, not launch authorization. The
@@ -129,10 +125,11 @@ is ignored. Capture does not migrate or automatically change existing notes.
 There are three explicit commands, separate from capture, with no combined
 selector, dispatcher or compatibility alias:
 
-- `M-x my/agent-session-start-from-file`: styled completion of `==todo--`
-  Markdown task notes recursively under `~/work/tasks/`, including epics.
-  Readable filename titles and epic/date annotations retain unique file
-  identities without scanning bodies. Use a valid repository hint or ask,
+- `M-x my/agent-session-start-from-file`: styled completion of Denote
+  Markdown task notes recursively under `~/work/docs/tasks/`, including epics.
+  Saved front-matter titles (with filename fallback) and repository/machine
+  annotations describe candidates. Colliding titles gain relative-path suffixes
+  so each file is selectable. Use a valid repository hint or ask,
   select an eligible machine, confirm the base ref and create a new worktree.
   Its optional Lisp `FILE` argument bypasses completion, not task validation.
 - `M-x my/agent-session-start-new-worktree`: select a repository, then eligible
@@ -174,9 +171,11 @@ automatic cleanup or agent-to-agent control.
 
 ## Managing Files
 
-Open the task list with `my/task-list`. Use epic/regex filters and identifier
-sorting, and ordinary Denote/Dired commands to open, edit, rename, move, or delete
-files. There are no Emacs finish/discard commands, status transitions, dependency
+Use ordinary Denote/Dired commands to open, edit, rename, move, or delete
+files. Regular Denote notes default to `~/work/docs/`; task capture and launcher
+discovery use its `tasks/` subtree recursively. Denote links resolve across the
+whole document tree. There is no custom task list or `C-c t` prefix.
+There are no Emacs finish/discard commands, status transitions, dependency
 parsers, or automatic edits to other notes.
 
 Existing notes, including legacy signatures, `repo`/session metadata, and

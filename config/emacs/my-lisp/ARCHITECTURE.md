@@ -9,41 +9,35 @@ conventions and review guardrails remain in `AGENTS.md`.
 |--------|---------|
 | `my-agent-catalogue.el` | Declares the generated `my/agent-machines` configuration contract and explicit reload command; no launch/runtime operations. |
 | `my-agent-session.el` | Explicit human-operated task/ad hoc launches, disposable worktree creation, independent task model/thinking overrides, and clear failure reporting; no retained launch context, task lifecycle or automatic cleanup. |
-| `my-task.el` | Shared task root, catalogue-backed note capture/default hints, template/skill choices, file predicate, capture/list keymap, and note-created hook. |
-| `my-task-list.el` | Dired display, persisted epic/regex filters and sort direction, scoped reverts, and a human-invoked at-point delegate to the public launcher. |
+| `my-denote-task.el` | Task root, catalogue-backed `my/denote-task` capture/default hints, template/skill choices, and task-file predicate. |
 
 ```text
-my-task.el ── autoloads ──► my-task-list.el
 init.el ── loads trusted generated configuration via ──► my-agent-catalogue.el
-my-task.el ── consumes my/agent-machines declared by ──► my-agent-catalogue.el
+my-denote-task.el ── consumes my/agent-machines declared by ──► my-agent-catalogue.el
 my-agent-session.el ── consumes inventory from ──► my-agent-catalogue.el
 my-agent-session.el ── starts fresh conversations through ──► agent-shell / Pi ACP
-my-task-list.el ── passes the Dired todo file at point to ──► my/agent-session-start-from-file
-my-task-list.el subscribes to the note-created hook
 ```
 
 ## Boundaries
 
-- Task notes are ordinary Denote Markdown files under `~/work/tasks/`, with
+- Task notes are ordinary Denote Markdown files under `~/work/docs/tasks/`, with
   optional epic subdirectories. Use native Denote identifiers and links.
-- Task packages own capture, files, links, filtering, and sorting—not managed
+- The capture package owns task files and metadata—not managed
   statuses, finish/discard, dependency parsing/check-off, Git or sessions.
   `my-agent-session.el` separately owns three explicit human launch commands:
   `my/agent-session-start-from-file` creates a worktree and submits a saved task;
   `my/agent-session-start-new-worktree` creates an ad hoc worktree; and
   `my/agent-session-start-in-directory` starts ad hoc in an exact chosen directory.
   They share Git/startup internals, with no dispatcher. `init.el` binds the global
-  `C-c a f` to the file launcher's normal task picker. Task-list buffers override
-  only `f` in an inherited local agent prefix: a human-invoked UI action validates
-  the existing todo Markdown filename at point and delegates that exact Dired
-  path to the public launcher. It ignores marks and never saves/reverts task
-  buffers, changes list state, or implements launch operations. Saved-snapshot
-  validation and all launch choices, operations and failure handling remain
-  with the launcher; capture remains file-only.
+  `C-c a f` to the file launcher's normal task picker. Saved-snapshot validation and all launch choices,
+  operations and failure handling remain with the launcher; capture remains file-only.
   Session/worktree cleanup remains a separate human-coordinated action, not
   agent orchestration. See `../../../docs/agent-session.md` for launch/failure policy.
-- New captures retain the `todo` filename signature solely to match the existing
-  default `==todo--` regex. There is no transition API or status validation.
+- Regular Denote notes default to `~/work/docs/`; task capture and discovery
+  are scoped to its `tasks/` subtree. New captures have no filename signature;
+  discovery also accepts existing signed Denote Markdown notes. There is no
+  transition API or status validation. `C-c n T` invokes `my/denote-task`; the
+  old task prefix and custom task-list UI are removed.
 - `skill` is optional downstream metadata. Capture always selects a repository,
   then writes `repo`, named `machine`, `model`, and `thinking`.
   Both capture forms prompt for machine when multiple destinations qualify,
@@ -56,7 +50,7 @@ my-task-list.el subscribes to the note-created hook
   have no Dependencies section.
 - The generated catalogue is the sole choice/default source; no separate inventory,
   Git calls, host probes, mutable Pi settings, or launch lifecycle are involved in capture.
-  Missing configuration, unusable selections, and cancellation stop before creating the note. Listing
+  Missing configuration, unusable selections, and cancellation stop before creating the note. Browsing
   and file identity remain independent of the catalogue.
 - `my-agent-catalogue.el` declares `my/agent-machines` and its contract.
   Normal startup loads `emacs/agent-catalogue.el` as trusted executable config,
@@ -70,21 +64,19 @@ my-task-list.el subscribes to the note-created hook
   send no override. Nix source composition lives outside task Lisp.
 - Existing notes are untouched, including legacy signatures, repo/session fields,
   and dependency text. These are ordinary content, not runtime state.
-- A saved capture runs `my/task-note-created-hook` to refresh open task lists.
-  Native Denote/Dired handle other file mutations. There is no task index,
-  active/WIP highlighting, git recovery, or lifecycle notification system.
-- Ordinary task-file auto-refresh and Denote configuration live in
-  `my-emacs-denote.el`. List buffers pin their scope so reverts and cloned views
-  preserve filtering without disturbing the window layout.
+- Native Denote/Dired handle file browsing and mutations. There is no custom
+  task list, persisted filter state, task index, active/WIP highlighting, git
+  recovery, or lifecycle notification system.
+- Task-file auto-refresh and document-wide Denote configuration live in
+  `my-emacs-denote.el`. The task predicate checks the task root independently
+  of the broader Denote document root.
 
 ## Placement Guide
 
-- Note capture, shared root, templates, catalogue/default hints, skill metadata, capture/list bindings,
-  and task-file predicate → `my-task.el`
+- Note capture, task root, templates, catalogue/default hints, skill metadata,
+  and task-file predicate → `my-denote-task.el`
 - Generated agent configuration contract/reload → `my-agent-catalogue.el`
 - Explicit human-operated worktree/directory launches → `my-agent-session.el`
-- Dired views, persisted filters, sort, pinned-scope reverts, and thin human-invoked
-  launch delegation → `my-task-list.el`
 - Package configuration, templates, links, and file auto-revert → `my-emacs-denote.el`
 
 Prefer removing unused helpers over compatibility layers. New packages or state
@@ -92,6 +84,7 @@ owners require a genuine boundary or second supported use.
 
 ## Identity
 
-Denote identifiers survive ordinary title/signature renames. Resolve current
-paths with native `denote-get-path-by-id`, not old cached paths, branch names, or
-session/worktree metadata. Private helpers are not cross-module APIs.
+Denote identifiers survive ordinary title/signature renames; Emacs owns local
+link resolution. Agents consume the launcher-supplied snapshot without needing
+access to the original note or its Denote directory. Private helpers are not
+cross-module APIs.

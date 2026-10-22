@@ -27,7 +27,7 @@
 (defvar vertico-preselect)
 
 (defun my/agent-session--task-candidates (root)
-  "Return filename titles paired with todo Markdown files under ROOT.
+  "Return filename titles paired with Denote Markdown files under ROOT.
 Discovery is recursive and filename-only, ordered by Denote identifier
 oldest first.  Titles need not be unique; the picker resolves saved titles."
   (when (file-directory-p root)
@@ -39,8 +39,7 @@ oldest first.  Titles need not be unique; the picker resolves saved titles."
                        'face 'denote-faces-title)
                       file))
               (denote-sort-files
-               (denote-directory-files
-                "\\(?:\\`\\|/\\)[0-9]\\{8\\}T[0-9]\\{6\\}==todo--.+\\.md\\'")
+               (denote-directory-files "\\.md\\'" nil nil nil t)
                'identifier)))))
 
 (defun my/agent-session--task-hints (file)
@@ -84,18 +83,25 @@ Marginalia aligns the first column across candidates; padding aligns machine."
 
 (defun my/agent-session--task-select ()
   "Select a task oldest first with Marginalia repo/machine annotations.
-Duplicate titles intentionally remain verbatim and resolve to the first file."
-  (let* ((root (expand-file-name "~/work/tasks/" "/"))
+Colliding titles gain a relative-path suffix so every file is selectable."
+  (let* ((root (expand-file-name "~/work/docs/tasks/" "/"))
          (candidates (my/agent-session--task-candidates root))
-         (_ (unless candidates (user-error "No todo task notes under ~/work/tasks/")))
-         metadata
+         (_ (unless candidates (user-error "No task notes under ~/work/docs/tasks/")))
+         metadata used-labels
          (candidates
           (mapcar (lambda (entry)
                     (let* ((hints (my/agent-session--task-hints (cdr entry)))
-                           (label (propertize (or (plist-get hints :title) (car entry))
-                                              'face 'denote-faces-title)))
+                           (title (or (plist-get hints :title) (car entry)))
+                           (label title)
+                           (suffix 0))
+                      (while (member label used-labels)
+                        (setq suffix (1+ suffix)
+                              label (format "%s [%s%s]" title
+                                            (file-relative-name (cdr entry) root)
+                                            (if (= suffix 1) "" (format " #%d" suffix)))))
+                      (push label used-labels)
                       (push (cons (cdr entry) hints) metadata)
-                      (cons label (cdr entry))))
+                      (cons (propertize label 'face 'denote-faces-title) (cdr entry))))
                   candidates))
          (annotations (mapcar (lambda (entry)
                                 (let ((hints (cdr (assoc (cdr entry) metadata))))
@@ -118,7 +124,7 @@ Duplicate titles intentionally remain verbatim and resolve to the first file."
                  '(cycle-sort-function . identity)))
          (selection (completing-read "Task: " table nil t))
          (entry (assoc selection candidates)))
-    (unless entry (user-error "Select a todo task"))
+    (unless entry (user-error "Select a task"))
     (cdr entry)))
 
 (defun my/agent-session--task-read (file)
@@ -438,7 +444,7 @@ All choices must already be collected.  Failures never remove user work."
 ;;;###autoload
 (defun my/agent-session-start-from-file (&optional file)
   "Start a saved task FILE in a new repository worktree.
-When FILE is nil, select a todo task with styled completion.  Use a valid
+When FILE is nil, select a task with styled completion.  Use a valid
 repository hint, select an eligible machine and always confirm the base ref.
 Submit the saved snapshot, skill instruction and independent optional overrides.
 All selections precede Git mutation or agent startup."

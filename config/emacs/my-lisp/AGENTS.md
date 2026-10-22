@@ -11,12 +11,11 @@ repurposing a package or ownership boundary.
 Before modifying or creating my-lisp files:
 
 - [ ] Task code manages files, filtering, and capture hints only; repository and
-  machine choices are metadata, not launch operations. A human-invoked task-list
-  action may pass the exact Dired todo file at point to the public launcher;
-  task code still owns no Git, agent sessions, worktrees, status transitions,
-  or dependency orchestration. Capture remains file-only.
+  machine choices are metadata, not launch operations. Capture remains file-only;
+  task code owns no Git, agent sessions, worktrees, status transitions, or
+  dependency orchestration.
 - [ ] Explicit human-operated launches belong in `my-agent-session.el`, not task
-  packages; the task-list action is only a UI delegate. The launcher may create
+  capture; the launcher may create
   disposable worktrees and conversations, but owns no
   agent-to-agent orchestration, automatic cleanup or task lifecycle.
 - [ ] Function names follow `my/<noun>-<verb>`; predicates end in `-p`.
@@ -40,7 +39,7 @@ Review changed modules and their direct callers/consumers for:
 
 - **UI-thread stalls:** do not add synchronous broad scans, repair, or recomputation
   to interactive/read paths. Use bounded reads and explicit freshness work.
-- **Mixed responsibilities:** keep capture, file configuration, and list display
+- **Mixed responsibilities:** keep capture and file configuration
   in their existing narrow owners.
 - **Split state ownership:** avoid duplicate sources of truth; prefer native file
   and Denote state over custom indexes or caches.
@@ -55,13 +54,13 @@ Review changed modules and their direct callers/consumers for:
 Use noun-verb names matching the module or feature:
 
 ```elisp
-my/task-add
-my/task-file-p
-my/task-list-filter-sort
+my/denote-task
+my/denote-task-file-p
+my/denote-task-directory
 ```
 
 Internals use a double dash after the module prefix, for example
-`my/task-list--filter-save`. Internals are not interactive, not autoloaded, and
+`my/denote-task--metadata-read`. Internals are not interactive, not autoloaded, and
 not called outside their owning module.
 
 ## File Structure

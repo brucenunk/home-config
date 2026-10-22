@@ -232,11 +232,14 @@
                         "other/20261017T152150==todo--duplicate-title.md"
                         "epic/20261017T152151==todo--duplicate-title.md"
                         "epic/20261017T152151==todo--duplicate-title__copy.md"
-                        "20261017T152152==todo--duplicate-title--[1].md"))
-               (excluded '("20261017T152149==done--not-actionable.md"
-                           "epic/20261017T152149==discarded--not-actionable.md"
-                           "20261017T152149--no-signature.md"
-                           "unrelated==todo--file.md"
+                        "20261017T152152==todo--duplicate-title--[1].md"
+                        "20261017T152149==done--legacy.md"
+                        "epic/20261017T152149==discarded--legacy.md"
+                        "20261017T152149--no-signature.md"
+                        "20261017T152153.md"
+                        "epic/20261017T152154==reference.md"
+                        "20261017T152155__keyword.md"))
+               (excluded '("unrelated==todo--file.md"
                            "20261017T152149==todo--backup.md~"
                            "#20261017T152149==todo--autosave.md#"
                            ".#20261017T152149==todo--lock.md"
@@ -330,7 +333,7 @@
                            '(:title nil :repo "—" :machine "—")))))
       (delete-file file))))
 
-(ert-deftest my/agent-session-task-marginalia-aligns-columns-and-preserves-verbatim-titles ()
+(ert-deftest my/agent-session-task-marginalia-aligns-columns-and-disambiguates-titles ()
   (let* ((root (make-temp-file "agent-picker-" t))
          (notes '(("20261017T152149==todo--short.md" "a/b" "wampa" "Fix API Casing: HTTP/2")
                   ("20261017T152150==todo--a-much-longer-readable-title.md" "owner/long-repository" "work" "A Much Longer Readable Title")
@@ -339,7 +342,7 @@
                   ("epic/20261017T152151==todo--duplicate__copy.md" "a/b" "work" "Duplicate: API")
                   ("20261017T152154==todo--literal-title.md" "a/b" "work" "Duplicate: API  [1]")
                   ("20261017T152153==todo--unicode-repo.md" "owner/工具" "wampa")
-                  ("20261017T152152==done--do-not-read.md" "ignored" "ignored")))
+                  ("20261017T152152==done--legacy.md" "a/b" "work")))
          (original-annotators marginalia-annotators)
          (original-mode marginalia-mode)
          (read-hints (symbol-function 'my/agent-session--task-hints))
@@ -354,12 +357,6 @@
                                     (if (nth 3 note) (format "title: %S\n" (nth 3 note)) "")
                                     (nth 1 note) (nth 2 note)) nil file nil 'silent)))
           (let* ((candidates (my/agent-session--task-candidates root))
-                 (expected-candidates
-                  (mapcar (lambda (entry)
-                            (cons (or (nth 3 (assoc (file-relative-name (cdr entry) root) notes))
-                                      (car entry))
-                                  (cdr entry)))
-                          candidates))
                  (selection-index 0))
             (cl-letf (((symbol-function 'my/agent-session--task-candidates)
                        (lambda (_) candidates))
@@ -369,7 +366,6 @@
                        (lambda (&rest _) (list (selected-window))))
                       ((symbol-function 'my/agent-session--task-hints)
                        (lambda (file)
-                         (should-not (string-match-p "==done--" file))
                          (push file reads)
                          (funcall read-hints file))))
               (dolist (entry candidates)
@@ -387,7 +383,8 @@
                            (should (member "unicode repo" labels))
                            (should (member "Duplicate: API  [1]" labels))
                            (should-not (member "Duplicate: API  [2]" labels))
-                           (should (= 3 (cl-count "Duplicate: API" labels :test #'equal)))
+                           (should (= 1 (cl-count "Duplicate: API" labels :test #'equal)))
+                           (should (= (length labels) (length (delete-dups (copy-sequence labels)))))
                            (should (eq (completion-metadata-get metadata 'category) 'my-agent-session))
                            ;; The real Marginalia integration must find this annotator.
                            (should (functionp (marginalia--annotator 'my-agent-session)))
@@ -410,11 +407,36 @@
                                (funcall affixate (list (substring-no-properties candidate)))))
                            (substring-no-properties (nth selection-index labels))))))
                   (should (equal (my/agent-session--task-select)
-                                 (cdr (assoc (car (nth selection-index expected-candidates))
-                                             expected-candidates)))))
+                                 (cdr (nth selection-index candidates)))))
                 (cl-incf selection-index))))
           (should (equal marginalia-annotators original-annotators)))
       (marginalia-mode (if original-mode 1 -1))
+      (delete-directory root t))))
+
+(ert-deftest my/agent-session-same-title-signed-and-unsigned-tasks-launch-exact-snapshot ()
+  (let* ((root (make-temp-file "agent-duplicate-launch-" t))
+         (files (mapcar (lambda (name) (expand-file-name name root))
+                        '("20261022T100000==done--old.md"
+                          "20261022T100001--new.md")))
+         (discover (symbol-function 'my/agent-session--task-candidates)))
+    (unwind-protect
+        (progn
+          (dolist (file files)
+            (write-region "---\ntitle: Same title\n---\n" nil file nil 'silent))
+          (cl-letf (((symbol-function 'my/agent-session--task-candidates)
+                     (lambda (_) (funcall discover root)))
+                    ((symbol-function 'my/agent-session--worktree-options) #'identity)
+                    ((symbol-function 'my/agent-session--start) #'identity))
+            (dotimes (index (length files))
+              (let ((completing-read-function
+                     (lambda (_prompt table &rest _)
+                       (let ((labels (all-completions "Same title" table)))
+                         (should (= (length labels) 2))
+                         (should-not (equal (car labels) (cadr labels)))
+                         (nth index labels)))))
+                (should (string-match-p
+                         (regexp-quote (nth index files))
+                         (plist-get (my/agent-session-start-from-file) :prompt)))))))
       (delete-directory root t))))
 
 (ert-deftest my/agent-session-task-completion-narrows-to-distinct-files ()
@@ -447,7 +469,7 @@
   (let ((default-directory "/rpc:host:/project/"))
     (cl-letf (((symbol-function 'my/agent-session--task-candidates)
                (lambda (root)
-                 (should (equal root (expand-file-name "~/work/tasks/" "/")))
+                 (should (equal root (expand-file-name "~/work/docs/tasks/" "/")))
                  (should-not (file-remote-p root))
                  '(("Task" . "/local/task.md"))))
               ((symbol-function 'completing-read) (lambda (&rest _) "Task")))

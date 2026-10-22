@@ -38,7 +38,7 @@ owns it:
 | Check | Platforms | Regression caught |
 | --- | --- | --- |
 | `ghostty-home-manager-module` | Linux, Darwin | Package overrides remain effective, extra configuration remains appended, the two generated themes remain deployed, and disabling the canonical Linux service suppresses its link. |
-| `agent-catalogue-home-manager-module` | Linux, Darwin | Shared inventory local identity, typed directory/repository options, Nix-to-Elisp escaping and private-field exclusion, and isolated trusted-configuration loading/reload/capture/list ERT tests. Capture requires explicit multi-machine choice without changing model/thinking defaults. |
+| `agent-catalogue-home-manager-module` | Linux, Darwin | Shared inventory local identity, typed directory/repository options, Nix-to-Elisp escaping and private-field exclusion, and isolated trusted-configuration loading/reload/capture ERT tests. Capture requires explicit multi-machine choice without changing model/thinking defaults. |
 | `pi-home-manager-module` | Linux, Darwin | Disable/directory overrides remain effective; model/thinking projections match the pinned Pi loader and exclude private provider fields. |
 | `doric-waybar-themes-home-manager-module` | Linux, Darwin | The portable Waybar theme module continues to deploy its theme directory recursively. |
 | `git-home-manager-module` | Linux, Darwin | Repository defaults and local-only inventory paths enable native Git maintenance on both platforms, excluding remote repositories. |
