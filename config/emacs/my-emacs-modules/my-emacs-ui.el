@@ -90,10 +90,47 @@ error.  Evaluate the theme's package source once and retry to register it."
 (use-package auto-dark
   :ensure nil
   :demand t
-  :after doric-themes
+  ;; Doric is already demanded above.  An :after handler would rerun this
+  ;; configuration when new theme definitions reload the Doric library.
   :custom
   (auto-dark-themes '((doric-obsidian) (doric-marble)))
   :config
+  (defun my/auto-dark--read-doric-theme (prompt themes current)
+    "Read an available Doric theme from THEMES with PROMPT and CURRENT default."
+    (let* ((available (custom-available-themes))
+           (candidates
+            (sort (mapcar #'symbol-name
+                          (seq-filter (lambda (theme) (memq theme available))
+                                      themes))
+                  #'string-lessp))
+           (default (and current (symbol-name current))))
+      (intern
+       (completing-read
+        (format-prompt prompt default)
+        (lambda (string pred action)
+          (if (eq action 'metadata)
+              '(metadata (category . theme)
+                         (display-sort-function . identity)
+                         (cycle-sort-function . identity))
+            (complete-with-action action candidates string pred)))
+        nil t nil nil default))))
+
+  (defun my/auto-dark-select-themes ()
+    "Select one light and one dark Doric theme for this session only.
+Prompt light first, defaulting to the current selections.  Update
+`auto-dark-themes' only after both prompts complete, and let its setter
+apply the current OS appearance when `auto-dark-mode' is enabled.
+Subsequent automatic appearance changes use the selected themes."
+    (interactive)
+    (let* ((light (my/auto-dark--read-doric-theme
+                   "Light Doric theme" doric-themes-light-themes
+                   (car (cadr auto-dark-themes))))
+           (dark (my/auto-dark--read-doric-theme
+                  "Dark Doric theme" doric-themes-dark-themes
+                  (caar auto-dark-themes))))
+      ;; Register new Doric definitions before auto-dark's setter preloads them.
+      (mapc #'my/doric-theme-preload (list light dark))
+      (setopt auto-dark-themes (list (list dark) (list light)))))
   (auto-dark-mode 1))
 
 ;; https://github.com/protesilaos/spacious-padding
