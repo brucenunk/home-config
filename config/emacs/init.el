@@ -204,6 +204,16 @@
 ;; VCS & Projects
 ;; ============================================================================
 
+(use-package diff-hl
+  :ensure nil
+  :demand t
+  :hook (magit-post-refresh . diff-hl-magit-post-refresh)
+  :config
+  (global-diff-hl-mode 1)
+  ;; Flydiff updates unsaved local edits; remote buffers remain save-driven.
+  ;; Toggle with M-x diff-hl-flydiff-mode to return to save-driven updates.
+  (diff-hl-flydiff-mode 1))
+
 (use-package magit
   :ensure nil
   :bind

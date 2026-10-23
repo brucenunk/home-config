@@ -32,6 +32,7 @@ let
           consult-denote
           corfu
           denote
+          diff-hl
           doric-themes
           editorconfig
           embark
