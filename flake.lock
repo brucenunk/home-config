@@ -34,6 +34,22 @@
         "type": "github"
       }
     },
+    "emacs-overlay": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792815328,
+        "narHash": "sha256-lFHX2KQI/vLi171kE/5XHh6H1ZuaM33YUCWTdhYLK68=",
+        "owner": "nix-community",
+        "repo": "emacs-overlay",
+        "rev": "8070424d91ce0660bebe760ac066148150980a75",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "emacs-overlay",
+        "type": "github"
+      }
+    },
     "emacs-tramp-rpc": {
       "inputs": {
         "nixpkgs": [
@@ -203,6 +219,7 @@
     },
     "root": {
       "inputs": {
+        "emacs-overlay": "emacs-overlay",
         "emacs-tramp-rpc": "emacs-tramp-rpc",
         "flake-parts": "flake-parts",
         "home-manager": "home-manager",

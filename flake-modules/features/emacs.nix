@@ -38,6 +38,10 @@ let
           embark
           embark-consult
           envrc
+          (import ../../pkgs/excali-mode.nix {
+            inherit pkgs;
+            emacs = epkgs.emacs;
+          })
           exec-path-from-shell
           fontaine
           forge
@@ -138,7 +142,7 @@ let
           extraPackages =
             epkgs: emacsPackages epkgs ++ [ (epkgs.treesit-grammars.with-grammars treeSitterGrammars) ];
 
-          package = lib.mkDefault pkgs.emacs;
+          package = lib.mkDefault (import ../../pkgs/emacs-master.nix { inherit inputs pkgs; });
         };
 
         home.packages = [
@@ -172,6 +176,7 @@ in
     { lib, pkgs, ... }:
 
     let
+      emacsMaster = import ../../pkgs/emacs-master.nix { inherit inputs pkgs; };
       mkManagedHome =
         servers:
         inputs.home-manager.lib.homeManagerConfiguration {
@@ -209,18 +214,30 @@ in
         .remoteBinaryPath.type;
     in
     {
+      packages.emacs-master = emacsMaster;
       checks = {
+        emacs-excali =
+          let
+            emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;
+          in
+          pkgs.runCommand "emacs-excali-check" { nativeBuildInputs = [ emacs ]; } ''
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME"
+            emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+              --load my-emacs-excali-tests --funcall ert-run-tests-batch-and-exit
+            touch "$out"
+          '';
         emacs-agent-shell =
           let
             agentShellGc = import ../../pkgs/agent-shell-gc.nix {
               inherit pkgs;
-              epkgs = pkgs.emacs.pkgs;
+              epkgs = emacsMaster.pkgs;
             };
             agentShellTramp = import ../../pkgs/agent-shell-tramp.nix {
               inherit pkgs;
-              epkgs = pkgs.emacs.pkgs;
+              epkgs = emacsMaster.pkgs;
             };
-            emacsWithAgent = pkgs.emacs.pkgs.emacsWithPackages (epkgs: [
+            emacsWithAgent = emacsMaster.pkgs.emacsWithPackages (epkgs: [
               (import ../../pkgs/agent-shell.nix { inherit pkgs epkgs; })
               (import ../../pkgs/agent-shell-notifications.nix { inherit pkgs epkgs; })
               agentShellGc
@@ -326,7 +343,7 @@ in
 
         emacs-tramp-rpc =
           let
-            emacsWithRpc = pkgs.emacs.pkgs.emacsWithPackages (epkgs: [
+            emacsWithRpc = emacsMaster.pkgs.emacsWithPackages (epkgs: [
               (import ../../pkgs/tramp-rpc.nix { inherit inputs pkgs epkgs; })
               epkgs.use-package
               epkgs.magit
@@ -406,7 +423,7 @@ in
           emacs-home-manager-module =
             assert defaultHome.config.home.sessionVariables.EDITOR == "emacsclient -c";
             assert defaultHome.config.home.sessionVariables.VISUAL == "emacsclient -c";
-            assert defaultHome.config.programs.emacs.package.drvPath == pkgs.emacs.drvPath;
+            assert defaultHome.config.programs.emacs.package.drvPath == emacsMaster.drvPath;
             assert emacs31Home.config.programs.emacs.package.drvPath == pkgs.emacs31.drvPath;
             assert emacsNoxHome.config.programs.emacs.package.drvPath == pkgs.emacs-nox.drvPath;
             pkgs.runCommand "emacs-home-manager-module" { } ''

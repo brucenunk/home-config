@@ -6,6 +6,11 @@
     import-tree.url = "git+https://github.com/vic/import-tree.git";
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
+    # Use only the build overlay; flake.lock pins its Emacs master snapshot.
+    emacs-overlay = {
+      url = "github:nix-community/emacs-overlay";
+      flake = false;
+    };
     emacs-tramp-rpc.url = "github:ArthurHeymans/emacs-tramp-rpc/v0.15.0";
     emacs-tramp-rpc.inputs.nixpkgs.follows = "nixpkgs";
     llm-agents.url = "github:numtide/llm-agents.nix";

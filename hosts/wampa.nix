@@ -104,8 +104,6 @@ in
           models = piModels;
         };
 
-        programs.emacs.package = pkgs.emacs-pgtk;
-
         programs.git.settings.user.email = "bruce.nunk@gmail.com";
       }
     ];
