@@ -6,14 +6,12 @@
 
 (require 'cl-lib)
 (require 'color)
+(require 'use-package)
 
 (defgroup my-excali nil "Personal Excalidraw integration." :group 'multimedia)
 (defcustom my/excali-directory (expand-file-name "~/work/docs/diagrams/")
   "Default directory for drawing entry points; other locations remain allowed."
   :type 'directory :group 'my-excali)
-
-(autoload 'excali-new "excali" nil t)
-(autoload 'excali-open "excali" nil t)
 
 (defun my/excali--check-compatible ()
   "Require actual module and Canvas capabilities, not just a package version."
@@ -83,7 +81,9 @@ are not part of upstream's element undo history."
   "Install the buffer-local scene event before its document is opened."
   (add-hook 'excali-after-open-hook #'my/excali--after-open nil t))
 
-(with-eval-after-load 'excali
+(use-package excali
+  :commands (excali-open excali-new)
+  :config
   (advice-add 'excali-new :around #'my/excali--new-drawing)
   (add-hook 'excali-mode-hook #'my/excali--setup-buffer)
   ;; Browsers use CSS aliases; Pango needs the embedded family names.
@@ -92,6 +92,9 @@ are not part of upstream's element undo history."
                   (cl-remove-if (lambda (entry) (assq (car entry) excali-font-families))
                                 '((6 . "Nunito ExtraLight, Nunito, sans-serif")
                                   (8 . "Comic Shanns Regular, Comic Shanns, monospace"))))))
+
+(use-package excali-dsl
+  :mode ("\\.excalidsl\\'" . excali-dsl-mode))
 
 (provide 'my-emacs-excali)
 ;;; my-emacs-excali.el ends here

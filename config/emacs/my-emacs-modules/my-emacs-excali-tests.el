@@ -5,6 +5,57 @@
 (require 'excali)
 (require 'my-emacs-excali)
 
+(defun my/excali-test--fresh-emacs (&rest forms)
+  "Check FORMS in a fresh Emacs with the current test's package paths."
+  (with-temp-buffer
+    (let ((status
+           (call-process
+            (expand-file-name invocation-name invocation-directory)
+            nil t nil "--batch" "-Q"
+            "--eval" (prin1-to-string `(setq load-path ',load-path))
+            "--eval" "(require 'ert)"
+            "--load" "my-emacs-excali"
+            "--eval" (prin1-to-string `(progn ,@forms)))))
+      (ert-info ((buffer-string))
+        (should (equal status 0))))))
+
+(ert-deftest my/excali-startup-is-lazy-and-defers-configuration ()
+  (my/excali-test--fresh-emacs
+   '(progn
+      (should-not (featurep 'excali))
+      (should-not (featurep 'excali-dsl))
+      (dolist (command '(excali-open excali-new))
+        (should (commandp command))
+        (should (autoloadp (symbol-function command)))
+        (should (equal (nth 1 (symbol-function command)) "excali")))
+      (should (autoloadp (symbol-function 'excali-dsl-mode)))
+      (should (equal (nth 1 (symbol-function 'excali-dsl-mode)) "excali-dsl"))
+      (should (eq (cdr (assoc "\\.excalidsl\\'" auto-mode-alist)) 'excali-dsl-mode))
+      (with-temp-buffer
+        (setq buffer-file-name "drawing.excalidraw")
+        (set-auto-mode)
+        (should-not (derived-mode-p 'excali-mode 'excali-dsl-mode)))
+      (should-not (featurep 'excali))
+      (require 'excali)
+      (should (advice-member-p #'my/excali--new-drawing 'excali-new))
+      (should (memq #'my/excali--setup-buffer excali-mode-hook))
+      (should (assq 6 excali-font-families))
+      (should (assq 8 excali-font-families)))))
+
+(ert-deftest my/excali-dsl-file-visits-work-before-opening-a-canvas ()
+  (my/excali-test--fresh-emacs
+   '(let ((file (make-temp-file "excali-source-" nil ".excalidsl"))
+          buffer)
+      (unwind-protect
+          (progn
+            (setq buffer (find-file-noselect file))
+            (with-current-buffer buffer
+              (should (eq major-mode 'excali-dsl-mode)))
+            (should (featurep 'excali-dsl))
+            (should-not (featurep 'excali)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))
+        (delete-file file)))))
+
 (defmacro my/excali-test-scene (&rest body)
   `(with-temp-buffer
      (setq major-mode 'excali-mode
