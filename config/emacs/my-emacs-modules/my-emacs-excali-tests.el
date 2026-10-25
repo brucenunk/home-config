@@ -645,7 +645,7 @@
      (setq excali--selection (list neutral accented))
      (should (eq (my/excali--shown-preset) 'mixed)))))
 
-(ert-deftest my/excali-caption-includes-label-overrides-and-normalises-colours ()
+(ert-deftest my/excali-caption-label-overrides-affect-only-explicit-selection ()
   (my/excali-test--styled-scene
    (setq excali--selection (list (car excali--elements)))
    (my/excali-use-preset 'accented)
@@ -653,9 +653,15 @@
    (excali--put (car excali--elements) 'backgroundColor
                (upcase (excali--get (car excali--elements) 'backgroundColor)))
    (excali--put (nth 1 excali--elements) 'strokeColor "#000")
+   (setq excali--selection (list (car excali--elements) (nth 1 excali--elements)))
    (should (eq (my/excali--shown-preset) 'accented))
    (excali--put (nth 1 excali--elements) 'strokeColor "#ff0000")
    (should (eq (my/excali--shown-preset) 'mixed))
+   (setq excali--selection (list (car excali--elements)))
+   (should (eq (my/excali--shown-preset) 'accented))
+   (setq excali--selection (list (nth 1 excali--elements)))
+   (should (eq (my/excali--shown-preset) 'custom))
+   (setq excali--selection (list (car excali--elements) (nth 1 excali--elements)))
    (excali--put (nth 1 excali--elements) 'isDeleted t)
    (should (eq (my/excali--shown-preset) 'accented))))
 
@@ -667,7 +673,33 @@
    (my/excali-use-preset 'muted)
    (should (eq (my/excali--shown-preset) 'muted))
    (setq excali--selection (list (car excali--elements)))
+   (should (eq (my/excali--shown-preset) 'neutral))
+   (setq excali--selection (list (car excali--elements) (nth 1 excali--elements)))
    (should (eq (my/excali--shown-preset) 'mixed))))
+
+(ert-deftest my/excali-caption-keeps-neutral-box-separate-from-accented-label-after-reopen ()
+  (let ((file (make-temp-file "excali-independent-label-" nil ".excalidraw")))
+    (unwind-protect
+        (my/excali-test--opening
+         (let ((custom-enabled-themes '(doric-earth)))
+           (my/excali-test--styled-scene
+            (setq excali--selection (list (car excali--elements)) excali--file file)
+            (my/excali-use-preset 'neutral)
+            (setq excali--selection (list (nth 1 excali--elements)))
+            (my/excali-use-preset 'accented)
+            (excali-save))
+           (excali-open file)
+           (let ((box (cl-find "box" excali--elements :key (lambda (e) (excali--get e 'id)) :test #'equal))
+                 (label (cl-find "label" excali--elements :key (lambda (e) (excali--get e 'id)) :test #'equal))
+                 (scene (copy-tree excali--elements t)))
+             (setq excali--selection (list box))
+             (should (eq (my/excali--shown-preset) 'neutral))
+             (setq excali--selection (list label))
+             (should (eq (my/excali--shown-preset) 'accented))
+             (setq excali--selection (list box label))
+             (should (eq (my/excali--shown-preset) 'mixed))
+             (should (equal scene excali--elements)))))
+      (delete-file file))))
 
 (ert-deftest my/excali-caption-normalises-custom-colours-before-reporting-mixed ()
   (my/excali-test--styled-scene
@@ -713,6 +745,7 @@
   (my/excali-test--styled-scene
    (setq excali--selection (list (car excali--elements)))
    (my/excali-use-preset 'neutral)
+   (setq excali--selection (list (nth 1 excali--elements)))
    (cl-letf (((symbol-function 'excali--element-by-id)
               (lambda (&rest _) (ert-fail "Repeated parent lookup"))))
      (should (eq (my/excali--shown-preset) 'neutral)))

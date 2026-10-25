@@ -265,7 +265,7 @@ Only an explicitly active preset affects creation; never restyle existing text."
             (or contextual matches)))))))
 
 (defun my/excali--shown-preset ()
-  "Recognise the selection's actual styling, or the native drawing defaults.
+  "Recognise only explicitly selected elements, or the native drawing defaults.
 This is read-only and never reactivates a creation preset after reopening.
 When colours cannot distinguish roles, prefer their declared palette order."
   (condition-case nil
@@ -278,27 +278,17 @@ When colours cannot distinguish roles, prefer their declared palette order."
                         (fillStyle . ,(excali--style-value 'fillStyle))) palette))
                 'custom)
           (let ((index (make-hash-table :test #'equal))
-                (targets (make-hash-table :test #'eq))
                 (common my/excali--presets)
-                elements)
-            ;; Index once, then include bound labels just as explicit preset
-            ;; application does. No repeated scene scan for each text element.
+                (elements (seq-filter (lambda (element) (not (excali--get element 'isDeleted)))
+                                      excali--selection)))
+            ;; Index once for selected labels' context, without adding their
+            ;; parents or a selected shape's unselected labels to the selection.
             (dolist (element excali--elements)
               (unless (excali--get element 'isDeleted)
                 (puthash (excali--get element 'id) element index)))
-            (dolist (element excali--selection)
-              (unless (excali--get element 'isDeleted) (puthash element t targets)))
-            (dolist (element excali--elements)
-              (when (and (not (excali--get element 'isDeleted))
-                         (equal (excali--get element 'type) "text")
-                         (gethash (gethash (excali--get element 'containerId) index) targets))
-                (puthash element t targets)))
-            (maphash
-             (lambda (element _)
-               (push element elements)
-               (let ((matches (my/excali--element-presets element palette index)))
-                 (setq common (seq-filter (lambda (role) (memq role matches)) common))))
-             targets)
+            (dolist (element elements)
+              (let ((matches (my/excali--element-presets element palette index)))
+                (setq common (seq-filter (lambda (role) (memq role matches)) common))))
             (or (and elements (car common))
                 (if (seq-some
                      (lambda (key)

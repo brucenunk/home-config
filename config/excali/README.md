@@ -41,8 +41,12 @@ To style an existing element, select it, open the styling transient with
 `M-x excali-style`, press `p`, then choose a preset. Its bound label is included;
 unselected elements and the canvas remain unchanged.
 
-The main menu recognises the selected elements' actual palette styling,
-including their bound labels. With no selection, it recognises the native
+The main menu recognises only the explicitly selected elements' actual palette
+styling; it does not add a box's unselected label to the selection. A Neutral
+box can therefore show Neutral even if its label has different ink. Selecting
+both the box and that label shows Mixed. Applying a preset still styles the
+box and its bound label together, as described above.
+With no selection, the menu recognises the native
 current-item defaults instead. It shows **Palette: Neutral**, for example,
 **Mixed** for differing styles, or **Custom** when the styling matches no preset.
 This works after saving/reopening because it compares colour/fill properties,
