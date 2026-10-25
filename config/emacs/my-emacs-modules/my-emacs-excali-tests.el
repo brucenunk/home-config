@@ -752,6 +752,168 @@
    (let ((custom-enabled-themes '(no-installed-palette)))
      (should (eq (my/excali--shown-preset) 'custom)))))
 
+(defmacro my/excali-test--conversion-scene (&rest body)
+  `(my/excali-test--styled-scene
+    (let ((my/excali--creating t)) (my/excali--after-open))
+    (setq excali--selection (list (nth 0 excali--elements)))
+    (my/excali-use-preset 'neutral)
+    (setq excali--selection (list (nth 2 excali--elements)))
+    (my/excali-use-preset 'default)
+    (setq excali--selection (list (nth 4 excali--elements)))
+    (my/excali-use-preset 'muted)
+    ,@body))
+
+(ert-deftest my/excali-conversion-styles-whole-current-buffer-not-selection ()
+  (my/excali-test--conversion-scene
+   (let* ((initial (copy-tree (alist-get 'homeConfigPalette excali--doc) t))
+          (fixed (copy-tree (nth 5 excali--elements) t))
+          (selection excali--selection)
+          (other (generate-new-buffer " *other-diagram*")))
+     (unwind-protect
+         (progn
+           (with-current-buffer other
+             (setq major-mode 'excali-mode
+                   excali--doc (excali--empty-doc)
+                   excali--elements (list (excali--make-element "rectangle" 0 0)))
+             (set-buffer-modified-p nil))
+           (let ((custom-enabled-themes '(doric-obsidian))) (my/excali-update-palette))
+           (let* ((target (my/excali--read-palette "doric-obsidian"))
+                  (neutral (alist-get 'neutral (alist-get 'presets target)))
+                  (muted (alist-get 'muted (alist-get 'presets target))))
+             (should (equal (excali--canvas-color) (alist-get 'canvas target)))
+             (should (equal (excali--get (nth 0 excali--elements) 'backgroundColor)
+                            (alist-get 'fill neutral)))
+             (should (equal (excali--get (nth 1 excali--elements) 'strokeColor)
+                            (my/excali--text-color (alist-get 'text neutral) (alist-get 'fill neutral))))
+             (should (equal (excali--get (nth 3 excali--elements) 'strokeColor)
+                            (alist-get 'text (alist-get 'default (alist-get 'presets target)))))
+             (should (equal (excali--get (nth 4 excali--elements) 'strokeColor)
+                            (my/excali--text-color (alist-get 'text muted) (alist-get 'canvas target))))
+             (should (equal (excali--style-value 'strokeColor) (alist-get 'stroke muted)))
+             (should (equal (alist-get 'text my/excali--current-preset) (alist-get 'text muted)))
+             (should (equal (alist-get 'currentPalette (alist-get 'homeConfigPalette excali--doc)) target)))
+           (should (equal initial (assq-delete-all 'currentPalette
+                                  (copy-tree (alist-get 'homeConfigPalette excali--doc) t))))
+           (should (eq selection excali--selection))
+           (should (equal fixed (nth 5 excali--elements)))
+           (should (equal (excali--get (car excali--elements) 'customData) '((other . 42))))
+           (should (= (excali--get (car excali--elements) 'width) 100))
+           (with-current-buffer other
+             (should (equal (excali--canvas-color) "#ffffff"))
+             (should-not (alist-get 'homeConfigPalette excali--doc))
+             (should-not (buffer-modified-p))))
+       (kill-buffer other)))))
+
+(ert-deftest my/excali-conversion-preserves-custom-canvas-defaults-text-and-sticky ()
+  (my/excali-test--conversion-scene
+   (my/excali-set-canvas-background "#fedcba")
+   (setf (alist-get 'strokeColor excali--current-style) "#123456")
+   (setq my/excali--current-preset nil)
+   (excali--put (nth 1 excali--elements) 'strokeColor "#123456")
+   (let* ((sticky (excali--make-element "stickynote" 0 0 '(id . "note")))
+          (label (excali--make-text-element 0 0 "Sticky" '(containerId . "note")))
+          (deleted (excali--make-element "rectangle" 0 0 '(isDeleted . t)))
+          (before (copy-tree (list sticky label deleted) t))
+          (defaults (copy-tree excali--current-style t)))
+     (setq excali--elements (append excali--elements (list sticky label deleted)))
+     (let ((custom-enabled-themes '(doric-obsidian))) (my/excali-update-palette))
+     (should (equal before (list sticky label deleted)))
+     (should (equal defaults excali--current-style))
+     (should-not my/excali--current-preset)
+     (should (equal (excali--canvas-color) "#fedcba"))
+     (should (equal (excali--get (nth 1 excali--elements) 'strokeColor) "#123456")))))
+
+(ert-deftest my/excali-conversion-preserves-raw-custom-canvas-on-save-reopen ()
+  (let ((file (make-temp-file "excali-custom-canvas-" nil ".excalidraw")))
+    (unwind-protect
+        (dolist (color '("transparent" "red" "#fedcba"))
+          (my/excali-test--conversion-scene
+           (setf (alist-get 'viewBackgroundColor (alist-get 'appState excali--doc)) color)
+           (let ((custom-enabled-themes '(doric-obsidian))) (my/excali-update-palette))
+           (should (equal (alist-get 'viewBackgroundColor (alist-get 'appState excali--doc)) color))
+           (setq excali--file file)
+           (excali-save)
+           (my/excali-test--opening
+            (excali-open file)
+            (should (equal (alist-get 'viewBackgroundColor (alist-get 'appState excali--doc)) color)))))
+      (delete-file file))))
+
+(ert-deftest my/excali-conversion-ambiguous-targets-are-not-guessed ()
+  (my/excali-test--conversion-scene
+   ;; Earth Default and Neutral share text ink.  Divergent target inks must
+   ;; not be resolved by preset order when a standalone label has no context.
+   (setq excali--selection (list (nth 4 excali--elements)))
+   (my/excali-use-preset 'default)
+   (let* ((target (my/excali--read-palette "doric-obsidian"))
+          (before (copy-tree (nth 4 excali--elements) t)))
+     (setf (alist-get 'text (alist-get 'neutral (alist-get 'presets target))) "#ff9999")
+     (cl-letf (((symbol-function 'my/excali--theme-palette) (lambda () target)))
+       (my/excali-update-palette))
+     (should (equal before (nth 4 excali--elements)))
+     ;; Parent context still makes the Neutral box's bound label unambiguous.
+     (should (equal (excali--get (nth 1 excali--elements) 'strokeColor) "#ff9999")))))
+
+(ert-deftest my/excali-conversion-validates-before-mutating ()
+  (with-temp-buffer
+    (should-error (my/excali-update-palette) :type 'user-error))
+  (my/excali-test--conversion-scene
+   (dolist (kind '(missing malformed-source missing-target))
+     (let ((excali--doc (copy-tree excali--doc t))
+           (custom-enabled-themes (if (eq kind 'missing-target) '(unknown) custom-enabled-themes)))
+       (pcase kind
+         ('missing (setf (alist-get 'homeConfigPalette excali--doc) nil))
+         ('malformed-source
+          (setf (alist-get 'currentPalette (alist-get 'homeConfigPalette excali--doc))
+                '((version . 99)))))
+       (let ((doc (copy-tree excali--doc t))
+             (elements (copy-tree excali--elements t))
+             (defaults (copy-tree excali--current-style t))
+             (undo excali--undo-stack))
+         (should-error (my/excali-update-palette))
+         (should (equal doc excali--doc))
+         (should (equal elements excali--elements))
+         (should (equal defaults excali--current-style))
+         (should (eq undo excali--undo-stack)))))))
+
+(ert-deftest my/excali-conversion-native-history-has-element-only-boundary ()
+  (my/excali-test--conversion-scene
+   (let ((before (copy-tree excali--elements t)))
+     (excali--history-reset)
+     (let ((custom-enabled-themes '(doric-obsidian))) (my/excali-update-palette))
+     (should (= (length excali--undo-stack) 2))
+     (let ((after (copy-tree excali--elements t))
+           (doc (copy-tree excali--doc t))
+           (defaults (copy-tree excali--current-style t)))
+       (excali-undo)
+       (should (equal before excali--elements))
+       (should (equal doc excali--doc))
+       (should (equal defaults excali--current-style))
+       (excali-redo)
+       (should (equal after excali--elements))
+       ;; Reapplying the same palette must not create another element step.
+       (let ((custom-enabled-themes '(doric-obsidian))) (my/excali-update-palette))
+       (should (= (length excali--undo-stack) 2))))))
+
+(ert-deftest my/excali-conversion-roundtrip-supports-next-conversion ()
+  (let ((file (make-temp-file "excali-converted-" nil ".excalidraw")))
+    (unwind-protect
+        (my/excali-test--conversion-scene
+         (let ((initial (copy-tree (alist-get 'initialPalette
+                                   (alist-get 'homeConfigPalette excali--doc)) t)))
+           (let ((custom-enabled-themes '(doric-obsidian))) (my/excali-update-palette))
+           (setq excali--file file)
+           (excali-save)
+           (my/excali-test--opening
+            (excali-open file)
+            (let ((custom-enabled-themes '(doric-earth))) (my/excali-update-palette))
+            (should (equal (excali--canvas-color) (alist-get 'canvas initial)))
+            (should (equal (excali--get (car excali--elements) 'backgroundColor)
+                           (alist-get 'fill (alist-get 'neutral (alist-get 'presets initial)))))
+            (should (equal (alist-get 'initialPalette (alist-get 'homeConfigPalette excali--doc)) initial))
+            (should (equal (alist-get 'currentPalette (alist-get 'homeConfigPalette excali--doc)) initial))
+            (should-not my/excali--current-preset))))
+      (delete-file file))))
+
 (ert-deftest my/excali-generated-palettes-match-doric-face-pairs ()
   (require 'doric-themes)
   (let ((my/excali-palette-directory my/excali-test--palette-directory))

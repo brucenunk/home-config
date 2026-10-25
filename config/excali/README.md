@@ -69,8 +69,8 @@ snapshot, its text-contrast behaviour, or existing elements. Recognition alone
 does not activate this creation behaviour. The active creation preset is
 buffer-local, not saved role metadata: native current-item defaults persist,
 but after reopening, reapply a preset to enable its contrast-aware text creation.
-Canvas changes remain a separate explicit `my/excali-set-canvas-background`
-action; its interactive default is the current Emacs theme's background.
+To change just the canvas, use `my/excali-set-canvas-background`; its interactive
+default is the current Emacs theme's background.
 
 New drawings start with the active theme's palette canvas and Default style.
 If that theme has no installed palette, they retain the original one-time
@@ -80,6 +80,45 @@ defaults. Themes and auto-dark never recolour a drawing. Initial palette metadat
 is provenance only: it does not override the current theme for later explicit
 preset applications. If the current theme has no installed palette, explicit
 preset application reports an error without changing the drawing.
+
+## Explicit diagram conversion
+
+Run **`M-x my/excali-update-palette`** in a diagram buffer to update that entire
+diagram to the current Emacs theme's palette. There is no transient entry, theme
+chooser, automatic theme-change hook, or operation across other diagram buffers.
+The selection does not restrict conversion. Save normally when satisfied.
+
+The command recognises presets using the saved `currentPalette` snapshot, or
+`initialPalette` before the first conversion. It converts matching shapes,
+arrows, standalone text and bound labels, resolving label contrast against the
+converted parent and canvas. Matching canvas colour and drawing defaults are
+converted too; an already active creation preset receives the converted colour
+snapshot. Conversion does not activate a creation preset after reopening.
+
+Custom/unmatched styling, sticky notes and their labels, deleted elements,
+geometry, fill patterns, fonts, opacity and unrelated metadata remain unchanged.
+A custom canvas or custom drawing defaults are preserved. Without per-element
+roles, identical source styling can imply several presets: parent context helps
+disambiguate labels, but if matching roles would produce different target colours,
+the element is left unchanged. The command reports updated elements and ambiguous
+or unsupported matches. Unmatched elements are not counted in that report.
+
+Missing/invalid palette provenance or an unavailable current-theme palette stops
+conversion without edits. Native browser exports that lost provenance therefore
+cannot be converted by this command. Use individual preset commands instead.
+
+Initial provenance stays immutable. A successful conversion stores a complete
+target palette snapshot as `homeConfigPalette.currentPalette`, preserving other
+metadata. This becomes the source for the next conversion, including after
+save/reopen; unmatched or ambiguous elements are not assigned persistent roles.
+As with menu recognition, manually chosen colours indistinguishable from a preset
+are recognised as that preset.
+
+**Undo boundary:** converted elements form one native undo step. Canvas, drawing
+defaults, the active creation preset and palette snapshots are not part of native
+element history. Undo therefore does not restore the whole document or its source
+palette. Redo an undone conversion before converting again, or reopen the last
+saved document. No upstream history patches are installed.
 
 ## Agent use and JSON
 
@@ -121,9 +160,12 @@ and current-item defaults**, but preserve the painted colours and canvas.
 Where the diagrams directory is version-controlled, missing initial provenance
 may be recovered from Git history. Do not create commits automatically.
 
-For a requested theme conversion, use the stored palette snapshot as the source
-and a generated JSON file as the target. Without roles, equal colours can be
+For an agent-side theme conversion, use `currentPalette` when present, otherwise
+the stored initial snapshot, as the source and a generated JSON file as the
+target. Without roles, equal colours can be
 ambiguous: consider element types, fill/stroke combinations and bound-label
 relationships, preserve unmatched/explicit colours, and ask about ambiguities.
-Review the diff before replacing a drawing. No automatic converter or theme
-following is provided.
+Review the diff before replacing a drawing. Preserve initial provenance and
+record the target snapshot in `currentPalette` after conversion. The editor
+command above provides explicit conversion; automatic theme following is not
+provided.

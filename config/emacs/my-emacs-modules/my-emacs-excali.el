@@ -264,6 +264,116 @@ Only an explicitly active preset affects creation; never restyle existing text."
             ;; cannot veto a label's independently applied preset.
             (or contextual matches)))))))
 
+(defun my/excali--conversion-style (element roles palette index)
+  "Return (ROLE . STYLE) when ROLES agree on ELEMENT's target styling.
+PALETTE and INDEX describe the target canvas and projected parent styles.
+Return nil for ambiguous target colours rather than guessing a role."
+  (let ((styles
+         (mapcar
+          (lambda (role)
+            (let ((preset (alist-get role (alist-get 'presets palette))))
+              (if (equal (excali--get element 'type) "text")
+                  `((strokeColor
+                     . ,(my/excali--text-color
+                         (alist-get 'text preset)
+                         (my/excali--label-background
+                          (gethash (excali--get element 'containerId) index)))))
+                (seq-filter
+                 (lambda (pair) (excali--style-applies-p (car pair) element))
+                 `((strokeColor . ,(alist-get 'stroke preset))
+                   (backgroundColor . ,(alist-get 'fill preset)))))))
+          roles)))
+    (when (and roles (cl-every (lambda (style) (equal style (car styles))) (cdr styles)))
+      (cons (car roles) (car styles)))))
+
+(defun my/excali-update-palette ()
+  "Convert recognised palette styling in this diagram to the current theme.
+Use the saved currentPalette snapshot, or initialPalette for a first conversion.
+Preserve custom styling, ambiguous roles, sticky notes and initial provenance.
+Only this buffer is edited; save normally to persist the conversion.
+Element changes form one native undo step.  Canvas, defaults and palette
+snapshots are outside native undo: redo an undone conversion before converting
+again, or reopen the last saved document.  Theme changes never run this command."
+  (interactive)
+  (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
+  (let* ((metadata (alist-get 'homeConfigPalette excali--doc))
+         (source (progn
+                   (unless (and (listp metadata) (eq (alist-get 'version metadata) 1))
+                     (user-error "Drawing has no usable palette provenance"))
+                   (my/excali--validate-palette
+                    (alist-get (if (assq 'currentPalette metadata) 'currentPalette 'initialPalette)
+                               metadata))))
+         (target (my/excali--theme-palette))
+         (index (make-hash-table :test #'equal))
+         (projected (make-hash-table :test #'equal))
+         (matches nil) (plans nil) (ambiguous 0) (changed 0)
+         (defaults `((type . "rectangle")
+                     (strokeColor . ,(excali--style-value 'strokeColor))
+                     (backgroundColor . ,(excali--style-value 'backgroundColor))
+                     (fillStyle . ,(excali--style-value 'fillStyle))))
+         (default-plan (my/excali--conversion-style
+                        defaults (my/excali--shape-presets defaults source) target projected))
+         (convert-canvas
+          (my/excali--palette-color-equal-p
+           (alist-get 'viewBackgroundColor (alist-get 'appState excali--doc))
+           (alist-get 'canvas source))))
+    (dolist (element excali--elements)
+      (unless (excali--get element 'isDeleted)
+        (puthash (excali--get element 'id) element index)
+        (puthash (excali--get element 'id) (copy-tree element t) projected)))
+    ;; Recognise everything against the untouched source scene, before changing
+    ;; a parent fill or canvas that determines its label's recognised ink.
+    (dolist (element excali--elements)
+      (unless (excali--get element 'isDeleted)
+        (let ((roles (condition-case nil
+                         (my/excali--element-presets element source index)
+                       (error nil))))
+          (when roles (push (cons element roles) matches)))))
+    ;; Plan shapes first, then text against copies of the converted parents.
+    ;; No live mutation occurs until the entire conversion has been resolved.
+    (let ((excali--doc (copy-tree excali--doc t)))
+      (when convert-canvas
+        (setf (alist-get 'viewBackgroundColor (alist-get 'appState excali--doc))
+              (alist-get 'canvas target)))
+      (dolist (text-pass '(nil t))
+        (dolist (match matches)
+          (let ((element (car match)))
+            (when (eq (equal (excali--get element 'type) "text") text-pass)
+              (let ((plan (condition-case nil
+                              (my/excali--conversion-style element (cdr match) target projected)
+                            (error nil))))
+                (if (null plan)
+                    (cl-incf ambiguous)
+                  (push (cons element (cdr plan)) plans)
+                  (dolist (pair (cdr plan))
+                    (excali--put (gethash (excali--get element 'id) projected)
+                                (car pair) (cdr pair))))))))))
+    (dolist (plan plans)
+      (let ((element (car plan)) (edited nil))
+        (dolist (pair (cdr plan))
+          (unless (my/excali--palette-color-equal-p (excali--get element (car pair)) (cdr pair))
+            (excali--set-element-style element (car pair) (cdr pair))
+            (setq edited t)))
+        (when edited (cl-incf changed))))
+    (when default-plan
+      (dolist (pair (cdr default-plan))
+        (setf (alist-get (car pair) excali--current-style) (cdr pair)))
+      (when my/excali--current-preset
+        (setq my/excali--current-preset
+              (cons (cons 'name (car default-plan))
+                    (copy-tree (alist-get (car default-plan) (alist-get 'presets target)))))))
+    (when convert-canvas
+      (setf (alist-get 'viewBackgroundColor (alist-get 'appState excali--doc))
+            (alist-get 'canvas target)))
+    (setf (alist-get 'currentPalette (alist-get 'homeConfigPalette excali--doc))
+          (copy-tree target t))
+    (set-buffer-modified-p t)
+    (when (> changed 0) (excali--commit))
+    (excali--render)
+    (excali--sync-views)
+    (message "Palette %s: %d elements updated; %d ambiguous/unsupported matches left unchanged"
+             (alist-get 'theme target) changed ambiguous)))
+
 (defun my/excali--shown-preset ()
   "Recognise only explicitly selected elements, or the native drawing defaults.
 This is read-only and never reactivates a creation preset after reopening.
