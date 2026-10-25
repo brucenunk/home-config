@@ -1,8 +1,8 @@
 ;;; my-emacs-excali.el --- Native drawings with theme defaults -*- lexical-binding: t; -*-
 
-;; Drawings store ordinary Excalidraw colours.  The current Emacs theme is used
-;; only when creating a new drawing; opening or switching themes never recolours
-;; an existing scene.  Palette presets are explicit native edits, not live roles.
+;; Drawings store ordinary Excalidraw colours.  The current Emacs theme supplies
+;; new-drawing defaults and explicit presets; opening or switching themes never
+;; recolours an existing scene.  Presets are native edits, not live roles.
 
 (require 'cl-lib)
 (require 'color)
@@ -19,12 +19,9 @@
   "Directory containing theme-builder's Excalidraw palette JSON files."
   :type 'directory :group 'my-excali)
 
-(defvar-local my/excali--palette nil
-  "Palette for explicit styling in this buffer; never follows theme changes.")
-
 (defvar-local my/excali--current-preset nil
-  "Applied creation colours, independent of the palette being browsed.
-This snapshot is cleared by native colour overrides, not palette selection.")
+  "Applied creation colours and preset name, independent of later theme changes.
+This snapshot is cleared by native colour overrides, not theme changes.")
 
 (defconst my/excali--presets '(default neutral accented muted))
 
@@ -57,17 +54,14 @@ This snapshot is cleared by native colour overrides, not palette selection.")
     (my/excali--validate-palette
      (json-parse-buffer :object-type 'alist :null-object :null :false-object :false))))
 
-(defun my/excali-choose-palette (name)
-  "Choose palette NAME for subsequent explicit styling, without recolouring.
-This buffer-local choice is not a document edit.  Reopening starts with the
-initial palette snapshot, if present, rather than the current Emacs theme."
-  (interactive
-   (list (completing-read "Palette: "
-                          (mapcar #'file-name-base
-                                  (directory-files my/excali-palette-directory nil "\\.json\\'"))
-                          nil t)))
-  (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
-  (setq my/excali--palette (my/excali--read-palette name)))
+(defun my/excali--theme-palette ()
+  "Read the current Emacs theme's palette for an explicit styling action."
+  (let* ((theme (car custom-enabled-themes))
+         (name (and theme (symbol-name theme))))
+    (unless (and name (file-readable-p
+                       (expand-file-name (concat name ".json") my/excali-palette-directory)))
+      (user-error "No Excalidraw palette for current Emacs theme: %s" (or name "none")))
+    (my/excali--read-palette name)))
 
 (defun my/excali--rgb (color)
   "Resolve COLOR numerically without display-palette quantization."
@@ -119,7 +113,7 @@ fills, composite the fill over the canvas; patterned fills use the canvas."
       canvas)))
 
 (defun my/excali-use-preset (role)
-  "Apply palette ROLE to selected elements and their bound labels.
+  "Apply current-theme preset ROLE to selected elements and their bound labels.
 Also set native defaults for new elements.  Only colours and fill style are
 changed; geometry, line patterns and unrelated metadata are preserved.
 Sticky notes and their labels are excluded; use their native styling controls.
@@ -128,8 +122,7 @@ This is an ordinary element edit, committed as one native undo step."
    (list (intern (completing-read "Preset: " my/excali--presets nil t))))
   (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
   (unless (memq role my/excali--presets) (user-error "Unknown preset: %s" role))
-  (unless my/excali--palette (call-interactively #'my/excali-choose-palette))
-  (let* ((palette (my/excali--validate-palette my/excali--palette))
+  (let* ((palette (my/excali--theme-palette))
          (preset (alist-get role (alist-get 'presets palette)))
          (index (make-hash-table :test #'equal))
          (targets (make-hash-table :test #'eq))
@@ -154,7 +147,7 @@ This is an ordinary element edit, committed as one native undo step."
     (setf (alist-get 'strokeColor excali--current-style) (alist-get 'stroke preset)
           (alist-get 'backgroundColor excali--current-style) (alist-get 'fill preset)
           (alist-get 'fillStyle excali--current-style) "solid")
-    (setq my/excali--current-preset (copy-tree preset))
+    (setq my/excali--current-preset (cons (cons 'name role) (copy-tree preset)))
     ;; Paint shapes before resolving labels against their actual new background.
     (maphash
      (lambda (element _)
@@ -208,8 +201,9 @@ Only an explicitly active preset affects creation; never restyle existing text."
     (setq my/excali--current-preset nil)))
 
 (defun my/excali--palette-description ()
-  "Describe the currently selected palette without implying live following."
-  (format "Palette: %s" (or (alist-get 'theme my/excali--palette) "choose explicitly")))
+  "Describe the active creation preset, not a role on selected elements."
+  (let ((name (alist-get 'name my/excali--current-preset)))
+    (format "Palette: %s" (if name (capitalize (symbol-name name)) "Custom"))))
 
 (defun my/excali--install-palette-menu ()
   "Extend the native styling transient without replacing its colour pickers."
@@ -219,11 +213,11 @@ Only an explicitly active preset affects creation; never restyle existing text."
      ("d" "Default" (lambda () (interactive) (my/excali-use-preset 'default)))
      ("n" "Neutral" (lambda () (interactive) (my/excali-use-preset 'neutral)))
      ("a" "Accented" (lambda () (interactive) (my/excali-use-preset 'accented)))
-     ("m" "Muted" (lambda () (interactive) (my/excali-use-preset 'muted)))
-     ("p" "Choose palette…" my/excali-choose-palette)])
-  (unless (ignore-errors (transient-get-suffix 'excali-style "P"))
+     ("m" "Muted" (lambda () (interactive) (my/excali-use-preset 'muted)))])
+  (unless (ignore-errors (transient-get-suffix 'excali-style "p"))
     (transient-append-suffix 'excali-style "s"
-      '("P" "Palette…" my/excali-palette :transient transient--do-recurse))))
+      '("p" my/excali-palette :description my/excali--palette-description
+        :transient transient--do-recurse))))
 
 (defun my/excali--check-compatible ()
   "Require actual module and Canvas capabilities, not just a package version."
@@ -283,24 +277,18 @@ are not part of upstream's element undo history."
 (defun my/excali--after-open ()
   "Initialize genuinely new drawings, never recolouring an opened/imported scene."
   (my/excali--check-compatible)
-  (condition-case nil
-      (let ((initial (alist-get 'initialPalette (alist-get 'homeConfigPalette excali--doc))))
-        (when initial
-          (setq my/excali--palette (copy-tree (my/excali--validate-palette initial) t))))
-    (error (message "Ignoring unsupported initial Excalidraw palette metadata")))
   (when my/excali--creating
     (setq default-directory (my/excali--directory))
     (let* ((theme (car custom-enabled-themes))
            (name (and theme (symbol-name theme)))
            (file (and name (expand-file-name (concat name ".json") my/excali-palette-directory))))
       (if (and file (file-readable-p file))
-          (progn
-            (setq my/excali--palette (my/excali--read-palette name))
+          (let ((palette (my/excali--read-palette name)))
             (my/excali-use-preset 'default)
-            (my/excali-set-canvas-background (alist-get 'canvas my/excali--palette))
+            (my/excali-set-canvas-background (alist-get 'canvas palette))
             (setf (alist-get 'homeConfigPalette excali--doc)
                   `((version . 1) (initialTheme . ,name)
-                    (initialPalette . ,(copy-tree my/excali--palette t)))))
+                    (initialPalette . ,(copy-tree palette t)))))
         ;; Non-Doric/unavailable palettes retain the small original integration.
         (setf (alist-get 'strokeColor excali--current-style)
               (my/excali--hex (face-foreground 'default nil t)))

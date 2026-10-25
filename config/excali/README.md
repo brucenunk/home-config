@@ -8,7 +8,7 @@ All 26 Doric themes have a palette; the JSON is data, not executable code.
 
 ## Editor use
 
-In excali-mode's native styling transient, choose **P — Palette…**, then:
+In excali-mode's native styling transient, choose **p — Palette: …**, then:
 
 | Preset | Intended use | Doric source |
 | --- | --- | --- |
@@ -34,12 +34,19 @@ white is used for contrast. Transparent containers and arrow labels use the
 canvas, not the preset's box fill. Explicit native colour/fill overrides end
 the active creation preset and continue to work normally.
 
-The native colour pickers are unchanged. `M-x my/excali-use-preset` and
-`M-x my/excali-choose-palette` provide the same actions outside the transient.
-Choosing a palette changes available presets only, not colours or defaults.
-An applied creation preset keeps its own colour snapshot until another preset
-or a native colour/fill override is applied. Browsing palettes does not change
-that snapshot or its text-contrast behaviour. This active creation preset is
+The native colour pickers are unchanged. `M-x my/excali-use-preset` provides the
+same preset actions outside the transient. Every explicit application reads
+the **current Emacs theme's** palette; there is no separate Doric-theme chooser.
+To style an existing element, select it, open the styling transient with
+`M-x excali-style`, press `p`, then choose a preset. Its bound label is included;
+unselected elements and the canvas remain unchanged.
+
+The main menu shows the active creation preset, e.g. **Palette: Neutral**, or
+**Palette: Custom** after a native colour/fill override. This describes defaults
+for new elements, not a persisted role on the selected element. An applied
+creation preset keeps its own colour snapshot until another preset or native
+override is applied; changing the Emacs theme does not change that snapshot,
+its text-contrast behaviour, or existing elements. This active creation preset is
 buffer-local, not saved role metadata: native current-item defaults persist,
 but after reopening, reapply a preset to enable its contrast-aware text creation.
 Canvas changes remain a separate explicit `my/excali-set-canvas-background`
@@ -49,9 +56,10 @@ New drawings start with the active theme's palette canvas and Default style.
 If that theme has no installed palette, they retain the original one-time
 initialization from the theme's default background/foreground, without palette
 provenance. Existing native/PNG/SVG scenes retain their saved colours and
-defaults. Themes and auto-dark never recolour a drawing or switch its palette.
-Palette choices are buffer-local; reopening uses the initial snapshot if
-present, otherwise presets require an explicit palette choice.
+defaults. Themes and auto-dark never recolour a drawing. Initial palette metadata
+is provenance only: it does not override the current theme for later explicit
+preset applications. If the current theme has no installed palette, explicit
+preset application reports an error without changing the drawing.
 
 ## Agent use and JSON
 
@@ -84,7 +92,7 @@ New editor-created drawings record this top-level provenance:
 `initialPalette` contains the complete palette JSON object, not the illustrative
 ellipsis above. Agents creating new diagrams should write the same record.
 It is an immutable creation snapshot, not a current-role declaration; later
-manual edits and palette choices do not update it. Preserve unrelated fields,
+manual edits and preset applications do not update it. Preserve unrelated fields,
 including element `customData`. No per-element roles are recorded.
 
 The pinned excali-mode preserves this metadata and native current-item defaults
