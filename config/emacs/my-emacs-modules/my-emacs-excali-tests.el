@@ -588,11 +588,17 @@
   (should (transient-get-suffix 'excali-style "p"))
   (my/excali-test--styled-scene
    (let ((description (plist-get (cdr (transient-get-suffix 'excali-style "p")) :description)))
-     (should (equal (funcall description) "Palette: Custom"))
-     (my/excali-use-preset 'neutral)
-     (should (equal (funcall description) "Palette: Neutral"))
+     (should (equal (funcall description) (format "%-14s Custom" "Palette:")))
+     (dolist (role my/excali--presets)
+       (my/excali-use-preset role)
+       (let ((caption (funcall description))
+             (native (excali--style-description 'strokeColor)))
+         (should (equal caption (format "%-14s %s" "Palette:" (capitalize (symbol-name role)))))
+         ;; Match the native value's column and face, not just its text.
+         (should (= (text-property-any 0 (length caption) 'face 'transient-value caption)
+                    (text-property-any 0 (length native) 'face 'transient-value native)))))
      (excali-set-style 'strokeColor "#ff0000")
-     (should (equal (funcall description) "Palette: Custom")))))
+     (should (equal (funcall description) (format "%-14s Custom" "Palette:"))))))
 
 (ert-deftest my/excali-generated-palettes-match-doric-face-pairs ()
   (require 'doric-themes)

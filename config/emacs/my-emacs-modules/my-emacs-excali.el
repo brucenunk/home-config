@@ -203,7 +203,9 @@ Only an explicitly active preset affects creation; never restyle existing text."
 (defun my/excali--palette-description ()
   "Describe the active creation preset, not a role on selected elements."
   (let ((name (alist-get 'name my/excali--current-preset)))
-    (format "Palette: %s" (if name (capitalize (symbol-name name)) "Custom"))))
+    (concat (format "%-14s " "Palette:")
+            (propertize (if name (capitalize (symbol-name name)) "Custom")
+                        'face 'transient-value))))
 
 (defun my/excali--install-palette-menu ()
   "Extend the native styling transient without replacing its colour pickers."
