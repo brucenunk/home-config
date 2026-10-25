@@ -1,0 +1,197 @@
+;;; my-emacs-mode-selection-tests.el --- Language policy checks -*- lexical-binding: t; -*-
+
+(require 'ert)
+(require 'cl-lib)
+(require 'package)
+;; Batch Emacs does not perform normal startup package activation.  Test the
+;; Nix package autoloads as well as core defaults, not an artificial -Q policy.
+(package-initialize)
+(require 'use-package)
+
+(defconst my/mode-selection-test--init-file
+  (or (getenv "MY_EMACS_INIT_FILE")
+      (expand-file-name "../init.el" (file-name-directory load-file-name))))
+
+;; Evaluate the real language configuration without starting the rest of init
+;; (UI, agent processes, server, or user custom-file).  No copy of the policy.
+(with-temp-buffer
+  (insert-file-contents my/mode-selection-test--init-file)
+  (goto-char (point-min))
+  (search-forward ";; Languages & LSP")
+  (forward-line 1)
+  (let ((start (point)))
+    (search-forward ";; Remote Access & Shell")
+    (narrow-to-region start (line-beginning-position))
+    (goto-char (point-min))
+    (condition-case nil
+        (while t (eval (read (current-buffer)) t))
+      (end-of-file nil))))
+
+(require 'my-emacs-excali)
+(require 'eglot)
+
+(defun my/mode-selection-test--select (name contents)
+  "Select the configured mode for NAME containing CONTENTS without any LSP."
+  (with-temp-buffer
+    (insert contents)
+    (setq buffer-file-name (expand-file-name name temporary-file-directory))
+    (set-buffer-modified-p nil)
+    (cl-letf (((symbol-function 'eglot-ensure) #'ignore)
+              ((symbol-function 'treesit-install-language-grammar)
+               (lambda (&rest _) (ert-fail "Unexpected parser installation")))
+              ((symbol-function 'excali-open)
+               (lambda (&rest _) (ert-fail "Implicit graphical drawing open"))))
+      (set-auto-mode))
+    (should (equal (buffer-string) contents))
+    (should-not (buffer-modified-p))
+    (when (string-suffix-p "-ts-mode" (symbol-name major-mode))
+      (should (treesit-parser-list)))
+    major-mode))
+
+(ert-deftest my/mode-selection-curated-remaps ()
+  (should (equal treesit-enabled-modes
+                 '(bash-ts-mode json-ts-mode python-ts-mode)))
+  (dolist (pair '((sh-mode . bash-ts-mode)
+                  (js-json-mode . json-ts-mode)
+                  (python-mode . python-ts-mode)))
+    (should (eq (major-mode-remap (car pair)) (cdr pair)))))
+
+(ert-deftest my/mode-selection-filenames ()
+  ;; These invoke actual major modes with the declaratively installed parsers.
+  (dolist (case '(("scene.excalidraw" json-ts-mode "{\"type\":\"excalidraw\",\"elements\":[]}")
+                  ("data.json" json-ts-mode "{\"key\": true}\n")
+                  ("config.yaml" yaml-mode "key: value\n")
+                  ("config.yml" yaml-mode "key: value\n")
+                  ("script.py" python-ts-mode "print(1)\n")
+                  ("script.sh" bash-ts-mode "echo ok\n")
+                  ("default.nix" nix-ts-mode "{}\n")
+                  ("main.go" go-ts-mode "package main\n")
+                  ("go.mod" go-mod-ts-mode "module example.test/check\n")
+                  ("go.work" go-work-ts-mode "go 1.24\n")
+                  ("Dockerfile" dockerfile-ts-mode "FROM scratch\n")
+                  ("main.jsonnet" jsonnet-mode "{}\n")
+                  ("main.libsonnet" jsonnet-mode "{}\n")
+                  ("main.rego" rego-mode "package example\n")
+                  ("main.tf" terraform-mode "# config\n")
+                  ("BUILD.bazel" bazel-build-mode "# build\n")
+                  ("README.md" markdown-mode "# Heading\n")
+                  ("test.el" emacs-lisp-mode ";; Lisp\n")
+                  ("style.css" css-mode "body {}\n")
+                  ("script.js" js-mode "const x = 1;\n")
+                  ("scene.excalidsl" excali-dsl-mode "")))
+    (ert-info ((car case))
+      (should (eq (my/mode-selection-test--select (nth 0 case) (nth 2 case))
+                  (nth 1 case))))))
+
+(ert-deftest my/mode-selection-yaml-stable-after-library-load ()
+  ;; Even loading the built-in alternative must not displace the chosen mode.
+  (require 'yaml-ts-mode)
+  (should (eq (major-mode-remap 'yaml-mode) 'yaml-mode))
+  (dolist (name '("config.yaml" "config.yml"))
+    (should (eq (my/mode-selection-test--select name "key: value\n")
+                'yaml-mode))))
+
+(ert-deftest my/mode-selection-yaml-preserves-indentation ()
+  (require 'yaml-mode)
+  (with-temp-buffer
+    (insert "root:\nchild: value\n")
+    (setq buffer-file-name (expand-file-name "config.yaml" temporary-file-directory))
+    (cl-letf (((symbol-function 'eglot-ensure) #'ignore))
+      (set-auto-mode))
+    (should (eq indent-line-function #'yaml-indent-line))
+    (goto-char (point-min))
+    (forward-line 1)
+    (indent-for-tab-command)
+    (should (= (current-indentation) yaml-indent-offset))))
+
+(ert-deftest my/mode-selection-eglot-hooks-and-availability ()
+  (dolist (pair '((bash-ts-mode . "bash-language-server")
+                  (go-ts-mode . "gopls")
+                  (jsonnet-mode . "jsonnet-language-server")
+                  (nix-ts-mode . "nixd")
+                  (python-ts-mode . "pylsp")
+                  (rego-mode . "regal")
+                  (terraform-mode . "terraform-ls")
+                  (yaml-mode . "yaml-language-server")))
+    (let* ((mode (car pair))
+           (hook (intern (concat (symbol-name mode) "-hook"))))
+      (should (member #'my/eglot-ensure-if-server-available (symbol-value hook)))
+      (with-temp-buffer
+        (setq major-mode mode)
+        (let ((available nil) (starts 0) lookups)
+          (cl-letf (((symbol-function 'executable-find)
+                     (lambda (executable &optional remote)
+                       (push (list executable remote) lookups)
+                       (and available "/test/server")))
+                    ((symbol-function 'eglot-ensure)
+                     (lambda () (cl-incf starts))))
+            (run-hooks hook)
+            (should (= starts 0))
+            (setq available t)
+            (run-hooks hook)
+            (should (= starts 1))
+            (should (equal lookups (list (list (cdr pair) t)
+                                        (list (cdr pair) t)))))))))
+  (dolist (mode '(python-mode yaml-ts-mode json-ts-mode))
+    (should-not (assq mode my/eglot-mode-server-executables))
+    (let ((hook (intern (concat (symbol-name mode) "-hook"))))
+      (should-not (and (boundp hook)
+                      (member #'my/eglot-ensure-if-server-available
+                              (symbol-value hook)))))))
+
+(ert-deftest my/mode-selection-eglot-starts-on-selected-modes ()
+  ;; Exercise real mode hooks, including inherited hooks, not just their lists.
+  (dolist (case '(("config.yaml" yaml-mode "yaml-language-server")
+                  ("config.yml" yaml-mode "yaml-language-server")
+                  ("script.py" python-ts-mode "pylsp")
+                  ("script.sh" bash-ts-mode "bash-language-server")
+                  ("data.json" json-ts-mode nil)
+                  ("scene.excalidraw" json-ts-mode nil)))
+    (with-temp-buffer
+      (setq buffer-file-name (expand-file-name (car case) temporary-file-directory))
+      (let ((starts 0) lookups)
+        (cl-letf (((symbol-function 'executable-find)
+                   (lambda (executable &optional _remote)
+                     (push executable lookups)
+                     "/test/server"))
+                  ((symbol-function 'eglot-ensure)
+                   (lambda () (cl-incf starts))))
+          (set-auto-mode))
+        (should (eq major-mode (nth 1 case)))
+        (should (= starts (if (nth 2 case) 1 0)))
+        (should (equal lookups (and (nth 2 case) (list (nth 2 case)))))))))
+
+(ert-deftest my/mode-selection-eglot-server-settings ()
+  ;; :mode defers YAML configuration until its implementation is loaded.
+  (require 'yaml-mode)
+  (should (equal (alist-get 'yaml-mode eglot-server-programs)
+                 '("yaml-language-server" "--stdio")))
+  (should (equal (alist-get 'nix-ts-mode eglot-server-programs)
+                 '("nixd" :initializationOptions
+                   (:formatting (:command ["nixfmt"])))))
+  (should (equal (alist-get 'jsonnet-mode eglot-server-programs)
+                 '("jsonnet-language-server" :initializationOptions
+                   (:enable_lint_diagnostics t
+                    :formatting (:StringStyle "double")
+                    :show_docstring_in_completion t))))
+  (should (equal (alist-get 'terraform-mode eglot-server-programs)
+                 '("terraform-ls" "serve")))
+  (should terraform-format-on-save)
+  (should (equal (plist-get (default-value 'eglot-workspace-configuration) :pylsp)
+                 '(:plugins (:ruff (:enabled t :formatEnabled t)))))
+  (should (equal (plist-get (default-value 'eglot-workspace-configuration) :formatting)
+                 '(:StringStyle "double"))))
+
+(ert-deftest my/mode-selection-format-only-managed-buffers ()
+  (with-temp-buffer
+    (cl-letf (((symbol-function 'eglot-managed-p) (lambda () nil)))
+      (my/eglot-before-save-hook)
+      (should-not (memq #'eglot-format-buffer before-save-hook)))
+    (cl-letf (((symbol-function 'eglot-managed-p) (lambda () t)))
+      (run-hooks 'eglot-managed-mode-hook)
+      (should (local-variable-p 'before-save-hook))
+      (should (memq #'eglot-format-buffer before-save-hook))))
+  (should-not (memq #'eglot-format-buffer (default-value 'before-save-hook))))
+
+(provide 'my-emacs-mode-selection-tests)
+;;; my-emacs-mode-selection-tests.el ends here

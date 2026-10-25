@@ -71,7 +71,17 @@
 ;; flake-modules/features/emacs.nix. Keep that curated grammar list aligned with the
 ;; tree-sitter-backed modes and language tooling configured here.
 (use-package treesit
-  :ensure nil)
+  :ensure nil
+  :custom
+  ;; Use the Custom setter: it installs the corresponding mode remaps.
+  ;; Go and Nix retain their explicit associations below.  Markdown is separate.
+  (treesit-enabled-modes '(bash-ts-mode json-ts-mode python-ts-mode)))
+
+;; Raw drawing text is JSON; graphical editing remains explicit via
+;; `my/excali-open'.  Never associate drawings with the graphical editor.
+(use-package json-ts-mode
+  :ensure nil
+  :mode "\\.excalidraw\\'")
 
 (use-package eglot
   :ensure nil
@@ -84,7 +94,6 @@
       (go-ts-mode . "gopls")
       (jsonnet-mode . "jsonnet-language-server")
       (nix-ts-mode . "nixd")
-      (python-mode . "pylsp")
       (python-ts-mode . "pylsp")
       (rego-mode . "regal")
       (terraform-mode . "terraform-ls")
@@ -101,7 +110,7 @@
         (eglot-ensure))))
   :hook
   (eglot-managed-mode . my/eglot-before-save-hook)
-  ((bash-ts-mode go-ts-mode jsonnet-mode nix-ts-mode python-mode python-ts-mode
+  ((bash-ts-mode go-ts-mode jsonnet-mode nix-ts-mode python-ts-mode
     rego-mode terraform-mode yaml-mode) . my/eglot-ensure-if-server-available)
   :custom
   (eglot-events-buffer-config '(:size 0) "Disable the events buffer")
@@ -157,6 +166,9 @@
 
 (use-package yaml-mode
   :ensure nil
+  ;; Keep the external mode's YAML-aware indentation; the pinned built-in
+  ;; yaml-ts-mode has no indentation rules.  Make selection explicit.
+  :mode "\\.ya?ml\\'"
   :after eglot
   :config
   (unless (assq 'yaml-mode eglot-server-programs)
@@ -167,9 +179,7 @@
   :ensure nil
   :config
   (add-to-list 'auto-mode-alist
-	       '("\\.go\\'" . go-ts-mode))
-  (setq major-mode-remap-alist
-	'((sh-mode . bash-ts-mode))))
+               '("\\.go\\'" . go-ts-mode)))
 
 ;; ============================================================================
 ;; Remote Access & Shell

@@ -217,6 +217,19 @@ in
     {
       packages.emacs-master = emacsMaster;
       checks = {
+        emacs-mode-selection =
+          let
+            emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;
+          in
+          pkgs.runCommand "emacs-mode-selection-check" { nativeBuildInputs = [ emacs ]; } ''
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME"
+            export MY_EMACS_INIT_FILE=${../../config/emacs/init.el}
+            # Keep Nix site-start for grammar paths; batch skips the user init.
+            emacs --batch -q -L ${../../config/emacs/my-emacs-modules} \
+              --load my-emacs-mode-selection-tests --funcall ert-run-tests-batch-and-exit
+            touch "$out"
+          '';
         emacs-excali =
           let
             emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;
