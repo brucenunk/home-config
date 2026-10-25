@@ -1,0 +1,13 @@
+/* Generated from the installed Emacs doric-themes palette: doric-earth. */
+/* Do not edit directly; regenerate with build-doric-themes.py. */
+@define-color background #f0eddf;
+@define-color surface #dfdfce;
+@define-color surface_alt #d1ceb6;
+@define-color text #30232e;
+@define-color muted #504033;
+@define-color border #a29986;
+@define-color accent #74321f;
+@define-color shadow #6c6b64;
+@define-color success #206700;
+@define-color warning #705200;
+@define-color error #a03000;

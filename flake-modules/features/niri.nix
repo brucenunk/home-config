@@ -5,20 +5,20 @@
     { pkgs, lib, ... }:
 
     let
-      # Downloaded from Adobe Stock's Free collection under its Standard License.
+      # Licensed Adobe Stock downloads, provisioned separately on each machine.
       # Keep the standalone asset out of Git because that license does not permit
       # redistributing the original file.
       lightWallpaper = pkgs.requireFile {
-        name = "AdobeStock_404848752.jpeg";
-        sha256 = "sha256-zTKK0diw63b0E3nhnlrC6pW0FLAYu05G6cF6C1rWHgY=";
+        name = "AdobeStock_345609645.jpeg";
+        sha256 = "sha256-3HpeFfqXCK9jVW3fpOWpQWiwrTOFfRR62C9tYfXmH7M=";
         message = ''
           The light Niri wallpaper must be provisioned from its licensed download.
 
-          Source (Adobe Stock asset 404848752):
-          https://stock.adobe.com/uk/images/winter-landscape-of-a-snow-flocked-forest-jackson-hole-lake-fort-custer-state-park-michigan-usa/404848752
+          Source (Adobe Stock asset 345609645):
+          https://stock.adobe.com/uk/images/beautiful-fluffuy-reeds-bouquet-on-table-minimalist-concept-trendy-colors-boho-style/345609645
 
           Add the downloaded file to the Nix store with:
-            nix-store --add-fixed sha256 /path/to/AdobeStock_404848752.jpeg
+            nix-store --add-fixed sha256 /path/to/AdobeStock_345609645.jpeg
         '';
       };
       darkWallpaper = pkgs.requireFile {

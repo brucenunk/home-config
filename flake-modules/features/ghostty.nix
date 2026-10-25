@@ -106,7 +106,7 @@ in
         assert lib.hasSuffix "\n\nfont-size = 12" ghosttyConfig;
         assert
           ghosttyThemeNames == [
-            "ghostty/themes/doric-marble"
+            "ghostty/themes/doric-earth"
             "ghostty/themes/doric-obsidian"
           ];
         assert

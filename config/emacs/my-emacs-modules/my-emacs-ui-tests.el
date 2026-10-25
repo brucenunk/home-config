@@ -34,6 +34,10 @@
     (shell-maker-start-v2 :config (agent-shell--make-shell-maker-config)
                           :buffer-name (buffer-name) :no-focus t)))
 
+(ert-deftest my/ui-auto-dark-default-theme-pair ()
+  (should (equal (default-value 'auto-dark-themes)
+                 '((doric-obsidian) (doric-earth)))))
+
 (ert-deftest my/ui-auto-dark-doric-candidates-and-defaults ()
   (let ((auto-dark-themes '((doric-plum) (doric-earth)))
         (doric-themes-light-themes '(doric-marble doric-earth doric-almond))
@@ -449,7 +453,7 @@
                           agent-shell-viewport-edit-mode))
             (with-temp-buffer
               (funcall mode)
-              (dolist (theme '(doric-marble doric-obsidian))
+              (dolist (theme '(doric-earth doric-obsidian))
                 (mapc #'disable-theme custom-enabled-themes)
                 (load-theme theme t)
                 (set-face-attribute 'default nil :family "Test Fixed")
@@ -701,7 +705,7 @@
 
 (ert-deftest my/ui-modeline-markers-inherit-theme-faces-without-decoration ()
   (unwind-protect
-      (dolist (theme '(doric-marble doric-obsidian))
+      (dolist (theme '(doric-earth doric-obsidian))
         (mapc #'disable-theme custom-enabled-themes)
         (load-theme theme t)
         (with-temp-buffer

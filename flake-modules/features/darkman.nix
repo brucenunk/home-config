@@ -39,7 +39,7 @@
           fi
 
           case "$mode" in
-            light) theme="doric-marble" ;;
+            light) theme="doric-earth" ;;
             dark) theme="doric-obsidian" ;;
             *)
               printf 'usage: doric-desktop-theme light|dark|--startup\n' >&2

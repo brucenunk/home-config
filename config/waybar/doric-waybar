@@ -10,7 +10,7 @@ if command -v darkman >/dev/null 2>&1; then
 fi
 
 case "$mode" in
-  light) theme=doric-marble ;;
+  light) theme=doric-earth ;;
   *) theme=doric-obsidian ;;
 esac
 

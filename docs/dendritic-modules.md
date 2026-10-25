@@ -96,7 +96,7 @@ and platform boundaries.
 
 ## Current composition boundaries
 
-- `ghostty` deploys the shared config and the selected `doric-marble` and
+- `ghostty` deploys the shared config and the selected `doric-earth` and
   `doric-obsidian` theme pair. Consumers may select
   `brucenunk.homeManager.ghostty.package`, append `extraConfig`, and control
   `canonicalLinuxService.enable`. A consumer that disables the canonical
@@ -119,7 +119,7 @@ and platform boundaries.
   local record for native Home Manager maintenance on Linux and Darwin.
   Its shared option declarations and Pi's model projection are exported through
   `flake.lib`; combining machine data does not evaluate other complete hosts.
-- `doric-waybar-themes` deploys only the generated `doric-marble` and
+- `doric-waybar-themes` deploys only the generated `doric-earth` and
   `doric-obsidian` Waybar theme pair. Consumers with a different bar layout or
   launcher can import it without the `waybar` module's Wampa policy. The full
   `waybar` module imports these assets itself.

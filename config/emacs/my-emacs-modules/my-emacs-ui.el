@@ -84,7 +84,7 @@ error.  Evaluate the theme's package source once and retry to register it."
                (load-theme theme :no-confirm :no-enable))
            (signal (car err) (cdr err)))))))
   :config
-  (mapc #'my/doric-theme-preload '(doric-obsidian doric-marble)))
+  (mapc #'my/doric-theme-preload '(doric-obsidian doric-earth)))
 
 ;; https://github.com/LionyxML/auto-dark-emacs
 (use-package auto-dark
@@ -93,7 +93,7 @@ error.  Evaluate the theme's package source once and retry to register it."
   ;; Doric is already demanded above.  An :after handler would rerun this
   ;; configuration when new theme definitions reload the Doric library.
   :custom
-  (auto-dark-themes '((doric-obsidian) (doric-marble)))
+  (auto-dark-themes '((doric-obsidian) (doric-earth)))
   :config
   (defun my/auto-dark--read-doric-theme (prompt themes current)
     "Read an available Doric theme from THEMES with PROMPT and CURRENT default."

@@ -86,7 +86,7 @@ Generate the two desktop themes used by this repository for all applications:
 
 ```bash
 .agents/skills/theme-builder/scripts/build-doric-themes.py \
-  --theme doric-marble \
+  --theme doric-earth \
   --theme doric-obsidian \
   --target all
 ```
@@ -141,7 +141,7 @@ tree, begin with clean output trees, run:
 ```bash
 for target in fuzzel ghostty niri pi waybar; do
   .agents/skills/theme-builder/scripts/build-doric-themes.py \
-    --theme doric-marble \
+    --theme doric-earth \
     --theme doric-obsidian \
     --target "$target"
 done
@@ -155,7 +155,7 @@ for target in fuzzel ghostty niri pi waybar; do
     pi) suffix=.json ;;
     waybar) suffix=.css ;;
   esac
-  expected=$(printf '%s\n' "doric-marble$suffix" "doric-obsidian$suffix")
+  expected=$(printf '%s\n' "doric-earth$suffix" "doric-obsidian$suffix")
   actual=$(fd --max-depth 1 --type f . "$directory" -x basename | sort)
   test "$actual" = "$expected"
 done
