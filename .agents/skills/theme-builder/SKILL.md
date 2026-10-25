@@ -1,6 +1,6 @@
 ---
 name: theme-builder
-description: "Generate and verify the public Doric theme assets for Fuzzel, Ghostty, Niri, Pi, and Waybar. Use when adding, refreshing, or checking application themes derived from Doric Emacs palettes."
+description: "Generate and verify the public Doric theme assets for Excalidraw, Fuzzel, Ghostty, Niri, Pi, and Waybar. Use when adding, refreshing, or checking application themes derived from Doric Emacs palettes."
 ---
 
 # Theme Builder
@@ -14,13 +14,14 @@ Its supported targets and output trees are:
 
 | Target | Output tree |
 | --- | --- |
+| `excali` | `config/excali/palettes/` |
 | `fuzzel` | `config/fuzzel/themes/` |
 | `ghostty` | `config/ghostty/themes/` |
 | `niri` | `config/niri/themes/` |
 | `pi` | `config/pi/themes/` |
 | `waybar` | `config/waybar/themes/` |
 
-`--target all` generates all five targets. The legacy `--target both` alias
+`--target all` generates all six targets. The legacy `--target both` alias
 generates Ghostty and Pi. `--theme doric-NAME` is required and repeatable; the
 generator only writes the explicitly requested themes and never prunes files.
 
@@ -64,7 +65,7 @@ The available Doric themes are:
 
    ```bash
    git status --short -- \
-     config/fuzzel/themes config/ghostty/themes \
+     config/excali/palettes config/fuzzel/themes config/ghostty/themes \
      config/niri/themes config/pi/themes config/waybar/themes
    ```
 
@@ -81,7 +82,7 @@ palette or generator change.
 
 ## Generate
 
-Generate the two themes used by this repository for all applications:
+Generate the two desktop themes used by this repository for all applications:
 
 ```bash
 .agents/skills/theme-builder/scripts/build-doric-themes.py \
@@ -101,6 +102,23 @@ intentionally narrower:
 The generator emits each target's canonical text formatting. Do not run a
 separate formatter over generated INI, Ghostty, TOML, KDL, JSON, or CSS files.
 
+Excalidraw ships all 26 Doric palettes, so agents can read them without a live
+Emacs. Regenerate that target independently for the complete collection:
+
+```bash
+.agents/skills/theme-builder/scripts/build-doric-themes.py --target excali \
+  $(emacs --batch -Q --eval \
+    '(progn (require (quote package)) (package-initialize)
+       (require (quote doric-themes))
+       (dolist (theme doric-themes-collection)
+         (princ (format "--theme %s " theme))))')
+```
+
+The Default/Neutral/Accented/Muted presets map to Doric's default, highlight,
+region and shadow faces. See `config/excali/README.md` for native property
+mapping, initial provenance, and browser-export limitations. Keep generated
+colours derived from these sources rather than tuning them to a hand-picked demo.
+
 ## Verify
 
 Check the generator itself and enumerate its command-line targets:
@@ -117,7 +135,7 @@ ruff format --check .agents/skills/theme-builder/scripts/build-doric-themes.py
 .agents/skills/theme-builder/scripts/build-doric-themes.py --help
 ```
 
-To prove every supported output independently reproduces the tracked theme
+To prove the five desktop outputs independently reproduce the tracked theme
 tree, begin with clean output trees, run:
 
 ```bash
@@ -155,9 +173,12 @@ git diff -- \
   config/niri/themes config/pi/themes config/waybar/themes
 ```
 
-Passing the exact file-list check proves that no stale themes remain. An empty
-scoped status additionally proves byte-for-byte reproduction of the retained
-themes. Otherwise review and explain every changed, removed, or newly generated
+Passing the exact desktop file-list check proves that no stale themes remain.
+An empty scoped status additionally proves byte-for-byte reproduction of the
+retained themes. For Excalidraw, regenerate all themes, verify exactly 26 JSON
+files, and inspect status/diff under `config/excali/palettes`. The `emacs-excali`
+check validates every palette's schema and compares its colours with actual
+Doric faces. Review and explain every changed, removed, or newly generated
 file before keeping it. Remove obsolete generated files explicitly when the
 repository's theme selection changes. After an approved generated change, run
 the repository-prescribed public boundary and Home Manager checks; do not apply

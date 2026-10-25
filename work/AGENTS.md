@@ -11,6 +11,7 @@ Repositories under `~/work` use `~/work/{owner}/{repo}/{worktree}`. Preserve the
 - **Web research**: Use the custom `web_search` and `web_fetch` tools for public web searches and retrieval rather than shell HTTP clients. For GitHub lookups and URLs (including raw content and API URLs), use `gh` or `gh api` instead. Never use `curl`, `wget`, or another direct HTTP client for GitHub, including as a fallback when a web tool fails or is unavailable. If `gh` cannot access the required content, report the limitation rather than bypassing it.
 - **Structured data**: Prefer `jq` for JSON and `yq` for YAML or TOML rather than ad hoc text parsing.
 - **GNU text tools**: GNU `sed` and `awk` are installed via Nix and available on `$PATH`.
+- **Excalidraw styling**: Before creating or restyling `.excalidraw` diagrams, read `${XDG_CONFIG_HOME:-~/.config}/excali/README.md` and the selected theme's palette under `excali/palettes/`. If they are unavailable, ask for the palette rather than inventing theme colours. Preserve initial palette provenance and unrelated metadata.
 
 For Emacs debugging, live evaluation, UI inspection, or a wedged `emacsclient`, read `~/work/EMACS-SERVER.md` before acting.
 

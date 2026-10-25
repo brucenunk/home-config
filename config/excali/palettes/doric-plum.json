@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "theme": "doric-plum",
+  "canvas": "#221832",
+  "presets": {
+    "default": {
+      "stroke": "#e2d7e7",
+      "fill": "transparent",
+      "text": "#e2d7e7"
+    },
+    "neutral": {
+      "stroke": "#e2d7e7",
+      "fill": "#501e3e",
+      "text": "#e2d7e7"
+    },
+    "accented": {
+      "stroke": "#cea6d0",
+      "fill": "#5e4170",
+      "text": "#cea6d0"
+    },
+    "muted": {
+      "stroke": "#a694b1",
+      "fill": "transparent",
+      "text": "#a694b1"
+    }
+  }
+}

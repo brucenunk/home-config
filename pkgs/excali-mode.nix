@@ -38,6 +38,9 @@ pkgs.stdenv.mkDerivation {
     substituteInPlace test/excali-board-reading-test.el \
       --replace-fail '"/tmp/excali-reading-verified.png"' \
       '(expand-file-name "excali-reading-verified.png" temporary-file-directory)'
+    # Media-job tests need a slow child process; /bin/sleep is absent on NixOS.
+    substituteInPlace test/excali-board-media-test.el \
+      --replace-fail '"/bin/sleep"' '"${pkgs.coreutils}/bin/sleep"'
   '';
   enableParallelBuilding = true;
   doCheck = true;

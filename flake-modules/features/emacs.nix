@@ -168,6 +168,7 @@ let
             { inherit pkgs; };
         xdg.configFile."emacs/tramp-rpc-managed-servers.json".text = builtins.toJSON managedServers;
         xdg.configFile."mermaid/themes".source = ../../config/mermaid/themes;
+        xdg.configFile."excali".source = ../../config/excali;
       };
     };
 in
@@ -223,6 +224,8 @@ in
           pkgs.runCommand "emacs-excali-check" { nativeBuildInputs = [ emacs ]; } ''
             export HOME="$TMPDIR/home"
             mkdir -p "$HOME"
+            mkdir -p "$HOME/.config"
+            ln -s ${../../config/excali} "$HOME/.config/excali"
             emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
               --load my-emacs-excali-tests --funcall ert-run-tests-batch-and-exit
             touch "$out"

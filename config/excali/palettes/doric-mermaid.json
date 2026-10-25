@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "theme": "doric-mermaid",
+  "canvas": "#2a2f48",
+  "presets": {
+    "default": {
+      "stroke": "#dde0f8",
+      "fill": "transparent",
+      "text": "#dde0f8"
+    },
+    "neutral": {
+      "stroke": "#dde0f8",
+      "fill": "#573f5d",
+      "text": "#dde0f8"
+    },
+    "accented": {
+      "stroke": "#c4abfe",
+      "fill": "#424381",
+      "text": "#c4abfe"
+    },
+    "muted": {
+      "stroke": "#aea7c3",
+      "fill": "transparent",
+      "text": "#aea7c3"
+    }
+  }
+}

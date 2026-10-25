@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "theme": "doric-copper",
+  "canvas": "#44312e",
+  "presets": {
+    "default": {
+      "stroke": "#e7d0bf",
+      "fill": "transparent",
+      "text": "#e7d0bf"
+    },
+    "neutral": {
+      "stroke": "#e7d0bf",
+      "fill": "#634047",
+      "text": "#e7d0bf"
+    },
+    "accented": {
+      "stroke": "#e2a077",
+      "fill": "#7e462c",
+      "text": "#e2a077"
+    },
+    "muted": {
+      "stroke": "#9aa3af",
+      "fill": "transparent",
+      "text": "#9aa3af"
+    }
+  }
+}

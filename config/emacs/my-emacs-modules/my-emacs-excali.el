@@ -2,16 +2,228 @@
 
 ;; Drawings store ordinary Excalidraw colours.  The current Emacs theme is used
 ;; only when creating a new drawing; opening or switching themes never recolours
-;; an existing scene.  Automatic theme following and semantic roles are deferred.
+;; an existing scene.  Palette presets are explicit native edits, not live roles.
 
 (require 'cl-lib)
 (require 'color)
+(require 'json)
 (require 'use-package)
 
 (defgroup my-excali nil "Personal Excalidraw integration." :group 'multimedia)
 (defcustom my/excali-directory (expand-file-name "~/work/docs/diagrams/")
   "Default directory for drawing entry points; other locations remain allowed."
   :type 'directory :group 'my-excali)
+
+(defcustom my/excali-palette-directory
+  (expand-file-name "excali/palettes/" (or (getenv "XDG_CONFIG_HOME") "~/.config/"))
+  "Directory containing theme-builder's Excalidraw palette JSON files."
+  :type 'directory :group 'my-excali)
+
+(defvar-local my/excali--palette nil
+  "Palette for explicit styling in this buffer; never follows theme changes.")
+
+(defvar-local my/excali--current-preset nil
+  "Applied creation colours, independent of the palette being browsed.
+This snapshot is cleared by native colour overrides, not palette selection.")
+
+(defconst my/excali--presets '(default neutral accented muted))
+
+(defun my/excali--validate-palette (palette)
+  "Return PALETTE if it has the supported schema; otherwise signal an error."
+  (unless (and (listp palette) (eq (alist-get 'version palette) 1)
+               (stringp (alist-get 'theme palette))
+               (string-match-p "\\`#[[:xdigit:]]\\{6\\}\\'"
+                               (or (alist-get 'canvas palette) ""))
+               (cl-every
+                (lambda (role)
+                  (let ((preset (alist-get role (alist-get 'presets palette))))
+                    (cl-every
+                     (lambda (property)
+                       (let ((value (alist-get property preset)))
+                         (and (stringp value)
+                              (or (and (eq property 'fill) (equal value "transparent"))
+                                  (string-match-p "\\`#[[:xdigit:]]\\{6\\}\\'" value)))))
+                     '(stroke fill text))))
+                my/excali--presets))
+    (user-error "Invalid Excalidraw palette"))
+  palette)
+
+(defun my/excali--read-palette (name)
+  "Read and validate palette NAME from the configured directory."
+  (unless (string-match-p "\\`[a-z0-9-]+\\'" name)
+    (user-error "Invalid palette name"))
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name (concat name ".json") my/excali-palette-directory))
+    (my/excali--validate-palette
+     (json-parse-buffer :object-type 'alist :null-object :null :false-object :false))))
+
+(defun my/excali-choose-palette (name)
+  "Choose palette NAME for subsequent explicit styling, without recolouring.
+This buffer-local choice is not a document edit.  Reopening starts with the
+initial palette snapshot, if present, rather than the current Emacs theme."
+  (interactive
+   (list (completing-read "Palette: "
+                          (mapcar #'file-name-base
+                                  (directory-files my/excali-palette-directory nil "\\.json\\'"))
+                          nil t)))
+  (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
+  (setq my/excali--palette (my/excali--read-palette name)))
+
+(defun my/excali--rgb (color)
+  "Resolve COLOR numerically without display-palette quantization."
+  (mapcar (lambda (v) (/ v 65535.0))
+          (color-values-from-color-spec (my/excali--hex color))))
+
+(defun my/excali--composite-color (color background &optional opacity)
+  "Composite native COLOR over opaque BACKGROUND, including OPACITY percent.
+Native colours include transparent, #rgba and #rrggbbaa in addition to RGB."
+  (when (and (stringp color) (string-match-p "\\`#[[:xdigit:]]\\{4\\}\\'" color))
+    (setq color (concat "#" (mapconcat (lambda (c) (make-string 2 c))
+                                      (substring color 1) ""))))
+  (let ((alpha (/ (or opacity 100) 100.0)))
+    (cond
+     ((equal color "transparent") (setq color background alpha 0))
+     ((and (stringp color) (string-match-p "\\`#[[:xdigit:]]\\{8\\}\\'" color))
+      (setq alpha (* alpha (/ (string-to-number (substring color 7) 16) 255.0))
+            color (substring color 0 7))))
+    (apply #'color-rgb-to-hex
+           (append (cl-mapcar (lambda (fg bg) (+ (* alpha fg) (* (- 1 alpha) bg)))
+                             (my/excali--rgb color) (my/excali--rgb background))
+                   '(2)))))
+
+(defun my/excali--luminance (color)
+  "Return relative luminance of COLOR for text contrast checks."
+  (let ((rgb (my/excali--rgb color)))
+    (cl-loop for channel in rgb for weight in '(0.2126 0.7152 0.0722)
+             sum (* weight (if (<= channel 0.04045) (/ channel 12.92)
+                             (expt (/ (+ channel 0.055) 1.055) 2.4))))))
+
+(defun my/excali--text-color (preferred background)
+  "Use PREFERRED on BACKGROUND when readable, otherwise black or white."
+  (let* ((bg (my/excali--luminance background))
+         (fg (my/excali--luminance preferred)))
+    (if (>= (/ (+ (max bg fg) 0.05) (+ (min bg fg) 0.05)) 4.5)
+        preferred
+      (if (> bg 0.179) "#000000" "#ffffff"))))
+
+(defun my/excali--label-background (parent)
+  "Return the background painted behind a label in PARENT.
+Arrow labels and unfilled shapes use the canvas.  For translucent solid
+fills, composite the fill over the canvas; patterned fills use the canvas."
+  (let ((canvas (my/excali--composite-color (or (excali--canvas-color) "#ffffff") "#ffffff"))
+        (fill (and parent (excali--get parent 'backgroundColor))))
+    (if (and parent (member (excali--get parent 'type) '("rectangle" "ellipse" "diamond"))
+             (equal (excali--get parent 'fillStyle) "solid")
+             (stringp fill) (not (equal fill "transparent")))
+        (my/excali--composite-color fill canvas (excali--get parent 'opacity))
+      canvas)))
+
+(defun my/excali-use-preset (role)
+  "Apply palette ROLE to selected elements and their bound labels.
+Also set native defaults for new elements.  Only colours and fill style are
+changed; geometry, line patterns and unrelated metadata are preserved.
+Sticky notes and their labels are excluded; use their native styling controls.
+This is an ordinary element edit, committed as one native undo step."
+  (interactive
+   (list (intern (completing-read "Preset: " my/excali--presets nil t))))
+  (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
+  (unless (memq role my/excali--presets) (user-error "Unknown preset: %s" role))
+  (unless my/excali--palette (call-interactively #'my/excali-choose-palette))
+  (let* ((palette (my/excali--validate-palette my/excali--palette))
+         (preset (alist-get role (alist-get 'presets palette)))
+         (index (make-hash-table :test #'equal))
+         (targets (make-hash-table :test #'eq))
+         (skipped-sticky nil)
+         (changed nil))
+    ;; Index once: text-heavy scenes must not repeatedly scan all elements.
+    (dolist (element excali--elements)
+      (unless (excali--get element 'isDeleted)
+        (puthash (excali--get element 'id) element index)))
+    (dolist (element excali--selection)
+      (unless (excali--get element 'isDeleted)
+        (if (or (equal (excali--get element 'type) "stickynote")
+                (equal (excali--get (gethash (excali--get element 'containerId) index) 'type)
+                       "stickynote"))
+            (setq skipped-sticky t)
+          (puthash element t targets))))
+    (dolist (element excali--elements)
+      (when (and (not (excali--get element 'isDeleted))
+                 (equal (excali--get element 'type) "text")
+                 (gethash (gethash (excali--get element 'containerId) index) targets))
+        (puthash element t targets)))
+    (setf (alist-get 'strokeColor excali--current-style) (alist-get 'stroke preset)
+          (alist-get 'backgroundColor excali--current-style) (alist-get 'fill preset)
+          (alist-get 'fillStyle excali--current-style) "solid")
+    (setq my/excali--current-preset (copy-tree preset))
+    ;; Paint shapes before resolving labels against their actual new background.
+    (maphash
+     (lambda (element _)
+       (unless (equal (excali--get element 'type) "text")
+         (dolist (pair `((backgroundColor . ,(alist-get 'fill preset)) (fillStyle . "solid")
+                         (strokeColor . ,(alist-get 'stroke preset))))
+           (when (and (excali--style-applies-p (car pair) element)
+                      (not (equal (excali--get element (car pair)) (cdr pair))))
+             (excali--set-element-style element (car pair) (cdr pair))
+             (setq changed t)))))
+     targets)
+    (maphash
+     (lambda (element _)
+       (when (equal (excali--get element 'type) "text")
+         (let* ((parent (gethash (excali--get element 'containerId) index))
+                (color (my/excali--text-color
+                        (alist-get 'text preset) (my/excali--label-background parent))))
+           (unless (equal color (excali--get element 'strokeColor))
+             (excali--set-element-style element 'strokeColor color)
+             (setq changed t)))))
+     targets)
+    (set-buffer-modified-p t)
+    (when changed
+      (excali--commit)
+      (excali--render)
+      (excali--sync-views))
+    (when skipped-sticky
+      (message "Palette presets skip sticky notes and their labels; use native styling"))))
+
+(defun my/excali--new-text-style (element)
+  "Pair newly styled text ELEMENT with its actual background.
+Only an explicitly active preset affects creation; never restyle existing text."
+  (when (and my/excali--current-preset (equal (excali--get element 'type) "text"))
+    (let ((parent (excali--container-of element)))
+      ;; Sticky notes and all their text creation stay entirely native.
+      (unless (equal (excali--get parent 'type) "stickynote")
+        (excali--put element 'strokeColor
+                    (my/excali--text-color
+                     (alist-get 'text my/excali--current-preset)
+                     (my/excali--label-background parent))))))
+  element)
+
+(defun my/excali--native-style-override (property _value)
+  "Let native colour/fill PROPERTY choices replace the active creation preset."
+  (when (memq property '(strokeColor backgroundColor fillStyle))
+    (setq my/excali--current-preset nil)))
+
+(defun my/excali--eyedropper-override (&rest _)
+  "Clear the creation preset when native eyedropper changes drawing defaults."
+  (unless (and excali--selection (eq excali--tool 'select))
+    (setq my/excali--current-preset nil)))
+
+(defun my/excali--palette-description ()
+  "Describe the currently selected palette without implying live following."
+  (format "Palette: %s" (or (alist-get 'theme my/excali--palette) "choose explicitly")))
+
+(defun my/excali--install-palette-menu ()
+  "Extend the native styling transient without replacing its colour pickers."
+  (transient-define-prefix my/excali-palette ()
+    "Apply explicit palette presets."
+    [:description my/excali--palette-description
+     ("d" "Default" (lambda () (interactive) (my/excali-use-preset 'default)))
+     ("n" "Neutral" (lambda () (interactive) (my/excali-use-preset 'neutral)))
+     ("a" "Accented" (lambda () (interactive) (my/excali-use-preset 'accented)))
+     ("m" "Muted" (lambda () (interactive) (my/excali-use-preset 'muted)))
+     ("p" "Choose palette…" my/excali-choose-palette)])
+  (unless (ignore-errors (transient-get-suffix 'excali-style "P"))
+    (transient-append-suffix 'excali-style "s"
+      '("P" "Palette…" my/excali-palette :transient transient--do-recurse))))
 
 (defun my/excali--check-compatible ()
   "Require actual module and Canvas capabilities, not just a package version."
@@ -71,11 +283,28 @@ are not part of upstream's element undo history."
 (defun my/excali--after-open ()
   "Initialize genuinely new drawings, never recolouring an opened/imported scene."
   (my/excali--check-compatible)
+  (condition-case nil
+      (let ((initial (alist-get 'initialPalette (alist-get 'homeConfigPalette excali--doc))))
+        (when initial
+          (setq my/excali--palette (copy-tree (my/excali--validate-palette initial) t))))
+    (error (message "Ignoring unsupported initial Excalidraw palette metadata")))
   (when my/excali--creating
     (setq default-directory (my/excali--directory))
-    (setf (alist-get 'strokeColor excali--current-style)
-          (my/excali--hex (face-foreground 'default nil t)))
-    (my/excali-set-canvas-background (face-background 'default nil t))))
+    (let* ((theme (car custom-enabled-themes))
+           (name (and theme (symbol-name theme)))
+           (file (and name (expand-file-name (concat name ".json") my/excali-palette-directory))))
+      (if (and file (file-readable-p file))
+          (progn
+            (setq my/excali--palette (my/excali--read-palette name))
+            (my/excali-use-preset 'default)
+            (my/excali-set-canvas-background (alist-get 'canvas my/excali--palette))
+            (setf (alist-get 'homeConfigPalette excali--doc)
+                  `((version . 1) (initialTheme . ,name)
+                    (initialPalette . ,(copy-tree my/excali--palette t)))))
+        ;; Non-Doric/unavailable palettes retain the small original integration.
+        (setf (alist-get 'strokeColor excali--current-style)
+              (my/excali--hex (face-foreground 'default nil t)))
+        (my/excali-set-canvas-background (face-background 'default nil t))))))
 
 (defun my/excali--setup-buffer ()
   "Install the buffer-local scene event before its document is opened."
@@ -84,6 +313,10 @@ are not part of upstream's element undo history."
 (use-package excali
   :commands (excali-open excali-new)
   :config
+  (my/excali--install-palette-menu)
+  (advice-add 'excali--apply-current-style :filter-return #'my/excali--new-text-style)
+  (advice-add 'excali-set-style :before #'my/excali--native-style-override)
+  (advice-add 'excali--eyedropper-apply :before #'my/excali--eyedropper-override)
   (advice-add 'excali-new :around #'my/excali--new-drawing)
   (add-hook 'excali-mode-hook #'my/excali--setup-buffer)
   ;; Browsers use CSS aliases; Pango needs the embedded family names.

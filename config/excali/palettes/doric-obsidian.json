@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "theme": "doric-obsidian",
+  "canvas": "#181818",
+  "presets": {
+    "default": {
+      "stroke": "#e7e7e7",
+      "fill": "transparent",
+      "text": "#e7e7e7"
+    },
+    "neutral": {
+      "stroke": "#e7e7e7",
+      "fill": "#432f2a",
+      "text": "#e7e7e7"
+    },
+    "accented": {
+      "stroke": "#b0b0b0",
+      "fill": "#505050",
+      "text": "#b0b0b0"
+    },
+    "muted": {
+      "stroke": "#969696",
+      "fill": "transparent",
+      "text": "#969696"
+    }
+  }
+}

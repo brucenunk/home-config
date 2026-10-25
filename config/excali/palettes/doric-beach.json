@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "theme": "doric-beach",
+  "canvas": "#eae3d8",
+  "presets": {
+    "default": {
+      "stroke": "#213937",
+      "fill": "transparent",
+      "text": "#213937"
+    },
+    "neutral": {
+      "stroke": "#213937",
+      "fill": "#efd0a9",
+      "text": "#213937"
+    },
+    "accented": {
+      "stroke": "#045e53",
+      "fill": "#abd2c9",
+      "text": "#045e53"
+    },
+    "muted": {
+      "stroke": "#605d48",
+      "fill": "transparent",
+      "text": "#605d48"
+    }
+  }
+}

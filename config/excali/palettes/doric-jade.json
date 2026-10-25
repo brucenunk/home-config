@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "theme": "doric-jade",
+  "canvas": "#e2f0c9",
+  "presets": {
+    "default": {
+      "stroke": "#25311f",
+      "fill": "transparent",
+      "text": "#25311f"
+    },
+    "neutral": {
+      "stroke": "#25311f",
+      "fill": "#cfe2d4",
+      "text": "#25311f"
+    },
+    "accented": {
+      "stroke": "#006000",
+      "fill": "#74d98f",
+      "text": "#006000"
+    },
+    "muted": {
+      "stroke": "#6b5a77",
+      "fill": "transparent",
+      "text": "#6b5a77"
+    }
+  }
+}

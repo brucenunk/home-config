@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+EXCALI_PALETTE_DIR = REPO_ROOT / "config/excali/palettes"
 FUZZEL_THEME_DIR = REPO_ROOT / "config/fuzzel/themes"
 GHOSTTY_THEME_DIR = REPO_ROOT / "config/ghostty/themes"
 NIRI_THEME_DIR = REPO_ROOT / "config/niri/themes"
@@ -331,6 +332,33 @@ def waybar_theme_text(theme: dict[str, str]) -> str:
     )
 
 
+def excali_palette_json(theme: dict[str, str]) -> str:
+    # Doric's default, shadow, highlight (inherits default's foreground),
+    # and region faces respectively. Keep pairs together, not guessed from hue.
+    def preset(stroke: str, fill: str, text: str) -> dict[str, str]:
+        return {"stroke": stroke, "fill": fill, "text": text}
+
+    ink = theme["fg_main"]
+    payload = {
+        "version": 1,
+        "theme": theme["name"],
+        "canvas": theme["bg_main"],
+        "presets": {
+            "default": preset(ink, "transparent", ink),
+            "neutral": preset(ink, theme["bg_accent"], ink),
+            "accented": preset(
+                theme["fg_shadow_intense"],
+                theme["bg_shadow_intense"],
+                theme["fg_shadow_intense"],
+            ),
+            "muted": preset(
+                theme["fg_shadow_subtle"], "transparent", theme["fg_shadow_subtle"]
+            ),
+        },
+    }
+    return json.dumps(payload, indent=2) + "\n"
+
+
 def with_alpha(color: str, alpha: str) -> str:
     return f"{color}{alpha}"
 
@@ -407,6 +435,7 @@ def css_filename(theme_name: str) -> str:
 
 
 TARGETS = {
+    "excali": Target(EXCALI_PALETTE_DIR, json_filename, excali_palette_json),
     "fuzzel": Target(FUZZEL_THEME_DIR, ini_filename, fuzzel_theme_text),
     "ghostty": Target(GHOSTTY_THEME_DIR, unchanged_filename, ghostty_theme_text),
     "niri": Target(NIRI_THEME_DIR, kdl_filename, niri_theme_text),

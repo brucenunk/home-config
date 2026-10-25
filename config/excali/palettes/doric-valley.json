@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "theme": "doric-valley",
+  "canvas": "#383035",
+  "presets": {
+    "default": {
+      "stroke": "#e0d5b7",
+      "fill": "transparent",
+      "text": "#e0d5b7"
+    },
+    "neutral": {
+      "stroke": "#e0d5b7",
+      "fill": "#714d4c",
+      "text": "#e0d5b7"
+    },
+    "accented": {
+      "stroke": "#99dec7",
+      "fill": "#3d5e57",
+      "text": "#99dec7"
+    },
+    "muted": {
+      "stroke": "#af9a97",
+      "fill": "transparent",
+      "text": "#af9a97"
+    }
+  }
+}

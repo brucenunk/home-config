@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "theme": "doric-lion",
+  "canvas": "#392716",
+  "presets": {
+    "default": {
+      "stroke": "#f8d48c",
+      "fill": "transparent",
+      "text": "#f8d48c"
+    },
+    "neutral": {
+      "stroke": "#f8d48c",
+      "fill": "#4e2c20",
+      "text": "#f8d48c"
+    },
+    "accented": {
+      "stroke": "#d09b39",
+      "fill": "#604410",
+      "text": "#d09b39"
+    },
+    "muted": {
+      "stroke": "#afaf92",
+      "fill": "transparent",
+      "text": "#afaf92"
+    }
+  }
+}
