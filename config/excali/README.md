@@ -41,12 +41,28 @@ To style an existing element, select it, open the styling transient with
 `M-x excali-style`, press `p`, then choose a preset. Its bound label is included;
 unselected elements and the canvas remain unchanged.
 
-The main menu shows the active creation preset, e.g. **Palette: Neutral**, or
-**Palette: Custom** after a native colour/fill override. This describes defaults
-for new elements, not a persisted role on the selected element. An applied
-creation preset keeps its own colour snapshot until another preset or native
-override is applied; changing the Emacs theme does not change that snapshot,
-its text-contrast behaviour, or existing elements. This active creation preset is
+The main menu recognises the selected elements' actual palette styling,
+including their bound labels. With no selection, it recognises the native
+current-item defaults instead. It shows **Palette: Neutral**, for example,
+**Mixed** for differing styles, or **Custom** when the styling matches no preset.
+This works after saving/reopening because it compares colour/fill properties,
+not the last preset command or stored roles. Where the properties cannot
+distinguish multiple presets (such as standalone text with shared ink), it
+uses a bound label's container to disambiguate where possible, then prefers
+the first matching preset in the table above. A label can still match a
+different preset from its parent. Equivalent native hex colours are normalised
+before comparing styles. A common matching preset
+across the selection takes priority over differences between shape and label
+properties that do not apply to both.
+
+Recognition is read-only, uses the current Emacs theme's palette, and never
+changes colours, defaults, undo/redo or metadata. After a theme change, old
+colours may show Custom until deliberately restyled; they are not recoloured.
+
+An applied creation preset keeps its own colour snapshot until another preset
+or native override is applied; changing the Emacs theme does not change that
+snapshot, its text-contrast behaviour, or existing elements. Recognition alone
+does not activate this creation behaviour. The active creation preset is
 buffer-local, not saved role metadata: native current-item defaults persist,
 but after reopening, reapply a preset to enable its contrast-aware text creation.
 Canvas changes remain a separate explicit `my/excali-set-canvas-background`

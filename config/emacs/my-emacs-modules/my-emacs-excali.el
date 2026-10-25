@@ -7,6 +7,7 @@
 (require 'cl-lib)
 (require 'color)
 (require 'json)
+(require 'seq)
 (require 'use-package)
 
 (defgroup my-excali nil "Personal Excalidraw integration." :group 'multimedia)
@@ -55,7 +56,7 @@ This snapshot is cleared by native colour overrides, not theme changes.")
      (json-parse-buffer :object-type 'alist :null-object :null :false-object :false))))
 
 (defun my/excali--theme-palette ()
-  "Read the current Emacs theme's palette for an explicit styling action."
+  "Read the current Emacs theme's palette."
   (let* ((theme (car custom-enabled-themes))
          (name (and theme (symbol-name theme))))
     (unless (and name (file-readable-p
@@ -200,12 +201,128 @@ Only an explicitly active preset affects creation; never restyle existing text."
   (unless (and excali--selection (eq excali--tool 'select))
     (setq my/excali--current-preset nil)))
 
+(defun my/excali--palette-color-value (color)
+  "Normalize native COLOR for read-only comparisons, preserving nonzero alpha."
+  (when (stringp color)
+    (setq color (downcase color))
+    (when (string-match-p "\\`#[[:xdigit:]]\\{3,4\\}\\'" color)
+      (setq color (concat "#" (mapconcat (lambda (c) (make-string 2 c))
+                                        (substring color 1) ""))))
+    (when (string-match-p "\\`#[[:xdigit:]]\\{8\\}\\'" color)
+      (setq color (pcase (substring color 7)
+                    ("00" "transparent")
+                    ("ff" (substring color 0 7))
+                    (_ color))))
+    (if (equal color "transparent") color
+      (condition-case nil (my/excali--hex color) (error color)))))
+
+(defun my/excali--palette-color-equal-p (actual expected)
+  "Compare ACTUAL with palette colour EXPECTED without changing the scene."
+  (and (stringp actual)
+       (equal (my/excali--palette-color-value actual)
+              (my/excali--palette-color-value expected))))
+
+(defun my/excali--shape-presets (element palette)
+  "Return presets matching ELEMENT's applicable colour and fill properties."
+  (unless (member (excali--get element 'type) '("text" "stickynote"))
+    (let ((properties (seq-filter (lambda (key) (excali--style-applies-p key element))
+                                  '(strokeColor backgroundColor fillStyle))))
+      (and properties
+           (seq-filter
+            (lambda (role)
+              (let ((preset (alist-get role (alist-get 'presets palette))))
+                (cl-every
+                 (lambda (key)
+                   (pcase key
+                     ('fillStyle (or (my/excali--palette-color-equal-p
+                                     (excali--get element 'backgroundColor) "transparent")
+                                     (equal (excali--get element key) "solid")))
+                     (_ (my/excali--palette-color-equal-p
+                         (excali--get element key)
+                         (alist-get (if (eq key 'strokeColor) 'stroke 'fill) preset)))))
+                 properties)))
+            my/excali--presets)))))
+
+(defun my/excali--element-presets (element palette index)
+  "Return matching presets for ELEMENT, using INDEX for bound-label context."
+  (if (not (equal (excali--get element 'type) "text"))
+      (my/excali--shape-presets element palette)
+    (let ((parent (gethash (excali--get element 'containerId) index)))
+      (unless (equal (excali--get parent 'type) "stickynote")
+        (let ((background (my/excali--label-background parent))
+              (parent-presets (and parent (my/excali--shape-presets parent palette))))
+          (let* ((matches
+                  (seq-filter
+                   (lambda (role)
+                     (my/excali--palette-color-equal-p
+                      (excali--get element 'strokeColor)
+                      (my/excali--text-color
+                       (alist-get 'text (alist-get role (alist-get 'presets palette))) background)))
+                   my/excali--presets))
+                 (contextual (seq-filter (lambda (role) (memq role parent-presets)) matches)))
+            ;; Context disambiguates identical inks, but an unselected parent
+            ;; cannot veto a label's independently applied preset.
+            (or contextual matches)))))))
+
+(defun my/excali--shown-preset ()
+  "Recognise the selection's actual styling, or the native drawing defaults.
+This is read-only and never reactivates a creation preset after reopening.
+When colours cannot distinguish roles, prefer their declared palette order."
+  (condition-case nil
+      (let ((palette (my/excali--theme-palette)))
+        (if (null excali--selection)
+            (or (car (my/excali--shape-presets
+                      `((type . "rectangle")
+                        (strokeColor . ,(excali--style-value 'strokeColor))
+                        (backgroundColor . ,(excali--style-value 'backgroundColor))
+                        (fillStyle . ,(excali--style-value 'fillStyle))) palette))
+                'custom)
+          (let ((index (make-hash-table :test #'equal))
+                (targets (make-hash-table :test #'eq))
+                (common my/excali--presets)
+                elements)
+            ;; Index once, then include bound labels just as explicit preset
+            ;; application does. No repeated scene scan for each text element.
+            (dolist (element excali--elements)
+              (unless (excali--get element 'isDeleted)
+                (puthash (excali--get element 'id) element index)))
+            (dolist (element excali--selection)
+              (unless (excali--get element 'isDeleted) (puthash element t targets)))
+            (dolist (element excali--elements)
+              (when (and (not (excali--get element 'isDeleted))
+                         (equal (excali--get element 'type) "text")
+                         (gethash (gethash (excali--get element 'containerId) index) targets))
+                (puthash element t targets)))
+            (maphash
+             (lambda (element _)
+               (push element elements)
+               (let ((matches (my/excali--element-presets element palette index)))
+                 (setq common (seq-filter (lambda (role) (memq role matches)) common))))
+             targets)
+            (or (and elements (car common))
+                (if (seq-some
+                     (lambda (key)
+                       (cdr (delete-dups
+                             (mapcar
+                              (lambda (element)
+                                (if (eq key 'fillStyle)
+                                    (if (my/excali--palette-color-equal-p
+                                         (excali--get element 'backgroundColor) "transparent")
+                                        "solid" (excali--get element key))
+                                  (my/excali--palette-color-value (excali--get element key))))
+                              (seq-filter (lambda (element) (excali--style-applies-p key element))
+                                          elements)))))
+                     '(strokeColor backgroundColor fillStyle))
+                    'mixed 'custom)))))
+    ;; Missing palettes or unsupported imported colours must not break the
+    ;; styling menu. No inference is persisted or used to change colours.
+    (error 'custom)))
+
 (defun my/excali--palette-description ()
-  "Describe the active creation preset, not a role on selected elements."
-  (let ((name (alist-get 'name my/excali--current-preset)))
-    (concat (format "%-14s " "Palette:")
-            (propertize (if name (capitalize (symbol-name name)) "Custom")
-                        'face 'transient-value))))
+  "Describe the recognised preset with native value alignment and styling."
+  (concat (format "%-14s " "Palette:")
+          (propertize (capitalize (symbol-name (my/excali--shown-preset)))
+                      'face 'transient-value)))
 
 (defun my/excali--install-palette-menu ()
   "Extend the native styling transient without replacing its colour pickers."
