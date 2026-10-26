@@ -298,7 +298,8 @@ Request alphabetical completion order rather than history-based sorting."
                        (symbol-name (car custom-enabled-themes))))
          (default (and (member current names) current))
          (completion-extra-properties
-          '(:display-sort-function minibuffer-sort-alphabetically
+          '(:category theme
+            :display-sort-function minibuffer-sort-alphabetically
             :cycle-sort-function minibuffer-sort-alphabetically)))
     (unless names (user-error "No installed Doric Excalidraw palettes"))
     (completing-read (if default (format "Doric palette (default %s): " default)

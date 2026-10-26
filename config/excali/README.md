@@ -90,6 +90,10 @@ order, with the current Emacs theme as the default when its palette is installed
 press `RET` to accept it. Vertico pins the default above the otherwise alphabetical
 list. Input starts empty so you can browse or filter all palettes. If the current
 theme has no installed palette, choose one explicitly.
+The picker uses the same `theme` completion category as `consult-theme`, so
+Marginalia shows its standard theme descriptions. With the configured Orderless
+completion, type `&dark` or `&light` to filter by those annotations rather than
+the palette names. This does not preview or enable any Emacs theme.
 The Emacs theme itself never changes. There is no transient entry, automatic
 theme-change hook, or operation across other diagram buffers. The selection does
 not restrict conversion. Save normally when satisfied.

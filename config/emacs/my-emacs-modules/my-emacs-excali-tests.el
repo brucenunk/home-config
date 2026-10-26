@@ -777,11 +777,62 @@
                  (should-not initial)
                  (should-not history)
                  (should (equal default "doric-earth"))
+                 (should (eq (plist-get completion-extra-properties :category) 'theme))
                  (dolist (property '(:display-sort-function :cycle-sort-function))
                    (should (eq (plist-get completion-extra-properties property)
                                #'minibuffer-sort-alphabetically)))
                  default)))
       (should (equal (my/excali--read-palette-name) "doric-earth")))))
+
+(ert-deftest my/excali-palette-prompt-supports-theme-annotations-and-filtering ()
+  (require 'marginalia)
+  (require 'orderless)
+  (require 'doric-themes)
+  (let ((my/excali-palette-directory my/excali-test--palette-directory)
+        (custom-enabled-themes '(doric-earth))
+        (completion-styles '(orderless basic))
+        (completion-category-defaults nil)
+        (completion-category-overrides nil)
+        (was-enabled marginalia-mode))
+    (unwind-protect
+        (progn
+          (marginalia-mode 1)
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (_prompt names &rest _)
+                       (let* ((metadata (completion-metadata "" names nil))
+                              (affixate (completion-metadata-get metadata 'affixation-function)))
+                         (should (eq (completion-metadata-get metadata 'category) 'theme))
+                         (should affixate)
+                         ;; Marginalia computes annotation widths from windows
+                         ;; displaying the current completion buffer.
+                         (save-window-excursion
+                           (switch-to-buffer (get-buffer-create " *excali-completion-test*"))
+                           (unwind-protect
+                               (progn
+                                 (let ((annotations (funcall affixate '("doric-earth" "doric-obsidian"))))
+                                   (should (string-match-p "light" (nth 2 (nth 0 annotations))))
+                                   (should (string-match-p "dark" (nth 2 (nth 1 annotations)))))
+                                 (dolist (case '(("&dark" . doric-themes-dark-themes)
+                                                 ("&light" . doric-themes-light-themes)))
+                                   (let* ((input (car case))
+                                          ;; Batch has no active minibuffer;
+                                          ;; provide its actual picker metadata
+                                          ;; to Orderless's minibuffer accessor.
+                                          (matches
+                                           (cl-letf (((symbol-function 'orderless--metadata-get)
+                                                      (lambda (property)
+                                                        (completion-metadata-get metadata property))))
+                                             (completion-all-completions
+                                              input names nil (length input)))))
+                                     ;; Completion lists have a dotted base-size tail.
+                                     (when matches (setcdr (last matches) nil))
+                                     (should (equal (sort (mapcar #'substring-no-properties matches) #'string<)
+                                                    (sort (mapcar #'symbol-name (symbol-value (cdr case)))
+                                                          #'string<))))))
+                             (kill-buffer " *excali-completion-test*")))
+                         "doric-obsidian"))))
+            (should (equal (my/excali--read-palette-name) "doric-obsidian"))))
+      (marginalia-mode (if was-enabled 1 -1)))))
 
 (ert-deftest my/excali-palette-prompt-has-no-unavailable-theme-default ()
   (let ((my/excali-palette-directory my/excali-test--palette-directory))
