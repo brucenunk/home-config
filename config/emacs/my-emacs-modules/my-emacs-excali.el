@@ -286,15 +286,40 @@ Return nil for ambiguous target colours rather than guessing a role."
     (when (and roles (cl-every (lambda (style) (equal style (car styles))) (cdr styles)))
       (cons (car roles) (car styles)))))
 
-(defun my/excali-update-palette ()
-  "Convert recognised palette styling in this diagram to the current theme.
+(defun my/excali--read-palette-name ()
+  "Choose an installed Doric palette, defaulting to the current theme.
+Request alphabetical completion order rather than history-based sorting."
+  (let* ((names (mapcar #'file-name-base
+                        (seq-filter
+                         #'file-readable-p
+                         (directory-files my/excali-palette-directory t
+                                          "\\`doric-[a-z0-9-]+\\.json\\'"))))
+         (current (and (car custom-enabled-themes)
+                       (symbol-name (car custom-enabled-themes))))
+         (default (and (member current names) current))
+         (completion-extra-properties
+          '(:display-sort-function minibuffer-sort-alphabetically
+            :cycle-sort-function minibuffer-sort-alphabetically)))
+    (unless names (user-error "No installed Doric Excalidraw palettes"))
+    (completing-read (if default (format "Doric palette (default %s): " default)
+                      "Doric palette: ")
+                     (sort names #'string<) nil t nil nil default)))
+
+(defun my/excali-update-palette (&optional name)
+  "Convert recognised palette styling in this diagram to palette NAME.
+Interactively choose an installed Doric palette, defaulting to the current
+Emacs theme when available.  A nil NAME uses the current theme without prompting.
+This command never changes the Emacs theme.
 Use the saved currentPalette snapshot, or initialPalette for a first conversion.
 Preserve custom styling, ambiguous roles, sticky notes and initial provenance.
 Only this buffer is edited; save normally to persist the conversion.
 Element changes form one native undo step.  Canvas, defaults and palette
 snapshots are outside native undo: redo an undone conversion before converting
 again, or reopen the last saved document.  Theme changes never run this command."
-  (interactive)
+  (interactive
+   (progn
+     (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
+     (list (my/excali--read-palette-name))))
   (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
   (let* ((metadata (alist-get 'homeConfigPalette excali--doc))
          (source (progn
@@ -303,7 +328,7 @@ again, or reopen the last saved document.  Theme changes never run this command.
                    (my/excali--validate-palette
                     (alist-get (if (assq 'currentPalette metadata) 'currentPalette 'initialPalette)
                                metadata))))
-         (target (my/excali--theme-palette))
+         (target (if name (my/excali--read-palette name) (my/excali--theme-palette)))
          (index (make-hash-table :test #'equal))
          (projected (make-hash-table :test #'equal))
          (matches nil) (plans nil) (ambiguous 0) (changed 0)

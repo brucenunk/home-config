@@ -35,8 +35,9 @@ canvas, not the preset's box fill. Explicit native colour/fill overrides end
 the active creation preset and continue to work normally.
 
 The native colour pickers are unchanged. `M-x my/excali-use-preset` provides the
-same preset actions outside the transient. Every explicit application reads
-the **current Emacs theme's** palette; there is no separate Doric-theme chooser.
+same preset actions outside the transient. Every explicit preset application
+reads the **current Emacs theme's** palette; individual presets have no separate
+Doric-theme chooser.
 To style an existing element, select it, open the styling transient with
 `M-x excali-style`, press `p`, then choose a preset. Its bound label is included;
 unselected elements and the canvas remain unchanged.
@@ -83,10 +84,19 @@ preset application reports an error without changing the drawing.
 
 ## Explicit diagram conversion
 
-Run **`M-x my/excali-update-palette`** in a diagram buffer to update that entire
-diagram to the current Emacs theme's palette. There is no transient entry, theme
-chooser, automatic theme-change hook, or operation across other diagram buffers.
-The selection does not restrict conversion. Save normally when satisfied.
+Run **`M-x my/excali-update-palette`** in a diagram buffer, then choose an installed
+Doric palette to update that entire diagram. Completion requests alphabetical
+order, with the current Emacs theme as the default when its palette is installed;
+press `RET` to accept it. Vertico pins the default above the otherwise alphabetical
+list. Input starts empty so you can browse or filter all palettes. If the current
+theme has no installed palette, choose one explicitly.
+The Emacs theme itself never changes. There is no transient entry, automatic
+theme-change hook, or operation across other diagram buffers. The selection does
+not restrict conversion. Save normally when satisfied.
+
+Lisp callers can pass a palette name, e.g.
+`(my/excali-update-palette "doric-obsidian")`; a call without an argument continues
+to use the current Emacs theme's palette without prompting.
 
 The command recognises presets using the saved `currentPalette` snapshot, or
 `initialPalette` before the first conversion. It converts matching shapes,
@@ -103,7 +113,7 @@ disambiguate labels, but if matching roles would produce different target colour
 the element is left unchanged. The command reports updated elements and ambiguous
 or unsupported matches. Unmatched elements are not counted in that report.
 
-Missing/invalid palette provenance or an unavailable current-theme palette stops
+Missing/invalid palette provenance or an unavailable/invalid target palette stops
 conversion without edits. Native browser exports that lost provenance therefore
 cannot be converted by this command. Use individual preset commands instead.
 
