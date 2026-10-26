@@ -93,7 +93,21 @@ theme has no installed palette, choose one explicitly.
 The picker uses the same `theme` completion category as `consult-theme`, so
 Marginalia shows its standard theme descriptions. With the configured Orderless
 completion, type `&dark` or `&light` to filter by those annotations rather than
-the palette names. This does not preview or enable any Emacs theme.
+the palette names.
+
+The highlighted palette previews **automatically as you move through or filter
+candidates**, like `consult-theme`; no preview key is needed. Each preview starts
+from the original scene, not the previous preview. Frame and minibuffer resizing
+keep showing the selected preview. Press **`C-g`** to cancel: the original colours,
+canvas, drawing defaults, active creation preset, metadata, modified flag,
+selection and undo/redo history
+are restored. Press **`RET`** to accept the selected palette: one normal conversion
+is applied to the original scene.
+Preview edits do not enter native history. The accepted conversion retains the
+non-element undo boundary below. This does not preview or enable any Emacs theme.
+Preview is render-only: editing, saving and history commands never operate on a
+disposable preview scene. Large drawings may take longer to convert and redraw
+when the highlighted candidate changes.
 The Emacs theme itself never changes. There is no transient entry, automatic
 theme-change hook, or operation across other diagram buffers. The selection does
 not restrict conversion. Save normally when satisfied.

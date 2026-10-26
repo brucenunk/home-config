@@ -286,9 +286,10 @@ Return nil for ambiguous target colours rather than guessing a role."
     (when (and roles (cl-every (lambda (style) (equal style (car styles))) (cdr styles)))
       (cons (car roles) (car styles)))))
 
-(defun my/excali--read-palette-name ()
+(defun my/excali--read-palette-name (&optional state)
   "Choose an installed Doric palette, defaulting to the current theme.
-Request alphabetical completion order rather than history-based sorting."
+Request alphabetical completion order rather than history-based sorting.
+With STATE, use Consult with automatic diagram preview."
   (let* ((names (mapcar #'file-name-base
                         (seq-filter
                          #'file-readable-p
@@ -302,14 +303,102 @@ Request alphabetical completion order rather than history-based sorting."
             :display-sort-function minibuffer-sort-alphabetically
             :cycle-sort-function minibuffer-sort-alphabetically)))
     (unless names (user-error "No installed Doric Excalidraw palettes"))
-    (completing-read (if default (format "Doric palette (default %s): " default)
-                      "Doric palette: ")
-                     (sort names #'string<) nil t nil nil default)))
+    (let ((prompt (if default (format "Doric palette (default %s): " default)
+                    "Doric palette: ")))
+      (if state
+          (progn
+            (require 'consult)
+            (consult--read (sort names #'string<)
+                           :prompt prompt :require-match t :category 'theme
+                           :default default :sort t :history nil
+                           ;; Completion UIs can briefly report raw partial
+                           ;; input while their candidate list is refreshing.
+                           :lookup (lambda (name &rest _) (and (member name names) name))
+                           :preview-key 'any :state state))
+        (completing-read prompt (sort names #'string<) nil t nil nil default)))))
+
+(defun my/excali--read-palette-with-preview ()
+  "Choose a palette while previewing disposable copies of this scene.
+Copies are bound only while converting and painting, never while reading input.
+History is held during preview so neither stacks nor frozen copies are edited."
+  (let* ((buffer (current-buffer))
+         (doc excali--doc) (elements excali--elements)
+         (selection excali--selection) (style excali--current-style)
+         (preset my/excali--current-preset)
+         (selected (make-hash-table :test #'eq))
+         (scene nil)
+         (previewing nil))
+    (dolist (element selection) (puthash element t selected))
+    (cl-labels
+        ((render-preview (render &rest args)
+           (if (and scene (eq (current-buffer) buffer))
+               ;; Only rendering sees the preview, including native resize
+               ;; redraws.  Editing, saving and history always see the real scene.
+               (cl-destructuring-bind
+                   (excali--doc excali--elements excali--selection
+                    excali--current-style my/excali--current-preset excali--native-cache)
+                   scene
+                 (let ((excali--history-hold t)) (apply render args)))
+             (apply render args)))
+         (invalidate-views ()
+           ;; Resize records a real-scene stamp after rendering preview pixels.
+           ;; Do not let that stamp suppress repainting on the next transition.
+           (dolist (window (excali--other-views))
+             (when (window-live-p window)
+               (excali--with-view window (setq excali--view-stamp nil)))))
+         (restore ()
+           (when previewing
+             (setq scene nil previewing nil)
+             (invalidate-views)
+             (excali--render)
+             (excali--sync-views))))
+      (unwind-protect
+          (progn
+            (advice-add 'excali--render :around #'render-preview)
+            (my/excali--read-palette-name
+             (lambda (action name)
+               (when (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (pcase action
+                     ('preview
+                      (if (not name) (restore)
+                        (setq scene nil previewing t)
+                        (condition-case err
+                            (let ((modified (buffer-modified-p)))
+                              (unwind-protect
+                                  (let* ((excali--doc (copy-tree doc t))
+                                         (excali--elements (copy-tree elements t))
+                                         (excali--selection
+                                          (cl-loop for old in elements for new in excali--elements
+                                                   when (gethash old selected) collect new))
+                                         (excali--current-style (copy-tree style t))
+                                         (my/excali--current-preset (copy-tree preset t))
+                                         (excali--native-cache (make-hash-table :test #'eq))
+                                         (excali--history-hold t)
+                                         (inhibit-message t))
+                                    (invalidate-views)
+                                    (my/excali-update-palette name)
+                                    (setq scene (list excali--doc excali--elements excali--selection
+                                                      excali--current-style my/excali--current-preset
+                                                      excali--native-cache)))
+                                (set-buffer-modified-p modified)))
+                          ((error quit)
+                           (restore)
+                           (signal (car err) (cdr err))))))
+                     ((or 'exit 'return) (restore))))))))
+        ;; Consult normally resets on exit.  Also cover errors before setup,
+        ;; interrupted callbacks and nonlocal exits from the completion reader.
+        (setq scene nil)
+        (advice-remove 'excali--render #'render-preview)
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer
+            (let ((inhibit-quit t)) (restore))))))))
 
 (defun my/excali-update-palette (&optional name)
   "Convert recognised palette styling in this diagram to palette NAME.
 Interactively choose an installed Doric palette, defaulting to the current
 Emacs theme when available.  A nil NAME uses the current theme without prompting.
+Candidate changes preview automatically; RET converts once and C-g cancels.
 This command never changes the Emacs theme.
 Use the saved currentPalette snapshot, or initialPalette for a first conversion.
 Preserve custom styling, ambiguous roles, sticky notes and initial provenance.
@@ -320,7 +409,7 @@ again, or reopen the last saved document.  Theme changes never run this command.
   (interactive
    (progn
      (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
-     (list (my/excali--read-palette-name))))
+     (list (my/excali--read-palette-with-preview))))
   (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
   (let* ((metadata (alist-get 'homeConfigPalette excali--doc))
          (source (progn
