@@ -354,6 +354,12 @@ def excali_palette_json(theme: dict[str, str]) -> str:
             "muted": preset(
                 theme["fg_shadow_subtle"], "transparent", theme["fg_shadow_subtle"]
             ),
+            **{
+                color: preset(
+                    theme[f"fg_{color}"], theme[f"bg_{color}"], theme[f"fg_{color}"]
+                )
+                for color in ("red", "green", "yellow", "blue", "magenta", "cyan")
+            },
         },
     }
     return json.dumps(payload, indent=2) + "\n"

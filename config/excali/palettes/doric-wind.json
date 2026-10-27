@@ -22,6 +22,36 @@
       "stroke": "#565962",
       "fill": "transparent",
       "text": "#565962"
+    },
+    "red": {
+      "stroke": "#990020",
+      "fill": "#e4c2c7",
+      "text": "#990020"
+    },
+    "green": {
+      "stroke": "#006740",
+      "fill": "#b0e0d0",
+      "text": "#006740"
+    },
+    "yellow": {
+      "stroke": "#706000",
+      "fill": "#e3e0b0",
+      "text": "#706000"
+    },
+    "blue": {
+      "stroke": "#003370",
+      "fill": "#bbd1e8",
+      "text": "#003370"
+    },
+    "magenta": {
+      "stroke": "#782050",
+      "fill": "#e0c3e7",
+      "text": "#782050"
+    },
+    "cyan": {
+      "stroke": "#006070",
+      "fill": "#c2ebe8",
+      "text": "#006070"
     }
   }
 }

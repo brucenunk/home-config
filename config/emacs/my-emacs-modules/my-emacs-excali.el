@@ -24,7 +24,15 @@
   "Applied creation colours and preset name, independent of later theme changes.
 This snapshot is cleared by native colour overrides, not theme changes.")
 
-(defconst my/excali--presets '(default neutral accented muted))
+(defconst my/excali--base-presets '(default neutral accented muted))
+(defconst my/excali--presets
+  '(default neutral accented muted red green yellow blue magenta cyan))
+
+(defun my/excali--palette-roles (palette)
+  "Return supported presets present in PALETTE, in menu order.
+Older version-1 provenance snapshots contain only the four base presets."
+  (seq-filter (lambda (role) (assq role (alist-get 'presets palette)))
+              my/excali--presets))
 
 (defun my/excali--validate-palette (palette)
   "Return PALETTE if it has the supported schema; otherwise signal an error."
@@ -32,6 +40,8 @@ This snapshot is cleared by native colour overrides, not theme changes.")
                (stringp (alist-get 'theme palette))
                (string-match-p "\\`#[[:xdigit:]]\\{6\\}\\'"
                                (or (alist-get 'canvas palette) ""))
+               (cl-every (lambda (role) (assq role (alist-get 'presets palette)))
+                         my/excali--base-presets)
                (cl-every
                 (lambda (role)
                   (let ((preset (alist-get role (alist-get 'presets palette))))
@@ -42,7 +52,7 @@ This snapshot is cleared by native colour overrides, not theme changes.")
                               (or (and (eq property 'fill) (equal value "transparent"))
                                   (string-match-p "\\`#[[:xdigit:]]\\{6\\}\\'" value)))))
                      '(stroke fill text))))
-                my/excali--presets))
+                (my/excali--palette-roles palette)))
     (user-error "Invalid Excalidraw palette"))
   palette)
 
@@ -113,6 +123,31 @@ fills, composite the fill over the canvas; patterned fills use the canvas."
         (my/excali--composite-color fill canvas (excali--get parent 'opacity))
       canvas)))
 
+(defun my/excali--record-compatible-preset (role palette)
+  "Add missing ROLE to a compatible saved conversion source from PALETTE.
+Never rewrite initial provenance or infer colours across differing snapshots."
+  (let* ((metadata (alist-get 'homeConfigPalette excali--doc))
+         (source (and (listp metadata)
+                      (alist-get (if (assq 'currentPalette metadata) 'currentPalette 'initialPalette)
+                                 metadata))))
+    (when (and (listp metadata) (eq (alist-get 'version metadata) 1)
+               (ignore-errors (my/excali--validate-palette source))
+               (not (assq role (alist-get 'presets source)))
+               (cl-every (lambda (key) (equal (alist-get key source) (alist-get key palette)))
+                         '(version theme canvas))
+               (cl-every
+                (lambda (known)
+                  (cl-every
+                   (lambda (key)
+                     (equal (alist-get key (alist-get known (alist-get 'presets source)))
+                            (alist-get key (alist-get known (alist-get 'presets palette)))))
+                   '(stroke fill text)))
+                (my/excali--palette-roles source)))
+      (let ((extended (copy-tree source t)))
+        (setf (alist-get role (alist-get 'presets extended))
+              (copy-tree (alist-get role (alist-get 'presets palette)) t)
+              (alist-get 'currentPalette (alist-get 'homeConfigPalette excali--doc)) extended)))))
+
 (defun my/excali-use-preset (role)
   "Apply current-theme preset ROLE to selected elements and their bound labels.
 Also set native defaults for new elements.  Only colours and fill style are
@@ -129,6 +164,8 @@ This is an ordinary element edit, committed as one native undo step."
          (targets (make-hash-table :test #'eq))
          (skipped-sticky nil)
          (changed nil))
+    (unless preset (user-error "Preset %s is unavailable in this palette" role))
+    (my/excali--record-compatible-preset role palette)
     ;; Index once: text-heavy scenes must not repeatedly scan all elements.
     (dolist (element excali--elements)
       (unless (excali--get element 'isDeleted)
@@ -241,7 +278,7 @@ Only an explicitly active preset affects creation; never restyle existing text."
                          (excali--get element key)
                          (alist-get (if (eq key 'strokeColor) 'stroke 'fill) preset)))))
                  properties)))
-            my/excali--presets)))))
+            (my/excali--palette-roles palette))))))
 
 (defun my/excali--element-presets (element palette index)
   "Return matching presets for ELEMENT, using INDEX for bound-label context."
@@ -258,7 +295,7 @@ Only an explicitly active preset affects creation; never restyle existing text."
                       (excali--get element 'strokeColor)
                       (my/excali--text-color
                        (alist-get 'text (alist-get role (alist-get 'presets palette))) background)))
-                   my/excali--presets))
+                   (my/excali--palette-roles palette)))
                  (contextual (seq-filter (lambda (role) (memq role parent-presets)) matches)))
             ;; Context disambiguates identical inks, but an unselected parent
             ;; cannot veto a label's independently applied preset.
@@ -267,23 +304,24 @@ Only an explicitly active preset affects creation; never restyle existing text."
 (defun my/excali--conversion-style (element roles palette index)
   "Return (ROLE . STYLE) when ROLES agree on ELEMENT's target styling.
 PALETTE and INDEX describe the target canvas and projected parent styles.
-Return nil for ambiguous target colours rather than guessing a role."
+Return nil for missing target presets or ambiguous colours rather than guessing."
   (let ((styles
-         (mapcar
-          (lambda (role)
-            (let ((preset (alist-get role (alist-get 'presets palette))))
-              (if (equal (excali--get element 'type) "text")
-                  `((strokeColor
-                     . ,(my/excali--text-color
-                         (alist-get 'text preset)
-                         (my/excali--label-background
-                          (gethash (excali--get element 'containerId) index)))))
-                (seq-filter
-                 (lambda (pair) (excali--style-applies-p (car pair) element))
-                 `((strokeColor . ,(alist-get 'stroke preset))
-                   (backgroundColor . ,(alist-get 'fill preset)))))))
-          roles)))
-    (when (and roles (cl-every (lambda (style) (equal style (car styles))) (cdr styles)))
+         (and (cl-every (lambda (role) (assq role (alist-get 'presets palette))) roles)
+              (mapcar
+               (lambda (role)
+                 (let ((preset (alist-get role (alist-get 'presets palette))))
+                   (if (equal (excali--get element 'type) "text")
+                       `((strokeColor
+                          . ,(my/excali--text-color
+                              (alist-get 'text preset)
+                              (my/excali--label-background
+                               (gethash (excali--get element 'containerId) index)))))
+                     (seq-filter
+                      (lambda (pair) (excali--style-applies-p (car pair) element))
+                      `((strokeColor . ,(alist-get 'stroke preset))
+                        (backgroundColor . ,(alist-get 'fill preset)))))))
+               roles))))
+    (when (and roles styles (cl-every (lambda (style) (equal style (car styles))) (cdr styles)))
       (cons (car roles) (car styles)))))
 
 (defun my/excali--read-palette-name (&optional state)
@@ -394,6 +432,15 @@ History is held during preview so neither stacks nor frozen copies are edited."
           (with-current-buffer buffer
             (let ((inhibit-quit t)) (restore))))))))
 
+(defun my/excali--canvas-backplate-p (element palette)
+  "Whether ELEMENT is a solid, borderless rectangle filled with PALETTE's canvas.
+This structural convention deliberately excludes custom fills and patterns."
+  (and (equal (excali--get element 'type) "rectangle")
+       (equal (excali--get element 'fillStyle) "solid")
+       (my/excali--palette-color-equal-p (excali--get element 'strokeColor) "transparent")
+       (my/excali--palette-color-equal-p (excali--get element 'backgroundColor)
+                                       (alist-get 'canvas palette))))
+
 (defun my/excali-update-palette (&optional name)
   "Convert recognised palette styling in this diagram to palette NAME.
 Interactively choose an installed Doric palette, defaulting to the current
@@ -435,7 +482,14 @@ again, or reopen the last saved document.  Theme changes never run this command.
     (dolist (element excali--elements)
       (unless (excali--get element 'isDeleted)
         (puthash (excali--get element 'id) element index)
-        (puthash (excali--get element 'id) (copy-tree element t) projected)))
+        (puthash (excali--get element 'id) (copy-tree element t) projected)
+        ;; Backplates follow only a recognised canvas conversion.  Project them
+        ;; before text planning so bound labels see their converted background.
+        (when (and convert-canvas (my/excali--canvas-backplate-p element source))
+          (let ((style `((backgroundColor . ,(alist-get 'canvas target)))))
+            (push (cons element style) plans)
+            (excali--put (gethash (excali--get element 'id) projected)
+                        'backgroundColor (alist-get 'canvas target))))))
     ;; Recognise everything against the untouched source scene, before changing
     ;; a parent fill or canvas that determines its label's recognised ink.
     (dolist (element excali--elements)
@@ -547,7 +601,14 @@ When colours cannot distinguish roles, prefer their declared palette order."
      ("d" "Default" (lambda () (interactive) (my/excali-use-preset 'default)))
      ("n" "Neutral" (lambda () (interactive) (my/excali-use-preset 'neutral)))
      ("a" "Accented" (lambda () (interactive) (my/excali-use-preset 'accented)))
-     ("m" "Muted" (lambda () (interactive) (my/excali-use-preset 'muted)))])
+     ("m" "Muted" (lambda () (interactive) (my/excali-use-preset 'muted)))]
+    ["Doric colours"
+     ("r" "Red" (lambda () (interactive) (my/excali-use-preset 'red)))
+     ("g" "Green" (lambda () (interactive) (my/excali-use-preset 'green)))
+     ("y" "Yellow" (lambda () (interactive) (my/excali-use-preset 'yellow)))
+     ("b" "Blue" (lambda () (interactive) (my/excali-use-preset 'blue)))
+     ("M" "Magenta" (lambda () (interactive) (my/excali-use-preset 'magenta)))
+     ("c" "Cyan" (lambda () (interactive) (my/excali-use-preset 'cyan)))])
   (unless (ignore-errors (transient-get-suffix 'excali-style "p"))
     (transient-append-suffix 'excali-style "s"
       '("p" my/excali-palette :description my/excali--palette-description

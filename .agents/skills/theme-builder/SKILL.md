@@ -115,7 +115,10 @@ Emacs. Regenerate that target independently for the complete collection:
 ```
 
 The Default/Neutral/Accented/Muted presets map to Doric's default, highlight,
-region and shadow faces. See `config/excali/README.md` for native property
+region and shadow faces. The additional Red/Green/Yellow/Blue/Magenta/Cyan
+presets use Doric's corresponding `fg-COLOUR` / `bg-COLOUR` pairs. Keep all ten
+presets in generated palettes; old four-preset provenance remains valid.
+See `config/excali/README.md` for native property
 mapping, initial provenance, and browser-export limitations. Keep generated
 colours derived from these sources rather than tuning them to a hand-picked demo.
 

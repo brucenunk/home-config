@@ -16,6 +16,12 @@ In excali-mode's native styling transient, choose **p — Palette: …**, then:
 | Neutral | Ordinary filled boxes, such as service participants | `highlight` background, inherited `default` foreground |
 | Accented | Highlighted boxes, such as a human participant | Paired `region` background/foreground |
 | Muted | Secondary boundaries and lifelines | `shadow` foreground; transparent fill |
+| Red, Green, Yellow, Blue, Magenta, Cyan | Meaningful diagram-specific categories or emphasis | Doric's corresponding `fg-COLOUR` / `bg-COLOUR` pair |
+
+The six named colours are additional presets in the same palette menu (keys
+`r`, `g`, `y`, `b`, `M`, `c`). They use each theme's own colours, not fixed hex
+values. Their names do not assign semantics: Green does not automatically mean
+success, for example. Choose and label meanings appropriate to the diagram.
 
 Each preset contains `stroke`, `fill`, and `text` colours. Applying a preset
 changes selected elements and their bound labels, and sets native defaults for
@@ -123,6 +129,26 @@ converted parent and canvas. Matching canvas colour and drawing defaults are
 converted too; an already active creation preset receives the converted colour
 snapshot. Conversion does not activate a creation preset after reopening.
 
+Solid borderless rectangles whose fill matches the source palette's canvas
+also follow a matching canvas conversion. This supports separate label
+backplates: their transparent stroke stays transparent and only their fill
+changes. It applies to all rectangles with that styling, not just those near
+text; without roles an intentional same-colour rectangle is indistinguishable.
+Patterned, custom-filled or non-rectangular shapes are not backplates. If the
+canvas is custom and preserved, backplates are preserved too.
+
+Older version-1 snapshots containing only Default/Neutral/Accented/Muted remain
+valid conversion sources. The six named presets are optional in saved snapshots;
+new generated palettes include all ten presets.
+Applying a named preset missing from a saved snapshot extends `currentPalette`
+with that preset only when its theme, canvas and every existing preset value
+match the installed palette. Initial provenance remains untouched. This lets
+legacy diagrams use new colours and convert them later, including after reopening.
+Incompatible or missing provenance is not repaired by applying a preset; those
+colours remain custom/unmatched unless the saved source already recognises them.
+When a legacy target lacks a needed named preset, affected elements and drawing
+defaults stay unchanged rather than receiving guessed or invalid colours.
+
 Custom/unmatched styling, sticky notes and their labels, deleted elements,
 geometry, fill patterns, fonts, opacity and unrelated metadata remain unchanged.
 A custom canvas or custom drawing defaults are preserved. Without per-element
@@ -159,6 +185,31 @@ Do not use a box's text/fill pair blindly for those labels. New-item defaults
 can be stored as `appState.currentItemStrokeColor`,
 `currentItemBackgroundColor` and `currentItemFillStyle` in native files.
 
+### Constructing theme-portable diagrams
+
+- Prefer native bound labels where appropriate. Set the text's `containerId`
+  and the container's reciprocal `boundElements` entry so the editor knows the
+  label's background. Merely positioning text over a box does not bind it;
+  conversion treats unbound text as sitting on the canvas, not the box fill.
+- When separate label backplates are needed, use rectangles with
+  `strokeColor: "transparent"`, `fillStyle: "solid"`, and `backgroundColor`
+  copied from the palette's `canvas`. These follow explicit palette conversion
+  as described above. Do not invent a near-canvas shade. Unbound text over these
+  backplates uses the canvas text-contrast rule.
+- Use named colour presets for meaningful distinctions, not decoration, and
+  keep their meaning consistent within a diagram. Read the selected theme's
+  palette; do not substitute fixed hex values or hand-mixed shades. Use the
+  stroke/fill/text triple together for filled boxes, with text contrast checked
+  against the actual fill. Standalone and arrow labels require a canvas check,
+  including when using named colours. Use the same 4.5:1 contrast threshold as
+  the editor, falling back to black or white when the preferred ink fails.
+- Never make colour the only distinction: retain descriptive labels or another
+  visual cue, such as a meaningful line pattern.
+- Before handing off a generated diagram, verify explicit conversion to at
+  least one light and one dark palette on a disposable copy. Check labels,
+  backplates and canvas together, not only box fills. Preserve the original
+  diagram and initial provenance; disclose any ambiguous/unconverted styling.
+
 For a new drawing, ask which theme to use if it was not supplied; do not assume
 the user's current theme from a palette filename or yesterday's drawing.
 The example image-rollout diagram originally used hand-picked fills, not this
@@ -179,7 +230,8 @@ New editor-created drawings record this top-level provenance:
 `initialPalette` contains the complete palette JSON object, not the illustrative
 ellipsis above. Agents creating new diagrams should write the same record.
 It is an immutable creation snapshot, not a current-role declaration; later
-manual edits and preset applications do not update it. Preserve unrelated fields,
+manual edits and preset applications do not update `initialPalette`. A compatible
+legacy `currentPalette` may be extended as described above. Preserve unrelated fields,
 including element `customData`. No per-element roles are recorded.
 
 The pinned excali-mode preserves this metadata and native current-item defaults
