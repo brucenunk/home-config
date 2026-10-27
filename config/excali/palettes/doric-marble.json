@@ -25,17 +25,17 @@
     },
     "red": {
       "stroke": "#a01010",
-      "fill": "#eac0bf",
+      "fill": "#e3bebc",
       "text": "#a01010"
     },
     "green": {
       "stroke": "#106710",
-      "fill": "#bde0c2",
+      "fill": "#b3dec2",
       "text": "#106710"
     },
     "yellow": {
       "stroke": "#60400f",
-      "fill": "#e9e0a0",
+      "fill": "#e6d490",
       "text": "#60400f"
     },
     "blue": {
@@ -45,7 +45,7 @@
     },
     "magenta": {
       "stroke": "#700d50",
-      "fill": "#eec2e6",
+      "fill": "#e2c2ef",
       "text": "#700d50"
     },
     "cyan": {

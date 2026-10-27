@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "theme": "doric-mountain",
+  "canvas": "#383025",
+  "presets": {
+    "default": {
+      "stroke": "#e5daa0",
+      "fill": "transparent",
+      "text": "#e5daa0"
+    },
+    "neutral": {
+      "stroke": "#e5daa0",
+      "fill": "#4c553a",
+      "text": "#e5daa0"
+    },
+    "accented": {
+      "stroke": "#f0d080",
+      "fill": "#6c5a49",
+      "text": "#f0d080"
+    },
+    "muted": {
+      "stroke": "#c8b9ad",
+      "fill": "transparent",
+      "text": "#c8b9ad"
+    },
+    "red": {
+      "stroke": "#e0a47f",
+      "fill": "#79473f",
+      "text": "#e0a47f"
+    },
+    "green": {
+      "stroke": "#90c08f",
+      "fill": "#4b6441",
+      "text": "#90c08f"
+    },
+    "yellow": {
+      "stroke": "#d9a55f",
+      "fill": "#685730",
+      "text": "#d9a55f"
+    },
+    "blue": {
+      "stroke": "#a0b0eb",
+      "fill": "#3e497f",
+      "text": "#a0b0eb"
+    },
+    "magenta": {
+      "stroke": "#d2a2c0",
+      "fill": "#673f55",
+      "text": "#d2a2c0"
+    },
+    "cyan": {
+      "stroke": "#9bc3c3",
+      "fill": "#3f5b62",
+      "text": "#9bc3c3"
+    }
+  }
+}

@@ -9,7 +9,8 @@ Use this skill for Doric theme generation owned by this repository. Run every
 command from the root of a standard `brucenunk/home-config` task worktree and
 write only that worktree.
 
-The generator reads palettes from the installed Emacs `doric-themes` package.
+The generator reads palettes from the Emacs `doric-themes` package on `PATH`
+(currently Doric 1.4.0, using its primary accent palette names).
 Its supported targets and output trees are:
 
 | Target | Output tree |
@@ -45,7 +46,9 @@ The available Doric themes are:
 - `doric-lion`
 - `doric-magma`
 - `doric-marble`
+- `doric-meadow`
 - `doric-mermaid`
+- `doric-mountain`
 - `doric-oak`
 - `doric-obsidian`
 - `doric-pine`
@@ -76,6 +79,11 @@ The available Doric themes are:
      '(progn (require (quote package)) (package-initialize) (princ (locate-library "doric-themes")))'
    ```
 
+   When updating a package pin, first build an isolated Nix Emacs containing
+   the new package and put its `bin` directory first on `PATH`. Confirm the
+   reported library is that version before generating; do not use the old
+   activated package or activate merely to run the generator.
+
 Do not regenerate from a different repository, copy machine-specific state
 into an output, or accept generated churn without tracing it to an intended
 palette or generator change.
@@ -102,7 +110,7 @@ intentionally narrower:
 The generator emits each target's canonical text formatting. Do not run a
 separate formatter over generated INI, Ghostty, TOML, KDL, JSON, or CSS files.
 
-Excalidraw ships all 26 Doric palettes, so agents can read them without a live
+Excalidraw ships all 28 Doric palettes, so agents can read them without a live
 Emacs. Regenerate that target independently for the complete collection:
 
 ```bash
@@ -178,7 +186,7 @@ git diff -- \
 
 Passing the exact desktop file-list check proves that no stale themes remain.
 An empty scoped status additionally proves byte-for-byte reproduction of the
-retained themes. For Excalidraw, regenerate all themes, verify exactly 26 JSON
+retained themes. For Excalidraw, regenerate all themes, verify exactly 28 JSON
 files, and inspect status/diff under `config/excali/palettes`. The `emacs-excali`
 check validates every palette's schema and compares its colours with actual
 Doric faces. Review and explain every changed, removed, or newly generated

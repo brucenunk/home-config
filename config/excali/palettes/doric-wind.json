@@ -30,12 +30,12 @@
     },
     "green": {
       "stroke": "#006740",
-      "fill": "#b0e0d0",
+      "fill": "#a6e0d0",
       "text": "#006740"
     },
     "yellow": {
       "stroke": "#706000",
-      "fill": "#e3e0b0",
+      "fill": "#ded9a0",
       "text": "#706000"
     },
     "blue": {
@@ -45,12 +45,12 @@
     },
     "magenta": {
       "stroke": "#782050",
-      "fill": "#e0c3e7",
+      "fill": "#ddc3ef",
       "text": "#782050"
     },
     "cyan": {
       "stroke": "#006070",
-      "fill": "#c2ebe8",
+      "fill": "#c0e6e8",
       "text": "#006070"
     }
   }

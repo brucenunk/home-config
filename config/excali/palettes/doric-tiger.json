@@ -25,17 +25,17 @@
     },
     "red": {
       "stroke": "#a02600",
-      "fill": "#ffbc87",
+      "fill": "#f2b783",
       "text": "#a02600"
     },
     "green": {
       "stroke": "#406900",
-      "fill": "#b2d078",
+      "fill": "#b4d178",
       "text": "#406900"
     },
     "yellow": {
       "stroke": "#783400",
-      "fill": "#e6c264",
+      "fill": "#d6c964",
       "text": "#783400"
     },
     "blue": {

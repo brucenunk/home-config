@@ -30,7 +30,7 @@
     },
     "green": {
       "stroke": "#006710",
-      "fill": "#aed2a8",
+      "fill": "#aed2af",
       "text": "#006710"
     },
     "yellow": {
@@ -50,7 +50,7 @@
     },
     "cyan": {
       "stroke": "#006070",
-      "fill": "#a4dfdc",
+      "fill": "#a0d5d0",
       "text": "#006070"
     }
   }

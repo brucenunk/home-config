@@ -20,21 +20,30 @@ This workflow is intentionally direct and does not use the structured `task-work
 
 ## Fail-fast threshold
 
-Apply this threshold to failures from the update itself, evaluation or verification, builds, delivery, deployment, activation, and runtime checks.
+Apply this threshold to failures from the update itself, evaluation or verification, builds, delivery, deployment, activation, and runtime checks. Fail fast on an open-ended repair, not on the first error. Before delivery, make a bounded effort to distinguish a broken bump from a command-mode, invocation, fixture, or transient prerequisite problem.
 
-A fix may remain in the routine bump only when **all** of these are true:
+### Bounded diagnosis before discard
 
-- the failure and root cause are immediately apparent from existing evidence, without exploratory debugging;
+- Capture the first useful error, then state a concrete hypothesis and the cheapest check that could confirm or reject it. Inspect the relevant local code, effective command behavior, or narrowly relevant upstream documentation/source; do not speculate across unrelated subsystems.
+- Allow up to about 10 minutes of active diagnosis and three targeted diagnostic checks per blocker. Waiting for an already-running command is not active diagnosis. Stop earlier if evidence establishes a nontrivial incompatibility. If the same error persists without new evidence, stop rather than exhausting the budget mechanically.
+- Correct agent-authored quoting, installable selection, transport, or command-mode mistakes without changing the bump's source or weakening required verification. An evaluation-only command failing is not proof that the normal build fails. Explain the correction and rerun the affected cheap check before proceeding.
+- A clearly transient prerequisite failure may receive one targeted retry after checking the prerequisite. Do not repeatedly retry network errors or restart a heavyweight realization as a diagnostic probe.
+- Keep a short record of the hypothesis, evidence, attempts, and result. Do not turn routine triage into an upstream repair project. If this budget cannot establish a safe next step, preserve the diagnostics and follow **Discarding a failed bump** without pausing merely to solicit permission for deeper debugging. The user can explicitly authorize a separate or extended repair effort.
+
+A repository fix may remain in the routine bump only when **all** of these are true:
+
+- bounded diagnosis establishes its root cause and a specific remedy;
 - the adjustment is repository-local, small, well understood, and low risk;
-- it follows an existing repository pattern and does not introduce a new dependency, source override, pin, cache policy, packaging strategy, or operational mechanism;
-- the affected behavior has a narrow targeted check that can be run before any required broader verification; and
-- one fix attempt and one targeted verification retry are sufficient.
+- it follows an existing repository pattern and does not introduce a new dependency, source override, pin, cache policy, packaging strategy, or operational mechanism; and
+- the affected behavior has a narrow targeted check that can run before any required broader verification.
 
-Examples that may qualify include a mechanical option rename called out by an upstream error or changelog, refreshing an expected hash, or removing a repository workaround whose explicit `TODO(bump-nix):` condition is now satisfied. The examples do not waive the full threshold.
+Allow at most two small fix attempts per blocker, each followed by the affected targeted check. A second attempt requires new evidence from the first check, not another guess. After targeted verification succeeds, rerun required affected broader verification. Allow at most one repeat of a failed heavyweight realization for a diagnosed correction; do not rerun successful heavyweight work unless the source change affects it or repository policy requires it.
 
-Anything else is nontrivial breakage. Stop after the first useful failure capture; do not investigate speculative certificate, network, sandbox, cache, toolchain, or upstream packaging theories. Do not add or reprioritize substituters, narrow or pin inputs, carry an old package forward, patch upstream source, or repeatedly rerun a heavyweight command. Those actions require the user's explicit direction before the bump starts or promotion of the blocker into a separate repair task. A user-approved narrowed or pinned update is an override to the default full-update scope, not an automatic recovery tactic.
+Examples that may qualify include a mechanical option rename called out by upstream, refreshing an expected hash, correcting a small check fixture, or removing a repository workaround whose explicit `TODO(bump-nix):` condition is now satisfied. The examples do not waive the full threshold.
 
-Do not pause a routine bump merely to solicit permission for deeper debugging after it fails. Preserve the evidence and discard it. The user can deliberately schedule or promote a separate repair task from that evidence.
+Do not add or reprioritize substituters, narrow or pin inputs, carry an old package forward, patch upstream source, or use repeated heavyweight commands to investigate certificate, sandbox, toolchain, or upstream packaging theories. Those actions require explicit user direction, not automatic recovery. A user-approved narrowed or pinned update overrides the default full-update scope; it is not a recovery tactic to infer.
+
+These diagnosis and retry allowances apply only before delivery mutates another worktree, ref, remote, deployed generation, or runtime. After that boundary, the rollback precedence in **Discarding a failed bump** still applies: do not fix or retry a delivered failure.
 
 ## Authenticated GitHub access
 
@@ -108,6 +117,8 @@ Treat this as a diagnostic snapshot, not a cache prescription. Do not add, remov
 
 Read `docs/activation.md` completely before selecting a realization or deployment command. Follow the row for the actual source machine and target, including its source identity, source-state, delivery, target-checkout, lock-file, and runtime-pickup boundaries. Run the underlying installable's authenticated `--dry-run` equivalent when Nix supports one; this is a realization plan, not verification or deployment.
 
+For a cheap check-evaluation preflight, prefer authenticated writable evaluation of the native check derivation paths, for example `nix eval --json '.#checks.x86_64-linux' --apply 'checks: builtins.mapAttrs (_: check: check.drvPath) checks'`. On some Nix versions, `nix flake check --no-build` enables read-only store mode: a valid check that reads a newly created `builtins.toFile` fixture can then fail with `path '…' is not valid`. Confirm that command-mode cause with direct writable evaluation; do not alter valid fixtures or treat it as dependency incompatibility. This preflight does not replace the normal `nix flake check` or required activation-package build.
+
 For a long trusted wrapper, keep the command in the foreground and capture its line-oriented Nix internal JSON:
 
 ```bash
@@ -124,7 +135,7 @@ The helper does not supervise those unsupported behaviors. If stderr is redirect
 
 The summary reports elapsed time; substitutions/downloads, uploads, and direction-unknown transfers; derivation activities; and slow derivations. A stopped derivation is proven complete only when its enclosing nested invocation succeeded. Cumulative activity time can exceed wall time, and generic Nix events do not establish build locality.
 
-For the single targeted retry permitted by the fail-fast threshold, retain both temporary captures and compare them with `summarize-nix-log LOG --previous PREVIOUS`. Only compare unfinished-closure work when the realization plan is materially unchanged. This evidence procedure does not authorize a retry; remove all captures after reporting.
+For an authorized realization retry under the fail-fast threshold, retain both temporary captures and compare them with `summarize-nix-log LOG --previous PREVIOUS`. Only compare unfinished-closure work when the realization plan is materially unchanged. This evidence procedure does not authorize a retry; remove all captures after reporting.
 
 ## Worktree and staging safety
 
@@ -217,7 +228,7 @@ The helper accepts only the existing `aarch64-darwin` and `x86_64-linux` entries
 
 Before making that edit, compare
 `pkgs/applications/editors/emacs/elisp-packages/manual-packages/ghostel/package.nix`
-under `old_nixpkgs_path` and `new_nixpkgs_path`. Continue mechanically only when the package still exposes the same override interface (`zig`, `zigDeps`, `preBuild`, and `passthru.module`), expects the same module filename and version file, and its changes are limited to the expected Ghostel version/source/fixed hashes. A missing package file, changed build or install behavior, module/asset naming change, ABI or platform change, version downgrade, pre-bump resolved version that differs from `supportedVersion`, unsupported platform, missing release or asset, unexpected release URL/state, or prefetch failure is a non-mechanical compatibility finding. Apply **Discarding a failed bump** immediately; do not edit around it or attempt a source build.
+under `old_nixpkgs_path` and `new_nixpkgs_path`. Continue mechanically only when the package still exposes the same override interface (`zig`, `zigDeps`, `preBuild`, and `passthru.module`), expects the same module filename and version file, and its changes are limited to the expected Ghostel version/source/fixed hashes. A missing package file, changed build or install behavior, module/asset naming change, ABI or platform change, version downgrade, pre-bump resolved version that differs from `supportedVersion`, unsupported platform, missing release or asset, or unexpected release URL/state is a non-mechanical compatibility finding. A prefetch or release-query failure may receive bounded diagnosis and the single transient-prerequisite retry from **Fail-fast threshold**; never bypass release or hash validation. Once a compatibility finding is confirmed, or that budget is exhausted, apply **Discarding a failed bump**; do not edit around it or attempt a source build.
 
 After the activation-package build, evaluate the overridden Ghostel derivation with the actual `pkgs` exported by the selected Home Manager configuration, including its overlays and nixpkgs configuration, and with the same Emacs package set selected by `flake-modules/features/emacs.nix`. Do not substitute `inputs.nixpkgs.legacyPackages`. Capture its recursive derivation closure in the existing temporary log directory:
 
@@ -244,7 +255,7 @@ Treat a failed Ghostel compatibility or closure check exactly like any other ver
 2. Check for no-op:
    - Confirm GitHub CLI authentication with `gh auth status --hostname github.com`.
    - Acquire and validate the token separately as described above, then run the default full update as `nix --option extra-access-tokens "github.com=$github_token" flake update`, preserve its status, and unset the token.
-   - If GitHub token acquisition fails before Nix starts, require the worktree to remain clean and ask the user to authenticate as described above; this prerequisite failure is neither a no-op nor a failed bump. For any other update-command failure, refresh both explicit path lists from status, classify the failure against the fail-fast threshold, and follow **Discarding a failed bump** unless one permitted repository-local fix clearly qualifies. A failed command is not a no-op even when it left `flake.lock` unchanged.
+   - If GitHub token acquisition fails before Nix starts, require the worktree to remain clean and ask the user to authenticate as described above; this prerequisite failure is neither a no-op nor a failed bump. For any other update-command failure, refresh both explicit path lists from status and apply the bounded diagnosis, correction, and retry rules in **Fail-fast threshold** before deciding whether to follow **Discarding a failed bump**. A failed command is not a no-op even when it left `flake.lock` unchanged.
    - Check whether the full/default update changed `flake.lock`.
    - If the successful full/default `nix flake update` produces no lockfile changes, abort immediately:
      - Add a concise task-note outcome headed **No-op update** stating that the default full update produced no changes and was unnecessary.
@@ -265,7 +276,7 @@ Treat a failed Ghostel compatibility or closure check exactly like any other ver
 4. Verify:
    - Run repo checks needed to validate the bump (for example an authenticated `nix flake check` or targeted build/eval command), using the separately guarded token pattern above.
    - After building the activation package, perform the Ghostel derivation-closure and activation-selection checks from **Ghostel prebuilt-module compatibility**. The Ghostel subtree must use the versioned prebuilt fetch and must not contain Ghostel's Zig dependency-fetch derivation.
-   - Classify any failure against the fail-fast threshold. If every condition is met, make at most one fix attempt and run the narrow targeted check once before broader required verification. Otherwise follow **Discarding a failed bump** immediately.
+   - Classify any failure against the fail-fast threshold. Before delivery, use its bounded diagnosis and targeted checks to establish whether a safe correction is available. Apply its fix-attempt and heavyweight-retry limits; if the budget is exhausted or the remedy is nontrivial, follow **Discarding a failed bump**.
    - Order work to find cheap failures before expensive realization: complete lockfile review, breadcrumb and changelog checks, evaluation/static checks, effective-configuration inspection, and the realization-plan preflight before a heavyweight build or apply.
    - Run one comprehensive check/build for each materially different source state. After a fix, rerun the failed or affected check first; repeat an already-successful heavyweight check only when the fix can affect it or repository policy requires a final rerun.
    - A cache hit proves only that an accepted binary was available. A source-build, source-fetch, toolchain, TLS, or upstream packaging failure is nontrivial unless the remedy independently meets every fail-fast condition. Do not add or rely on a substituter to conceal the failure, and do not disable substitution for an entire deployment merely to investigate one derivation.
@@ -284,7 +295,7 @@ Treat a failed Ghostel compatibility or closure check exactly like any other ver
    - After any repository-prescribed merge or staging step and before its commit or push, inspect the complete staged diff and confirm it contains only the reviewed bump result. Never use broad staging to repair a discrepancy.
    - Inspect effective Nix settings and the expected realization plan before the expensive deployment. When the entry point invokes nested Nix, use the authenticated helper and structured capture described above.
    - Perform the repository-required final apply or deployment against the delivered result, then perform every prescribed fresh-login or runtime smoke test. Build success, delivery success, deployment success, and runtime pickup are distinct evidence; report only what was directly verified.
-   - Before the first delivery-state mutation, classify failures such as precondition checks against the fail-fast threshold and permit at most the one small-fix path. After any other worktree, ref, remote, deployed generation, or runtime has been mutated, do not fix or retry: the rollback precedence in **Discarding a failed bump** applies even if a possible fix appears small.
+   - Before the first delivery-state mutation, classify failures such as precondition checks against the fail-fast threshold and use only its bounded diagnosis and small-fix allowances. After any other worktree, ref, remote, deployed generation, or runtime has been mutated, do not fix or retry: the rollback precedence in **Discarding a failed bump** applies even if a possible fix appears small.
    - Summarize the final deployment capture and compare retry captures when applicable. Distinguish substitutions/downloads, uploads or direction-unknown transfers, derivation builds, elapsed and cumulative times, slow derivations, genuinely repeated work, unknown outcomes, and unfinished closure work. Report build locality only when separate evidence establishes it.
    - If the repository-prescribed rollback succeeds and restores all delivered bump paths, refs, remotes, deployed generations, and activated runtime state, directly verify the required runtime pickup and confirm affected worktrees are clean. Then record **Failed bump — restored**, report the rollback evidence, and stop. Handle any required session/worktree teardown separately with the human; do not automatically remove worktrees or branches. If complete rollback or runtime verification is unavailable or unsafe, stop and alert the user with the blocker and delivered-state boundary.
 7. Final report:

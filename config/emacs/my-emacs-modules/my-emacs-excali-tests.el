@@ -1556,6 +1556,9 @@
 
 (ert-deftest my/excali-generated-palettes-match-doric-face-pairs ()
   (require 'doric-themes)
+  (should (equal (sort (mapcar (lambda (theme) (concat (symbol-name theme) ".json"))
+                              doric-themes-collection) #'string<)
+                 (directory-files my/excali-test--palette-directory nil "\\.json\\'")))
   (let ((my/excali-palette-directory my/excali-test--palette-directory))
     (unwind-protect
         (dolist (theme doric-themes-collection)

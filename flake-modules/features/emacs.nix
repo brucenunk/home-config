@@ -33,7 +33,7 @@ let
           corfu
           denote
           diff-hl
-          doric-themes
+          (import ../../pkgs/doric-themes.nix { inherit pkgs epkgs; })
           editorconfig
           embark
           embark-consult
@@ -271,7 +271,7 @@ in
               epkgs.avy
               epkgs.mixed-pitch
               epkgs.markdown-mode
-              epkgs.doric-themes
+              (import ../../pkgs/doric-themes.nix { inherit pkgs epkgs; })
               epkgs.auto-dark
               epkgs.fontaine
               epkgs.spacious-padding

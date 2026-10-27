@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "theme": "doric-meadow",
+  "canvas": "#eaf0cd",
+  "presets": {
+    "default": {
+      "stroke": "#023f2d",
+      "fill": "transparent",
+      "text": "#023f2d"
+    },
+    "neutral": {
+      "stroke": "#023f2d",
+      "fill": "#ecdb9f",
+      "text": "#023f2d"
+    },
+    "accented": {
+      "stroke": "#206502",
+      "fill": "#b8e0a7",
+      "text": "#206502"
+    },
+    "muted": {
+      "stroke": "#60504a",
+      "fill": "transparent",
+      "text": "#60504a"
+    },
+    "red": {
+      "stroke": "#982500",
+      "fill": "#d9b590",
+      "text": "#982500"
+    },
+    "green": {
+      "stroke": "#226700",
+      "fill": "#b3d69c",
+      "text": "#226700"
+    },
+    "yellow": {
+      "stroke": "#595000",
+      "fill": "#d0c780",
+      "text": "#595000"
+    },
+    "blue": {
+      "stroke": "#103077",
+      "fill": "#c0c2d0",
+      "text": "#103077"
+    },
+    "magenta": {
+      "stroke": "#700054",
+      "fill": "#cdbad0",
+      "text": "#700054"
+    },
+    "cyan": {
+      "stroke": "#005460",
+      "fill": "#bedad0",
+      "text": "#005460"
+    }
+  }
+}

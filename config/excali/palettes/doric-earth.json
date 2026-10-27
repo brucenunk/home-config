@@ -25,12 +25,12 @@
     },
     "red": {
       "stroke": "#a03000",
-      "fill": "#f0c8b5",
+      "fill": "#edc8b5",
       "text": "#a03000"
     },
     "green": {
       "stroke": "#206700",
-      "fill": "#c2e3b0",
+      "fill": "#c0e0b0",
       "text": "#206700"
     },
     "yellow": {
@@ -45,7 +45,7 @@
     },
     "magenta": {
       "stroke": "#690f44",
-      "fill": "#e7bfd7",
+      "fill": "#e2bfdf",
       "text": "#690f44"
     },
     "cyan": {

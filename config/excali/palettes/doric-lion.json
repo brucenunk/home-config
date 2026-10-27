@@ -25,12 +25,12 @@
     },
     "red": {
       "stroke": "#ec825f",
-      "fill": "#692b1f",
+      "fill": "#67340f",
       "text": "#ec825f"
     },
     "green": {
       "stroke": "#89b75a",
-      "fill": "#3f4e1f",
+      "fill": "#474e1f",
       "text": "#89b75a"
     },
     "yellow": {

@@ -35,7 +35,7 @@
     },
     "yellow": {
       "stroke": "#60400f",
-      "fill": "#f0f0b0",
+      "fill": "#e9e9a0",
       "text": "#60400f"
     },
     "blue": {
@@ -45,7 +45,7 @@
     },
     "magenta": {
       "stroke": "#700d50",
-      "fill": "#eec2e6",
+      "fill": "#e0c2ef",
       "text": "#700d50"
     },
     "cyan": {
