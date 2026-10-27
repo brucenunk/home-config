@@ -11,6 +11,9 @@ pkgs.stdenv.mkDerivation {
     hash = "sha256-sJY+hPzXN++BF/cNNRxp7fveBQBOWyfH9myK6E4Ne60=";
   };
 
+  # Keep macOS overlay pixels in the same sRGB space as Emacs faces and exports.
+  patches = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ ./excali-mode-srgb.patch ];
+
   nativeBuildInputs = [
     emacs
     pkgs.pkg-config

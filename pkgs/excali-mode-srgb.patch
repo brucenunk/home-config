@@ -1,0 +1,26 @@
+diff --git a/src/excali-layer.m b/src/excali-layer.m
+--- a/src/excali-layer.m
++++ b/src/excali-layer.m
+@@ -53,6 +53,22 @@
+ 			(id)kIOSurfaceBytesPerElement : @4,
+ 			(id)kIOSurfacePixelFormat : @((unsigned)'BGRA'),
+ 		});
++		if (s) {
++			/* Scene hex colours are sRGB, not monitor-space values.
++			 * Tag every new surface, including those made on resize. */
++			CGColorSpaceRef cs =
++			        CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
++			CFDataRef profile = cs ? CGColorSpaceCopyICCData(cs) : NULL;
++			if (cs)
++				CGColorSpaceRelease(cs);
++			if (!profile) {
++				CFRelease(s);
++				surfaces[back] = NULL;
++				return NULL;
++			}
++			IOSurfaceSetValue(s, CFSTR("IOSurfaceColorSpace"), profile);
++			CFRelease(profile);
++		}
+ 		surfaces[back] = s;
+ 	}
+ 	return s;
