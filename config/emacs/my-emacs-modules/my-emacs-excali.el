@@ -1,8 +1,9 @@
 ;;; my-emacs-excali.el --- Native drawings with theme defaults -*- lexical-binding: t; -*-
 
 ;; Drawings store ordinary Excalidraw colours.  The current Emacs theme supplies
-;; new-drawing defaults and explicit presets; opening or switching themes never
-;; recolours an existing scene.  Presets are native edits, not live roles.
+;; new-drawing defaults and explicit presets.  Opening and theme changes convert
+;; recognised palette styling; custom colours stay intact.  These are native
+;; edits, not live roles, and are never saved automatically.
 
 (require 'cl-lib)
 (require 'color)
@@ -21,7 +22,7 @@
   :type 'directory :group 'my-excali)
 
 (defvar-local my/excali--current-preset nil
-  "Applied creation colours and preset name, independent of later theme changes.
+  "Applied creation colours and preset name, converted with palette following.
 This snapshot is cleared by native colour overrides, not theme changes.")
 
 (defconst my/excali--base-presets '(default neutral accented muted))
@@ -30,7 +31,7 @@ This snapshot is cleared by native colour overrides, not theme changes.")
 
 (defun my/excali--palette-roles (palette)
   "Return supported presets present in PALETTE, in menu order.
-Older version-1 provenance snapshots contain only the four base presets."
+The four base presets are required; named colour presets are optional."
   (seq-filter (lambda (role) (assq role (alist-get 'presets palette)))
               my/excali--presets))
 
@@ -125,13 +126,9 @@ fills, composite the fill over the canvas; patterned fills use the canvas."
 
 (defun my/excali--record-compatible-preset (role palette)
   "Add missing ROLE to a compatible saved conversion source from PALETTE.
-Never rewrite initial provenance or infer colours across differing snapshots."
-  (let* ((metadata (alist-get 'homeConfigPalette excali--doc))
-         (source (and (listp metadata)
-                      (alist-get (if (assq 'currentPalette metadata) 'currentPalette 'initialPalette)
-                                 metadata))))
-    (when (and (listp metadata) (eq (alist-get 'version metadata) 1)
-               (ignore-errors (my/excali--validate-palette source))
+Never infer colours across differing snapshots."
+  (let ((source (alist-get 'palette excali--doc)))
+    (when (and (ignore-errors (my/excali--validate-palette source))
                (not (assq role (alist-get 'presets source)))
                (cl-every (lambda (key) (equal (alist-get key source) (alist-get key palette)))
                          '(version theme canvas))
@@ -146,7 +143,7 @@ Never rewrite initial provenance or infer colours across differing snapshots."
       (let ((extended (copy-tree source t)))
         (setf (alist-get role (alist-get 'presets extended))
               (copy-tree (alist-get role (alist-get 'presets palette)) t)
-              (alist-get 'currentPalette (alist-get 'homeConfigPalette excali--doc)) extended)))))
+              (alist-get 'palette excali--doc) extended)))))
 
 (defun my/excali-use-preset (role)
   "Apply current-theme preset ROLE to selected elements and their bound labels.
@@ -447,24 +444,17 @@ Interactively choose an installed Doric palette, defaulting to the current
 Emacs theme when available.  A nil NAME uses the current theme without prompting.
 Candidate changes preview automatically; RET converts once and C-g cancels.
 This command never changes the Emacs theme.
-Use the saved currentPalette snapshot, or initialPalette for a first conversion.
-Preserve custom styling, ambiguous roles, sticky notes and initial provenance.
+Use the saved palette snapshot as the conversion source.
+Preserve custom styling, ambiguous roles, sticky notes and unrelated metadata.
 Only this buffer is edited; save normally to persist the conversion.
-Element changes form one native undo step.  Canvas, defaults and palette
-snapshots are outside native undo: redo an undone conversion before converting
-again, or reopen the last saved document.  Theme changes never run this command."
+Colours, canvas, defaults and palette form one native undo step.
+Automatic theme following uses this same conversion."
   (interactive
    (progn
      (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
      (list (my/excali--read-palette-with-preview))))
   (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
-  (let* ((metadata (alist-get 'homeConfigPalette excali--doc))
-         (source (progn
-                   (unless (and (listp metadata) (eq (alist-get 'version metadata) 1))
-                     (user-error "Drawing has no usable palette provenance"))
-                   (my/excali--validate-palette
-                    (alist-get (if (assq 'currentPalette metadata) 'currentPalette 'initialPalette)
-                               metadata))))
+  (let* ((source (my/excali--validate-palette (alist-get 'palette excali--doc)))
          (target (if name (my/excali--read-palette name) (my/excali--theme-palette)))
          (index (make-hash-table :test #'equal))
          (projected (make-hash-table :test #'equal))
@@ -534,14 +524,52 @@ again, or reopen the last saved document.  Theme changes never run this command.
     (when convert-canvas
       (setf (alist-get 'viewBackgroundColor (alist-get 'appState excali--doc))
             (alist-get 'canvas target)))
-    (setf (alist-get 'currentPalette (alist-get 'homeConfigPalette excali--doc))
-          (copy-tree target t))
+    (setf (alist-get 'palette excali--doc) (copy-tree target t))
     (set-buffer-modified-p t)
-    (when (> changed 0) (excali--commit))
+    (excali--commit)
     (excali--render)
     (excali--sync-views)
     (message "Palette %s: %d elements updated; %d ambiguous/unsupported matches left unchanged"
              (alist-get 'theme target) changed ambiguous)))
+
+(defun my/excali-export (file &optional selection-only)
+  "Export a Doric Light PNG to FILE without editing this drawing.
+Convert a disposable scene copy, preserving custom styling just like
+`my/excali-update-palette'.  Usable saved palette metadata is required.
+Keep native export settings.  Interactively export the selection when nonempty;
+with a prefix argument export the whole diagram.  No Emacs theme is changed."
+  (interactive
+   (progn
+     (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
+     (excali--export-read-args "png")))
+  (unless (derived-mode-p 'excali-mode) (user-error "Select an excali drawing first"))
+  (let ((source (current-buffer))
+        (file (expand-file-name file))
+        (doc (copy-tree excali--doc t))
+        (elements (copy-tree excali--elements t))
+        (selection excali--selection)
+        (style (copy-tree excali--current-style t))
+        (preset (copy-tree my/excali--current-preset t)))
+    (with-temp-buffer
+      ;; No mode hooks, views or history: conversion can only edit this copy.
+      (setq major-mode 'excali-mode
+            excali--doc doc excali--elements elements
+            excali--selection
+            (cl-loop for old in (buffer-local-value 'excali--elements source)
+                     for new in elements when (memq old selection) collect new)
+            excali--current-style style my/excali--current-preset preset
+            excali--native-cache (make-hash-table :test #'eq)
+            excali--history-hold t)
+      (dolist (variable '(my/excali-palette-directory excali-export-background
+                         excali-export-padding excali-export-scale
+                         excali-export-embed-scene excali-font-families))
+        (set (make-local-variable variable) (buffer-local-value variable source)))
+      (unwind-protect
+          (progn
+            (my/excali-update-palette "doric-light")
+            (excali-export-png file selection-only))
+        ;; `with-temp-buffer' suppresses the native image-release kill hook.
+        (excali--image-release-buffer)))))
 
 (defun my/excali--shown-preset ()
   "Recognise only explicitly selected elements, or the native drawing defaults.
@@ -632,7 +660,7 @@ When colours cannot distinguish roles, prefer their declared palette order."
 (defun my/excali-set-canvas-background (color)
   "Set this drawing's canvas to COLOR; save normally to persist it.
 The interactive default is the current theme's background.  Canvas/view settings
-are not part of upstream's element undo history."
+are separate upstream; our local history extension includes the canvas colour."
   (interactive
    (progn
      (unless (derived-mode-p 'excali-mode)
@@ -659,7 +687,7 @@ are not part of upstream's element undo history."
   (let ((default-directory (my/excali--directory))) (excali-new)))
 
 (defun my/excali-open (file)
-  "Open FILE, prompting in `my/excali-directory'; preserve its saved colours."
+  "Open FILE in `my/excali-directory', following the active palette when usable."
   (interactive (list (read-file-name "Drawing: " (my/excali--directory) nil t)))
   (my/excali--check-compatible)
   (excali-open file))
@@ -669,10 +697,61 @@ are not part of upstream's element undo history."
   "Distinguish new scenes from existing scenes imported from PNG/SVG."
   (let ((my/excali--creating t)) (apply function args)))
 
+(defun my/excali--history-snapshot (snapshot)
+  "Include palette-related state in native history SNAPSHOT.
+Copy mutable values: later edits must not rewrite older history entries."
+  (plist-put snapshot :my-excali-state
+             (copy-tree (list (alist-get 'palette excali--doc)
+                              (alist-get 'viewBackgroundColor (alist-get 'appState excali--doc))
+                              excali--current-style my/excali--current-preset)
+                        t)))
+
+(defun my/excali--history-same-scene (same a b)
+  "Compare native snapshots A and B, including our palette-related state."
+  (and (funcall same a b)
+       (equal (plist-get a :my-excali-state) (plist-get b :my-excali-state))))
+
+(defun my/excali--history-restore (snapshot)
+  "Restore palette-related state alongside native SNAPSHOT's elements."
+  (pcase-let ((`(,palette ,canvas ,style ,preset)
+               (copy-tree (plist-get snapshot :my-excali-state) t)))
+    (setf (alist-get 'palette excali--doc nil t) palette
+          (alist-get 'viewBackgroundColor (alist-get 'appState excali--doc) nil t) canvas)
+    (setq excali--current-style style my/excali--current-preset preset)))
+
+(defun my/excali--follow-theme ()
+  "Convert this drawing to the active palette when both snapshots are usable.
+Missing palettes and pending redo are normal skips.  Errors must not interrupt
+opening or prevent other drawings from following a theme change."
+  (condition-case err
+      (when (and (derived-mode-p 'excali-mode) excali--doc
+                 ;; An automatic edit must not discard the user's redo branch.
+                 (not excali--redo-stack))
+        (let* ((source (alist-get 'palette excali--doc))
+               (theme (car custom-enabled-themes))
+               (name (and theme (symbol-name theme))))
+          (when (and source name
+                     (file-readable-p (expand-file-name (concat name ".json")
+                                                       my/excali-palette-directory)))
+            (my/excali--validate-palette source)
+            (let ((target (my/excali--read-palette name)))
+              (when (not (equal source target))
+                (my/excali-update-palette name))))))
+    (error (message "Palette following skipped for %s: %s"
+                    (buffer-name) (error-message-string err)))))
+
+(defun my/excali--theme-enabled (&rest _)
+  "Follow the active theme in every open drawing, including hidden buffers."
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'excali-mode)
+        (my/excali--follow-theme)))))
+
 (defun my/excali--after-open ()
-  "Initialize genuinely new drawings, never recolouring an opened/imported scene."
+  "Initialize new drawings or follow the current palette in opened scenes."
   (my/excali--check-compatible)
-  (when my/excali--creating
+  (if (not my/excali--creating)
+      (my/excali--follow-theme)
     (setq default-directory (my/excali--directory))
     (let* ((theme (car custom-enabled-themes))
            (name (and theme (symbol-name theme)))
@@ -681,13 +760,14 @@ are not part of upstream's element undo history."
           (let ((palette (my/excali--read-palette name)))
             (my/excali-use-preset 'default)
             (my/excali-set-canvas-background (alist-get 'canvas palette))
-            (setf (alist-get 'homeConfigPalette excali--doc)
-                  `((version . 1) (initialTheme . ,name)
-                    (initialPalette . ,(copy-tree palette t)))))
+            (setf (alist-get 'palette excali--doc)
+                  (copy-tree palette t)))
         ;; Non-Doric/unavailable palettes retain the small original integration.
         (setf (alist-get 'strokeColor excali--current-style)
               (my/excali--hex (face-foreground 'default nil t)))
-        (my/excali-set-canvas-background (face-background 'default nil t))))))
+        (my/excali-set-canvas-background (face-background 'default nil t))))
+    ;; Creation defaults are the baseline, not an undoable conversion.
+    (excali--history-reset)))
 
 (defun my/excali--setup-buffer ()
   "Install the buffer-local scene event before its document is opened."
@@ -697,11 +777,15 @@ are not part of upstream's element undo history."
   :commands (excali-open excali-new)
   :config
   (my/excali--install-palette-menu)
+  (advice-add 'excali--snapshot :filter-return #'my/excali--history-snapshot)
+  (advice-add 'excali--same-scene-p :around #'my/excali--history-same-scene)
+  (advice-add 'excali--restore :after #'my/excali--history-restore)
   (advice-add 'excali--apply-current-style :filter-return #'my/excali--new-text-style)
   (advice-add 'excali-set-style :before #'my/excali--native-style-override)
   (advice-add 'excali--eyedropper-apply :before #'my/excali--eyedropper-override)
   (advice-add 'excali-new :around #'my/excali--new-drawing)
   (add-hook 'excali-mode-hook #'my/excali--setup-buffer)
+  (add-hook 'enable-theme-functions #'my/excali--theme-enabled)
   ;; Browsers use CSS aliases; Pango needs the embedded family names.
   (setopt excali-font-families
           (append excali-font-families

@@ -67,13 +67,13 @@ across the selection takes priority over differences between shape and label
 properties that do not apply to both.
 
 Recognition is read-only, uses the current Emacs theme's palette, and never
-changes colours, defaults, undo/redo or metadata. After a theme change, old
-colours may show Custom until deliberately restyled; they are not recoloured.
+changes colours, defaults, undo/redo or metadata. When automatic following is
+skipped, old colours may show Custom until deliberately restyled.
 
-An applied creation preset keeps its own colour snapshot until another preset
-or native override is applied; changing the Emacs theme does not change that
-snapshot, its text-contrast behaviour, or existing elements. Recognition alone
-does not activate this creation behaviour. The active creation preset is
+An applied creation preset keeps its own colour snapshot until another preset,
+native override or palette conversion is applied. Automatic theme following
+converts recognised creation defaults and their active preset snapshot too.
+Recognition alone does not activate this creation behaviour. The active creation preset is
 buffer-local, not saved role metadata: native current-item defaults persist,
 but after reopening, reapply a preset to enable its contrast-aware text creation.
 To change just the canvas, use `my/excali-set-canvas-background`; its interactive
@@ -81,10 +81,33 @@ default is the current Emacs theme's background.
 
 New drawings start with the active theme's palette canvas and Default style.
 If that theme has no installed palette, they retain the original one-time
-initialization from the theme's default background/foreground, without palette
-provenance. Existing native/PNG/SVG scenes retain their saved colours and
-defaults. Themes and auto-dark never recolour a drawing. Initial palette metadata
-is provenance only: it does not override the current theme for later explicit
+initialization from the theme's default background/foreground, without saved
+palette metadata.
+
+## Automatic theme following
+
+Opening a native/PNG/SVG scene with usable palette metadata converts its
+recognised palette styling to the current Emacs theme's installed palette.
+Enabling a theme (including auto-dark changes and theme previews) does the same
+for every open excali drawing, including hidden buffers. Already matching palette
+snapshots are a no-op. Scenes without a usable saved palette and themes without an
+installed palette are left alone; a bad scene does not block other drawings.
+Drawings with pending redo are also skipped so an automatic edit cannot discard
+that history. Redo the work, or deliberately start a new edit branch, before the
+next open/theme event. There is no queued retry.
+
+Automatic following uses the same conservative conversion described below:
+custom colours, ambiguous styling, sticky notes and unrelated metadata are
+preserved. Each conversion is one undo step, including canvas, defaults and the
+saved palette. **Nothing is saved automatically**; save normally to persist
+changes. Theme previews can leave modified buffers and conversion history even
+if you return to the original theme.
+
+Avoid switching themes while manually editing text or completing another native
+multi-step edit. Text entry previews mutate live elements; a conversion can
+capture unconfirmed text in undo history. There is no active-edit guard.
+
+Saved palette metadata does not override the current theme for later explicit
 preset applications. If the current theme has no installed palette, explicit
 preset application reports an error without changing the drawing.
 
@@ -109,21 +132,21 @@ canvas, drawing defaults, active creation preset, metadata, modified flag,
 selection and undo/redo history
 are restored. Press **`RET`** to accept the selected palette: one normal conversion
 is applied to the original scene.
-Preview edits do not enter native history. The accepted conversion retains the
-non-element undo boundary below. This does not preview or enable any Emacs theme.
+Preview edits do not enter native history. The accepted conversion forms one
+complete undo step. This does not preview or enable any Emacs theme.
 Preview is render-only: editing, saving and history commands never operate on a
 disposable preview scene. Large drawings may take longer to convert and redraw
 when the highlighted candidate changes.
-The Emacs theme itself never changes. There is no transient entry, automatic
-theme-change hook, or operation across other diagram buffers. The selection does
-not restrict conversion. Save normally when satisfied.
+The explicit picker never changes the Emacs theme or other diagram buffers, and
+has no transient entry. The selection does not restrict conversion. Save normally
+when satisfied. Automatic theme following is separate from this picker.
 
 Lisp callers can pass a palette name, e.g.
 `(my/excali-update-palette "doric-obsidian")`; a call without an argument continues
 to use the current Emacs theme's palette without prompting.
 
-The command recognises presets using the saved `currentPalette` snapshot, or
-`initialPalette` before the first conversion. It converts matching shapes,
+The command recognises presets using the single saved `palette`
+snapshot. It converts matching shapes,
 arrows, standalone text and bound labels, resolving label contrast against the
 converted parent and canvas. Matching canvas colour and drawing defaults are
 converted too; an already active creation preset receives the converted colour
@@ -137,16 +160,15 @@ text; without roles an intentional same-colour rectangle is indistinguishable.
 Patterned, custom-filled or non-rectangular shapes are not backplates. If the
 canvas is custom and preserved, backplates are preserved too.
 
-Older version-1 snapshots containing only Default/Neutral/Accented/Muted remain
-valid conversion sources. The six named presets are optional in saved snapshots;
-new generated palettes include all ten presets.
-Applying a named preset missing from a saved snapshot extends `currentPalette`
+The six named presets are optional in saved palette snapshots; generated
+palettes include all ten presets.
+Applying a named preset missing from a saved snapshot extends `palette`
 with that preset only when its theme, canvas and every existing preset value
-match the installed palette. Initial provenance remains untouched. This lets
-legacy diagrams use new colours and convert them later, including after reopening.
-Incompatible or missing provenance is not repaired by applying a preset; those
+match the installed palette. This lets diagrams use new colours and convert
+them later, including after reopening.
+Incompatible or missing palette metadata is not repaired by applying a preset; those
 colours remain custom/unmatched unless the saved source already recognises them.
-When a legacy target lacks a needed named preset, affected elements and drawing
+When a target lacks a needed named preset, affected elements and drawing
 defaults stay unchanged rather than receiving guessed or invalid colours.
 
 Custom/unmatched styling, sticky notes and their labels, deleted elements,
@@ -157,22 +179,43 @@ disambiguate labels, but if matching roles would produce different target colour
 the element is left unchanged. The command reports updated elements and ambiguous
 or unsupported matches. Unmatched elements are not counted in that report.
 
-Missing/invalid palette provenance or an unavailable/invalid target palette stops
-conversion without edits. Native browser exports that lost provenance therefore
+Missing/invalid palette metadata or an unavailable/invalid target palette stops
+conversion without edits. Native browser exports that lost palette metadata therefore
 cannot be converted by this command. Use individual preset commands instead.
 
-Initial provenance stays immutable. A successful conversion stores a complete
-target palette snapshot as `homeConfigPalette.currentPalette`, preserving other
-metadata. This becomes the source for the next conversion, including after
+There is no separate initial palette or immutable provenance record. A successful
+conversion replaces `palette` with the complete target palette snapshot,
+preserving unrelated metadata. This becomes the source for the next conversion, including after
 save/reopen; unmatched or ambiguous elements are not assigned persistent roles.
 As with menu recognition, manually chosen colours indistinguishable from a preset
 are recognised as that preset.
 
-**Undo boundary:** converted elements form one native undo step. Canvas, drawing
-defaults, the active creation preset and palette snapshots are not part of native
-element history. Undo therefore does not restore the whole document or its source
-palette. Redo an undone conversion before converting again, or reopen the last
-saved document. No upstream history patches are installed.
+**Undo:** converted elements, canvas, drawing defaults, the active creation preset
+and the saved palette form one native undo step, even when no elements change.
+Undo/redo restore them together, so undo followed by a geometry edit and another
+conversion uses the correct source palette. Views and unrelated document fields
+are not restored. Local advice extends the native snapshot, comparison and restore
+functions; no upstream package patch or second history stack is installed.
+
+## Doric Light PNG export
+
+Run **`M-x my/excali-export`** to export a PNG using the `doric-light` palette,
+for example for Canva Docs. Choose the output filename as with native export.
+There is no new keybinding; `C-c C-e` remains the native image-export command.
+
+The command converts a disposable copy with the same conservative palette rules
+as normal conversion: custom/unmatched styling is preserved. It never changes
+the Emacs theme, source diagram, selection, modified flag, native caches or
+undo/redo history, including if conversion/export fails or is cancelled. No undo
+is needed afterward. The diagram must have a usable saved `palette`, and the
+Doric Light palette must be installed.
+
+With a selection, export just that selection (including native bound-label/frame
+handling); use a prefix argument, `C-u M-x my/excali-export`, for the whole diagram.
+Native scale, padding, background and embedded-scene settings are retained.
+Custom canvas colours remain custom; disabling the background still produces a
+transparent export. If scene embedding is enabled, the PNG contains the converted
+Doric Light scene, not the original source palette.
 
 ## Agent use and JSON
 
@@ -208,7 +251,7 @@ can be stored as `appState.currentItemStrokeColor`,
 - Before handing off a generated diagram, verify explicit conversion to at
   least one light and one dark palette on a disposable copy. Check labels,
   backplates and canvas together, not only box fills. Preserve the original
-  diagram and initial provenance; disclose any ambiguous/unconverted styling.
+  diagram; disclose any ambiguous/unconverted styling.
 
 For a new drawing, ask which theme to use if it was not supplied; do not assume
 the user's current theme from a palette filename or yesterday's drawing.
@@ -217,35 +260,36 @@ generated palette. Its service boxes correspond to Neutral, Mitch's boxes to
 Accented, messages/headings to Default, and lifelines/phase boundaries to Muted.
 Generated Doric Earth colours intentionally differ from that demo.
 
-New editor-created drawings record this top-level provenance:
+Editor-created drawings store the current palette JSON object directly:
 
 ```json
-"homeConfigPalette": {
+"palette": {
   "version": 1,
-  "initialTheme": "doric-earth",
-  "initialPalette": { "version": 1, "theme": "doric-earth", "canvas": "…", "presets": "…" }
+  "theme": "doric-earth",
+  "canvas": "…",
+  "presets": "…"
 }
 ```
 
-`initialPalette` contains the complete palette JSON object, not the illustrative
-ellipsis above. Agents creating new diagrams should write the same record.
-It is an immutable creation snapshot, not a current-role declaration; later
-manual edits and preset applications do not update `initialPalette`. A compatible
-legacy `currentPalette` may be extended as described above. Preserve unrelated fields,
-including element `customData`. No per-element roles are recorded.
+Use the complete palette JSON object, not the illustrative ellipses above.
+Agents creating new diagrams should write the same field and replace it whenever
+they convert the diagram. Preserve unrelated fields, including element
+`customData`. No per-element roles are recorded. The old `homeConfigPalette`
+wrapper with `initialPalette`, `initialTheme` and `currentPalette` is not supported: migrate those files
+directly, retaining the old current snapshot when present, otherwise the initial
+snapshot. This migration changes metadata only, not painted colours.
 
 The pinned excali-mode preserves this metadata and native current-item defaults
 through save/reopen. **Browser Excalidraw exports discard the top-level metadata
 and current-item defaults**, but preserve the painted colours and canvas.
-Where the diagrams directory is version-controlled, missing initial provenance
+Where the diagrams directory is version-controlled, missing palette metadata
 may be recovered from Git history. Do not create commits automatically.
 
-For an agent-side theme conversion, use `currentPalette` when present, otherwise
-the stored initial snapshot, as the source and a generated JSON file as the
+For an agent-side theme conversion, use `palette` as the source and a generated JSON file as the
 target. Without roles, equal colours can be
 ambiguous: consider element types, fill/stroke combinations and bound-label
 relationships, preserve unmatched/explicit colours, and ask about ambiguities.
-Review the diff before replacing a drawing. Preserve initial provenance and
-record the target snapshot in `currentPalette` after conversion. The editor
-command above provides explicit conversion; automatic theme following is not
-provided.
+Review the diff before replacing a drawing and record the target snapshot in
+`palette` after conversion. The editor
+command above provides explicit conversion; opening and theme changes also
+follow the current palette automatically when safe, as described above.
