@@ -219,6 +219,12 @@ Doric Light scene, not the original source palette.
 
 ## Org authoring and inline previews
 
+The local `my-emacs-org-excali` module owns Org links, preview caching/layout,
+and publication export. It requires `my-emacs-excali` for palette policy and
+disposable native scene rendering; the drawing module does not load Org
+integration. `config/emacs/init.el` loads both explicitly. Existing commands,
+options and link syntax are unchanged; this is not a standalone package API.
+
 Insert an authoritative scene with **`C-c C-l`**, choose **`excali`**, and
 complete a `.excalidraw` filename. Completion starts in `my/excali-directory`
 (`~/work/docs/diagrams/` by default), permits other locations, and stores a
@@ -229,10 +235,22 @@ path relative to the saved Org document. For a document in `~/work/docs/docs/`:
 ```
 
 Save the Org document first. Follow the link with `C-c C-o` to open the scene
-in the existing editor. A link without a description displays its generated
-image on opening the document; described links follow Org's normal
-include-linked preview rules. Org's `C-c C-x C-v` toggles previews, and
+in the existing editor. Both undescribed and described links preview immediately
+after `C-c C-l` insertion/editing and when opening a document. For example:
+
+```org
+#+CAPTION: Image build sequence
+[[excali:../diagrams/shared-image-build.excalidraw][Image build]]
+```
+
+The description supplies publication alternative text; `#+CAPTION:` supplies a
+visible figure caption in HTML (an image title in Markdown). These rules apply
+only to `excali` links, not ordinary described file links.
+Org's `C-c C-x C-v` toggles previews, and
 `M-x org-link-preview-refresh` explicitly redisplays/regenerates them.
+Toggle a preview off to see and edit its source link with `C-c C-l`; following
+the link still opens the authoritative scene. Layout changes do not turn hidden
+previews back on.
 Saving a scene (including native `excali-save`) refreshes displayed references;
 enabling a theme refreshes displayed diagrams only. Ordinary prose edits do
 not regenerate unrelated diagrams. External file edits are picked up on the
@@ -243,7 +261,27 @@ be open in the editor. The native renderer converts a disposable copy to the
 current theme using the conservative palette rules above. Source files, live
 scene state, selection, native caches and undo/redo are untouched. Existing
 automatic theme following for editor buffers is separate and remains unchanged.
-PNG images—not Excalidraw JSON—are passed to Org's ordinary image display.
+Native SVG images—not Excalidraw JSON—are displayed inline. They scale without
+enlarging a low-resolution raster. The native Cairo SVG exporter outlines fonts:
+labels retain their rendered shapes without requiring the reader's fonts, but
+label text is not searchable/selectable as text in the exported SVG.
+
+Previews default to **100% of the window's text area**, excluding fringes,
+line numbers and margins, including Writeroom's prose margins. Window resizing,
+split views and Writeroom entry/exit resize already displayed previews without
+rendering scenes again. This does not change global or buffer-local Org image
+settings for other images. Override an individual diagram with:
+
+```org
+#+ATTR_ORG: :width 90%
+[[excali:../diagrams/shared-image-build.excalidraw][Image build]]
+```
+
+An integer width (for example `:width 600`) specifies pixels. Widths are capped
+at the available text area. Narrower standalone previews are centred by default;
+`:align left` or `:align right` overrides that. Diagrams embedded in surrounding
+prose are not given centring space. `ATTR_ORG` controls
+editor display only; use backend attributes such as `ATTR_HTML` for publication.
 
 Generated images are content-addressed by source content, target palette and
 renderer identity under `$XDG_CACHE_HOME/excali/` (default `~/.cache/excali/`).
@@ -253,27 +291,46 @@ scene/palette is synchronous and may take longer for a large drawing.
 
 ### Publication export
 
-Standard **HTML** and **LaTeX/PDF** export renders the same links in **Doric
-Light**, independently of the editor theme. The export parse tree uses generated
-PNG file links, so native Org image attributes and backend escaping still apply.
-Use undescribed links to embed images; ordinary described file links retain
-Org's normal link behaviour. Other export backends report an explicit error
-rather than omitting the diagram. The existing `my/excali-export` sharing command
-is unchanged.
+Standard **HTML** (`C-c C-e h o` or `h h`) and **Markdown** (`C-c C-e m m`)
+export renders the same
+links in **Doric Light**, independently of the editor theme. Described links
+also embed diagrams. The export parse tree uses generated SVG file links,
+retaining native figure/caption and attribute handling. Other export backends,
+including LaTeX/PDF, report an explicit error rather than omitting a diagram.
+The existing PNG sharing command `my/excali-export` is unchanged.
+
+- **HTML:** Each SVG is embedded in its image's `src` as a base64 data URL.
+  No diagram asset folder is required. Separate image documents also prevent
+  collisions between native SVG glyph/clip identifiers. This is a single-file
+  diagram delivery experiment, **not a guarantee of one-step import**: services
+  may strip data URLs or SVG, reject large files, or require separate uploads.
+  Ordinary non-Excalidraw images and other external resources are not bundled.
+- **Markdown backup:** Export copies the required SVGs into
+  **`{basename}-assets/`**, alongside the output Markdown, and uses relative,
+  URL-escaped image paths. For `design.md`, share `design.md` together with
+  `design-assets/`. Buffer/string exports use the input Org basename and place
+  assets beside that input. Export creates directories and reuses content-keyed
+  filenames; it does not prune older assets. Assets are publication output,
+  not authoritative scene files or committed preview assets.
+  The destination must support SVG and accept accompanying files. Pasting or
+  uploading Markdown alone may still need manual image uploads and URL changes.
+  Markdown image sizing and caption/title presentation depend on the reader;
+  a caption is not guaranteed to appear as a visible figure legend.
 
 Both preview and publication generation require the configured Emacs 32+ native
 excali renderer, its native module/fonts, usable scene palette metadata, and the
-installed target palette. Missing sources, invalid palettes, empty scenes and
+installed target palette. Inline previews additionally require SVG image display
+support; publication needs the module's Cairo SVG export support. There is no
+silent PNG fallback or additional conversion tool. Missing sources, invalid palettes, empty scenes and
 renderer failures are reported; interactive preview failures leave the link
-visible, while publication failures stop export. PDF additionally requires
-Org's normal LaTeX toolchain with PNG/`graphicx` support. Exported HTML references
-cached PNGs: **copy those images with the HTML and adjust their URLs when
-publishing elsewhere**; the cache is not a portable publication bundle.
+visible, while publication failures stop export. Publication uses the saved
+source and never saves/restyles the authoritative scene.
 
 Org comment-block bodies inherit the theme's `shadow` face with italic text;
 their delimiters and comment/export semantics remain native. Org and Markdown
-enable `visual-line-mode` automatically, with a left-fringe continuation arrow
-and no right indicator. This wraps to window width without inserting newlines.
+enable `visual-line-mode` automatically, without continuation indicators or
+forced fringe widths. This wraps to window width without inserting newlines;
+unrelated fringe indicators and widths are preserved.
 Writeroom keeps its existing width, scaling and layout restoration, and now
 restores the prior wrapping state on exit.
 

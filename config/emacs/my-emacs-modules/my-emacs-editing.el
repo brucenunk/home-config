@@ -66,23 +66,18 @@ configured external opener to Markdown's default link handler."
           t)))))
 
 (defun my/prose-wrap-indicators ()
-  "Keep soft-wrap indicators visible in Org and Markdown writing buffers."
+  "Hide continuation indicators without changing unrelated fringe settings."
   (when (and visual-line-mode (derived-mode-p 'org-mode 'markdown-mode))
-    (setq-local visual-line-fringe-indicators '(left-curly-arrow nil))
+    (setq-local visual-line-fringe-indicators '(nil nil))
     (setq-local fringe-indicator-alist
-                (cons '(continuation left-curly-arrow nil)
+                (cons '(continuation nil nil)
                       (assq-delete-all 'continuation
-                                       (copy-tree fringe-indicator-alist))))
-    (dolist (window (get-buffer-window-list nil nil t))
-      (let ((fringes (window-fringes window)))
-        (set-window-fringes window (max 8 (or (car fringes) 0))
-                            (cadr fringes) (nth 2 fringes) (nth 3 fringes))))))
+                                       (copy-tree fringe-indicator-alist))))))
 
 (defun my/prose-wrap ()
   "Enable soft wrapping without inserting physical newlines."
   ;; `visual-line-mode' copies this option into `fringe-indicator-alist'.
-  (setq-local visual-line-fringe-indicators '(left-curly-arrow nil)
-              left-fringe-width 8)
+  (setq-local visual-line-fringe-indicators '(nil nil))
   (visual-line-mode 1)
   (add-hook 'visual-line-mode-hook #'my/prose-wrap-indicators nil t)
   (add-hook 'writeroom-mode-hook #'my/prose-wrap-indicators nil t)

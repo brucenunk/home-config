@@ -240,7 +240,7 @@ in
             mkdir -p "$HOME/.config"
             ln -s ${../../config/excali} "$HOME/.config/excali"
             emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
-              --load my-emacs-excali-tests --funcall ert-run-tests-batch-and-exit
+              --load my-emacs-org-excali-tests --funcall ert-run-tests-batch-and-exit
             touch "$out"
           '';
         emacs-agent-shell =

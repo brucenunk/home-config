@@ -58,6 +58,7 @@
 (require 'my-emacs-remote)
 (require 'my-emacs-ui)
 (require 'my-emacs-excali)
+(require 'my-emacs-org-excali)
 
 ;; ============================================================================
 ;; Startup Hooks
