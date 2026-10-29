@@ -266,9 +266,17 @@ enlarging a low-resolution raster. The native Cairo SVG exporter outlines fonts:
 labels retain their rendered shapes without requiring the reader's fonts, but
 label text is not searchable/selectable as text in the exported SVG.
 
-Previews default to **100% of the window's text area**, excluding fringes,
-line numbers and margins, including Writeroom's prose margins. Window resizing,
-split views and Writeroom entry/exit resize already displayed previews without
+Previews default to a cap of **120 frame character widths**, configured by
+`my/excali-org-preview-width`, and shrink to fit the available text area. This is
+840 display pixels with a 7-pixel base frame character width. The cap follows
+the preview window's frame font, not monitor resolution or physical dimensions.
+It stays stable across buffer-local text zoom and Writeroom entry/exit; it is
+independent of `writeroom-width`. Display scaling and font configuration still
+affect its apparent physical size, so identical sizing across machines is not
+guaranteed. The available area excludes fringes, line numbers and margins,
+including Writeroom's prose margins.
+Height follows the SVG's aspect ratio; tall diagrams can extend below the window.
+Window resizing, split views and Writeroom entry/exit resize displayed previews without
 rendering scenes again. This does not change global or buffer-local Org image
 settings for other images. Override an individual diagram with:
 
@@ -277,8 +285,10 @@ settings for other images. Override an individual diagram with:
 [[excali:../diagrams/shared-image-build.excalidraw][Image build]]
 ```
 
-An integer width (for example `:width 600`) specifies pixels. Widths are capped
-at the available text area. Narrower standalone previews are centred by default;
+An integer width (for example `:width 600`) specifies pixels. Explicit widths
+override the default cap; percentages refer to the available text area,
+not the cap. All widths are still capped at the available text area.
+Narrower standalone previews are centred by default;
 `:align left` or `:align right` overrides that. Diagrams embedded in surrounding
 prose are not given centring space. `ATTR_ORG` controls
 editor display only; use backend attributes such as `ATTR_HTML` for publication.

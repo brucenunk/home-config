@@ -19,6 +19,15 @@
   "Disposable SVG cache for Org previews and publication assets."
   :type 'directory :group 'my-excali)
 
+(defcustom my/excali-org-preview-width 120
+  "Default maximum Org preview width in frame character units.
+Each unit is the base character width of the preview window's frame, not
+the buffer's remapped prose font.  This follows frame font changes while
+remaining stable across local text zoom and Writeroom entry/exit.
+Previews shrink to the available text area.  An explicit ATTR_ORG width
+overrides this cap, but cannot exceed that area."
+  :type 'natnum :group 'my-excali)
+
 (defun my/excali--org-base ()
   "Return the containing Org file's directory, never incidental cwd."
   (let ((file (or buffer-file-name
@@ -80,6 +89,11 @@
           (when (file-exists-p temporary) (delete-file temporary)))))
     output))
 
+(defun my/excali--org-default-width (window)
+  "Return WINDOW's frame-font-relative default preview cap in pixels."
+  (max 1 (* my/excali-org-preview-width
+            (frame-char-width (window-frame window)))))
+
 (defun my/excali--org-size-overlay (overlay window link)
   "Size OVERLAY for WINDOW's prose area, honouring LINK's Org width attribute."
   (require 'ox)
@@ -90,13 +104,13 @@
                      :attr_org (org-element-lineage link 'paragraph) :width))
          (width
           (cond
-           ((null attribute) area)
+           ((null attribute) (my/excali--org-default-width window))
            ((string-match "\\`\\([0-9]+\\(?:\\.[0-9]+\\)?\\)%\\'" attribute)
             (max 1 (round (* area (/ (string-to-number (match-string 1 attribute)) 100.0)))))
            ((string-match-p "\\`[0-9]+\\(?:px\\)?\\'" attribute)
             (max 1 (string-to-number attribute)))
            ;; Like native Org image sizing, ignore unsupported attributes.
-           (t area)))
+           (t (my/excali--org-default-width window))))
          ;; Never spill into margins, even for oversized explicit widths.
          (width (min area width))
          (file (overlay-get overlay 'my-excali-image))
