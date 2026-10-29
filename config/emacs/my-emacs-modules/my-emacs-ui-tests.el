@@ -247,16 +247,16 @@
   (let ((faces (get-text-property (- (point) (length text)) 'face)))
     (if (listp faces) faces (list faces))))
 
-(ert-deftest my/ui-mixed-pitch-is-limited-to-markdown-and-viewport-modes ()
+(ert-deftest my/ui-mixed-pitch-is-limited-to-writing-and-viewport-modes ()
   ;; Header generation needs session state, unrelated to mode typography.
   (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
-    (dolist (mode '(markdown-mode agent-shell-viewport-view-mode
+    (dolist (mode '(markdown-mode org-mode agent-shell-viewport-view-mode
                    agent-shell-viewport-edit-mode agent-shell-mode text-mode comint-mode
                    emacs-lisp-mode))
       (with-temp-buffer
         (funcall mode)
         (should (eq major-mode mode))
-        (if (memq mode '(markdown-mode agent-shell-viewport-view-mode
+        (if (memq mode '(markdown-mode org-mode agent-shell-viewport-view-mode
                         agent-shell-viewport-edit-mode))
             (progn
               (should mixed-pitch-mode)
@@ -269,6 +269,41 @@
                 (should (equal (my/ui-test--remapped-family face)
                                (face-attribute 'default :family)))))
           (should-not (bound-and-true-p mixed-pitch-mode)))))))
+
+(ert-deftest my/ui-org-prose-and-alignment-sensitive-faces ()
+  (require 'org)
+  (let ((original-themes custom-enabled-themes))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "* Heading\nProse\n\n~code~ =verbatim=\n\n"
+                  "| Column | Value |\n|--------+-------|\n| one    | two   |\n\n"
+                  "#+begin_src emacs-lisp\n(message \"Hello\")\n#+end_src\n")
+          (org-mode)
+          (dolist (theme '(doric-obsidian doric-earth))
+            (mapc #'disable-theme custom-enabled-themes)
+            (load-theme theme t)
+            (font-lock-flush)
+            (font-lock-ensure)
+            (should mixed-pitch-mode)
+            (should (equal (my/ui-test--remapped-family 'default)
+                           (face-attribute 'variable-pitch :family)))
+            (should-not (assq 'org-level-1 face-remapping-alist))
+            (dolist (sample '(("code" . org-code)
+                              ("verbatim" . org-verbatim)
+                              ("Column" . org-table)
+                              ("#+begin_src" . org-block-begin-line)
+                              ("#+end_src" . org-block-end-line)
+                              ("message" . org-block)
+                              ("Hello" . font-lock-string-face)))
+              (should (memq (cdr sample) (my/ui-test--faces-at (car sample)))))
+            (dolist (face '(org-block org-block-begin-line org-block-end-line
+                            org-code org-verbatim org-table org-meta-line
+                            org-document-info-keyword org-checkbox org-indent
+                            font-lock-string-face))
+              (should (equal (my/ui-test--remapped-family face)
+                             (face-attribute 'default :family))))))
+      (mapc #'disable-theme custom-enabled-themes)
+      (mapc #'enable-theme (reverse original-themes)))))
 
 (defun my/ui-test--header-remappings (agent-shell-p)
   "Check header underline remappings, expected only when AGENT-SHELL-P."

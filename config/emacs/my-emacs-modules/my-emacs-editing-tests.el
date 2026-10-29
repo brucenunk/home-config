@@ -78,6 +78,74 @@
       (mapc #'enable-theme (reverse original-themes))
       (my/markdown-refresh-heading-scaling))))
 
+(ert-deftest my/org-heading-scaling-survives-theme-changes ()
+  (require 'org)
+  (let ((original-themes custom-enabled-themes))
+    (unwind-protect
+        (dolist (theme '(doric-obsidian doric-earth doric-obsidian))
+          (require (intern (format "%s-theme" theme)))
+          (mapc #'disable-theme custom-enabled-themes)
+          ;; Compare all other attributes against the theme without our hook.
+          (let ((enable-theme-functions
+                 (remq #'my/org-refresh-heading-scaling enable-theme-functions)))
+            (load-theme theme t))
+          (let ((attributes
+                 (cl-loop for level from 1 to 8 collect
+                          (assq-delete-all
+                           :height
+                           (face-all-attributes
+                            (intern (format "org-level-%d" level)))))))
+            ;; Exercise real theme activation, not just a direct helper call.
+            (disable-theme theme)
+            (enable-theme theme)
+            (cl-loop for level from 1 to 8
+                     for height in '(2.0 1.7 1.4 1.1 1.0 1.0 1.0 1.0)
+                     for expected in attributes
+                     for face = (intern (format "org-level-%d" level))
+                     do (should (equal (face-attribute face :height nil) height))
+                     do (should (equal (assq-delete-all :height
+                                                       (face-all-attributes face))
+                                       expected)))))
+      (mapc #'disable-theme custom-enabled-themes)
+      (mapc #'enable-theme (reverse original-themes))
+      (my/org-refresh-heading-scaling))))
+
+(ert-deftest my/org-native-source-fontification-and-editing ()
+  (require 'org)
+  (require 'rainbow-delimiters)
+  (save-window-excursion
+    (with-temp-buffer
+      (insert "* Trial\n#+begin_src emacs-lisp\n"
+              "(message \"Hello\")\n#+end_src\n")
+      (org-mode)
+      (should org-src-fontify-natively)
+      (font-lock-ensure)
+      (goto-char (point-min))
+      (search-forward "Hello")
+      (let ((faces (get-text-property (1- (point)) 'face)))
+        (should (memq 'font-lock-string-face
+                      (if (listp faces) faces (list faces)))))
+      (should (eq (key-binding (kbd "C-c '")) #'org-edit-special))
+      (let ((source (current-buffer))
+            edit-buffer)
+        (unwind-protect
+            (progn
+              (org-edit-special)
+              (setq edit-buffer (current-buffer))
+              (should (derived-mode-p 'emacs-lisp-mode))
+              (should rainbow-delimiters-mode)
+              (should-not (bound-and-true-p mixed-pitch-mode))
+              (goto-char (point-min))
+              (search-forward "Hello")
+              (replace-match "Edited")
+              (org-edit-src-exit)
+              (should (eq (current-buffer) source))
+              (goto-char (point-min))
+              (should (search-forward "Edited" nil t)))
+          (when (buffer-live-p edit-buffer)
+            (with-current-buffer edit-buffer
+              (org-edit-src-abort))))))))
+
 (ert-deftest my/jinx-markdown-exclusions ()
   (require 'markdown-mode)
   (dolist (mode '(markdown-mode gfm-mode))

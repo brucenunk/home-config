@@ -181,9 +181,12 @@ Subsequent automatic appearance changes use the selected themes."
 (use-package mixed-pitch
   :ensure nil
   :hook ((markdown-mode . mixed-pitch-mode)
+         (org-mode . mixed-pitch-mode)
          (agent-shell-viewport-view-mode . mixed-pitch-mode)
          (agent-shell-viewport-edit-mode . mixed-pitch-mode))
   :config
+  ;; mixed-pitch already keeps Org blocks, code/verbatim, tables, metadata,
+  ;; checkboxes, and indentation fixed-pitch; retain its native face list.
   ;; The renderer's base faces also cover source labels, syntax-highlighted
   ;; bodies, and table headers/borders through inheritance.  Remap them only
   ;; in mixed-pitch buffers; ordinary shell buffers keep their own font.

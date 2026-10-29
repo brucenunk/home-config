@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; Basic editing settings, Markdown, Jinx spell checking, editorconfig,
+;; Basic editing settings, Markdown and Org, Jinx spell checking, editorconfig,
 ;; rainbow-delimiters, ws-butler, and autorevert configuration.
 
 ;;; Code:
@@ -80,6 +80,19 @@ configured external opener to Markdown's default link handler."
   (my/markdown-refresh-heading-scaling)
   (add-hook 'markdown-follow-link-functions
             #'my/markdown-follow-file-link-other-window))
+
+(use-package org
+  :ensure nil
+  :defer t
+  :config
+  (defun my/org-refresh-heading-scaling (&optional _theme)
+    "Reapply Org heading heights without replacing theme colours or styling."
+    (cl-loop for level from 1 to 8
+             for height in '(2.0 1.7 1.4 1.1 1.0 1.0 1.0 1.0)
+             do (set-face-attribute (intern (format "org-level-%d" level))
+                                    nil :height height)))
+  (add-hook 'enable-theme-functions #'my/org-refresh-heading-scaling)
+  (my/org-refresh-heading-scaling))
 
 (use-package jinx
   :ensure nil
