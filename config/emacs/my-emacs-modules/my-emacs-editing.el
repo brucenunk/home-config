@@ -65,9 +65,33 @@ configured external opener to Markdown's default link handler."
           (find-file-other-window file)
           t)))))
 
+(defun my/prose-wrap-indicators ()
+  "Keep soft-wrap indicators visible in Org and Markdown writing buffers."
+  (when (and visual-line-mode (derived-mode-p 'org-mode 'markdown-mode))
+    (setq-local visual-line-fringe-indicators '(left-curly-arrow nil))
+    (setq-local fringe-indicator-alist
+                (cons '(continuation left-curly-arrow nil)
+                      (assq-delete-all 'continuation
+                                       (copy-tree fringe-indicator-alist))))
+    (dolist (window (get-buffer-window-list nil nil t))
+      (let ((fringes (window-fringes window)))
+        (set-window-fringes window (max 8 (or (car fringes) 0))
+                            (cadr fringes) (nth 2 fringes) (nth 3 fringes))))))
+
+(defun my/prose-wrap ()
+  "Enable soft wrapping without inserting physical newlines."
+  ;; `visual-line-mode' copies this option into `fringe-indicator-alist'.
+  (setq-local visual-line-fringe-indicators '(left-curly-arrow nil)
+              left-fringe-width 8)
+  (visual-line-mode 1)
+  (add-hook 'visual-line-mode-hook #'my/prose-wrap-indicators nil t)
+  (add-hook 'writeroom-mode-hook #'my/prose-wrap-indicators nil t)
+  (my/prose-wrap-indicators))
+
 (use-package markdown-mode
   :ensure nil
   :mode "\\.md\\'"
+  :hook (markdown-mode . my/prose-wrap)
   :custom
   (markdown-fontify-code-blocks-natively t)
   (markdown-header-scaling t)
@@ -84,7 +108,30 @@ configured external opener to Markdown's default link handler."
 (use-package org
   :ensure nil
   :defer t
+  :hook (org-mode . my/prose-wrap)
   :config
+  (defface my/org-comment-block
+    '((t :inherit shadow :slant italic))
+    "Theme-derived styling for the contents of Org comment blocks."
+    :group 'org-faces)
+  (defun my/org-fontify-comment-block (fontify limit)
+    "Extend Org's native block FONTIFY up to LIMIT with comment-body styling.
+Reuse its multiline region and invalidation rather than scanning on edits."
+    (let ((start (point))
+          (result (funcall fontify limit)))
+      (when result
+        (save-excursion
+          (let ((end (point)) (case-fold-search t))
+            (goto-char start)
+            (when (and (re-search-forward "^[ \t]*#\\+begin_\\([[:alnum:]]+\\)\\b.*\n" end t)
+                       (equal (downcase (match-string 1)) "comment"))
+              (let ((body (point)))
+                (when (re-search-forward "^[ \t]*#\\+end_comment\\b" end t)
+                  (put-text-property body (line-beginning-position)
+                                     'face 'my/org-comment-block)))))))
+      result))
+  (advice-add 'org-fontify-meta-lines-and-blocks :around
+              #'my/org-fontify-comment-block)
   (defun my/org-refresh-heading-scaling (&optional _theme)
     "Reapply Org heading heights without replacing theme colours or styling."
     (cl-loop for level from 1 to 8

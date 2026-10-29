@@ -300,5 +300,60 @@
             (kill-buffer buffer)))
       (delete-file file))))
 
+(ert-deftest my/org-comment-block-refontifies-after-edits ()
+  (require 'org)
+  (with-temp-buffer
+    (insert "#+begin_comment\nbody\n#+end_comment\n\n"
+            "#+begin_quote\nquoted\n#+end_quote\n\n"
+            "#+begin_src emacs-lisp\n#+begin_comment\nsource\n#+end_src\n")
+    (org-mode)
+    (let ((noninteractive nil)) (font-lock-mode 1))
+    (font-lock-ensure)
+    (cl-labels ((face-at (word)
+                 (save-excursion
+                   (goto-char (point-min)) (search-forward word)
+                   (get-text-property (1- (point)) 'face))))
+      (should (eq (face-at "body") 'my/org-comment-block))
+      (should-not (eq (face-at "quoted") 'my/org-comment-block))
+      (should-not (eq (face-at "source") 'my/org-comment-block))
+      (goto-char (point-min)) (search-forward "body")
+      (insert " inserted")
+      (font-lock-ensure)
+      (should (eq (face-at "inserted") 'my/org-comment-block))
+      (delete-region (- (point) 9) (point))
+      (font-lock-ensure)
+      (should (eq (face-at "body") 'my/org-comment-block))
+      ;; Invalidate the opening delimiter, then restore it.
+      (goto-char (point-min)) (search-forward "begin_comment")
+      (delete-char -1)
+      (font-lock-ensure)
+      (should-not (eq (face-at "body") 'my/org-comment-block))
+      (insert "t")
+      (font-lock-ensure)
+      (should (eq (face-at "body") 'my/org-comment-block))
+      ;; Editing the end delimiter also removes stale body styling.
+      (search-forward "end_comment") (delete-char -1)
+      (font-lock-ensure)
+      (should-not (eq (face-at "body") 'my/org-comment-block))
+      (insert "t") (font-lock-ensure)
+      (should (eq (face-at "body") 'my/org-comment-block)))))
+
+(ert-deftest my/prose-soft-wrap-defaults ()
+  (require 'org)
+  (require 'markdown-mode)
+  (dolist (mode '(org-mode markdown-mode gfm-mode))
+    (with-temp-buffer
+      (insert (make-string 500 ?a))
+      (let ((before (buffer-string)))
+        (funcall mode)
+        (should visual-line-mode)
+        (should-not auto-fill-function)
+        (should (equal visual-line-fringe-indicators '(left-curly-arrow nil)))
+        (visual-line-mode -1) (visual-line-mode 1)
+        (should (equal (cdr (assq 'continuation fringe-indicator-alist))
+                       '(left-curly-arrow nil)))
+        (should (>= left-fringe-width 8))
+        (should (equal before (buffer-string)))))))
+
 (provide 'my-emacs-editing-tests)
 ;;; my-emacs-editing-tests.el ends here

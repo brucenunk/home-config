@@ -216,13 +216,27 @@ Stored as (MODE AMOUNT), or nil outside the writing view.")
       (text-scale-mode (if (car my/writeroom-saved-text-scale) 1 -1))
       (setq my/writeroom-saved-text-scale nil))))
 
+(defvar-local my/writeroom-saved-visual-line nil
+  "Visual-line state on entering Writeroom, wrapped in a list.")
+
+(defun my/writeroom-visual-line (arg)
+  "Enable wrapping for positive ARG; restore its prior state otherwise."
+  (if (> arg 0)
+      (progn
+        (unless my/writeroom-saved-visual-line
+          (setq my/writeroom-saved-visual-line (list visual-line-mode)))
+        (visual-line-mode 1))
+    (when my/writeroom-saved-visual-line
+      (visual-line-mode (if (car my/writeroom-saved-visual-line) 1 -1))
+      (setq my/writeroom-saved-visual-line nil))))
+
 (use-package writeroom-mode
   :ensure nil
   :commands (writeroom-mode)
   :custom
   (writeroom-width 80)
   (writeroom-restore-window-config t)
-  (writeroom-local-effects '(visual-line-mode my/writeroom-text-scale)))
+  (writeroom-local-effects '(my/writeroom-visual-line my/writeroom-text-scale)))
 
 (use-package pulsar
   :ensure nil

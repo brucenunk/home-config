@@ -147,7 +147,7 @@
   (should (= writeroom-width 80))
   (should writeroom-restore-window-config)
   (should (equal writeroom-local-effects
-                 '(visual-line-mode my/writeroom-text-scale)))
+                 '(my/writeroom-visual-line my/writeroom-text-scale)))
   (should-not (bound-and-true-p global-writeroom-mode))
   ;; Frame effects need a graphical manual check.  Exercise the real buffer
   ;; effects and window restoration without changing fullscreen in batch.
@@ -186,6 +186,40 @@
             (should-not visual-fill-column-mode)
             (should (equal text (buffer-string)))
             (should-not (buffer-modified-p))))))))
+
+(ert-deftest my/ui-writeroom-preserves-prose-wrapping-and-fringes ()
+  (require 'org)
+  (require 'writeroom-mode)
+  ;; The UI check package intentionally excludes spelling/programming aids.
+  ;; Load the real wrapping setup without starting unrelated mode hooks.
+  (let ((writeroom-global-effects nil)
+        (text-mode-hook nil) (prog-mode-hook nil))
+    (require 'my-emacs-editing)
+    (setq text-mode-hook nil prog-mode-hook nil)
+    (dolist (mode '(org-mode markdown-mode))
+      (save-window-excursion
+        (with-temp-buffer
+          (funcall mode)
+          (switch-to-buffer (current-buffer))
+          (insert (make-string 500 ?a))
+          (let ((text (buffer-string)))
+            (unwind-protect
+                (progn
+                  (should visual-line-mode)
+                  (writeroom-mode 1)
+                  (should visual-line-mode)
+                  (should (>= left-fringe-width 8))
+                  (when (display-graphic-p)
+                    (should (>= (car (window-fringes)) 8)))
+                  (writeroom-mode -1)
+                  (should visual-line-mode)
+                  (should (equal (cdr (assq 'continuation fringe-indicator-alist))
+                                 '(left-curly-arrow nil)))
+                  (should (>= left-fringe-width 8))
+                  (when (display-graphic-p)
+                    (should (>= (car (window-fringes)) 8)))
+                  (should (equal text (buffer-string))))
+              (when (bound-and-true-p writeroom-mode) (writeroom-mode -1)))))))))
 
 (ert-deftest my/ui-writeroom-restores-prior-buffer-text-scaling ()
   (require 'writeroom-mode)

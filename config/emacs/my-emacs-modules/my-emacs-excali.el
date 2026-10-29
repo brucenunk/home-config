@@ -796,5 +796,175 @@ opening or prevent other drawings from following a theme change."
 (use-package excali-dsl
   :mode ("\\.excalidsl\\'" . excali-dsl-mode))
 
+;;; Org links: saved scenes are the only input to disposable rendering.
+
+(defcustom my/excali-preview-directory
+  (expand-file-name "excali/" (or (getenv "XDG_CACHE_HOME") "~/.cache/"))
+  "Disposable PNG cache for Org previews and publication assets."
+  :type 'directory :group 'my-excali)
+
+(defun my/excali--org-base ()
+  "Return the containing Org file's directory, never incidental cwd."
+  (let ((file (or buffer-file-name
+                  (buffer-file-name (buffer-base-buffer)))))
+    (unless file
+      (user-error "Save the Org document before using excali links"))
+    (file-name-directory file)))
+
+(defun my/excali--org-source (path)
+  "Resolve and validate Org link PATH."
+  (let ((file (expand-file-name (org-link-unescape path) (my/excali--org-base))))
+    (unless (and (equal (file-name-extension file) "excalidraw")
+                 (file-regular-p file) (file-readable-p file))
+      (user-error "Missing or unreadable .excalidraw source: %s" file))
+    file))
+
+(defun my/excali--org-complete (&optional _arg)
+  "Complete a scene filename and return a relative excali link."
+  (let* ((base (my/excali--org-base))
+         (file (read-file-name
+                "Excalidraw scene: " my/excali-directory nil t nil
+                (lambda (file)
+                  (or (file-directory-p file)
+                      (equal (file-name-extension file) "excalidraw"))))))
+    (concat "excali:" (org-link-escape
+                       (file-relative-name (my/excali--org-source file) base)))))
+
+(defun my/excali--org-follow (path _arg)
+  "Open authoritative scene PATH through the existing drawing integration."
+  (my/excali-open (my/excali--org-source path)))
+
+(defun my/excali--render-file (source palette output)
+  "Render saved SOURCE in PALETTE to PNG OUTPUT in a disposable buffer."
+  (condition-case err
+      (progn (my/excali--check-compatible) (require 'excali))
+    (error (user-error "Excalidraw previews require the native excali renderer: %s"
+                       (error-message-string err))))
+  (with-temp-buffer
+    ;; Do not run mode/open hooks, create views or visit the source file.
+    (setq major-mode 'excali-mode
+          excali--doc (excali--restore-doc (excali--read-scene-file source))
+          excali--elements (append (alist-get 'elements excali--doc) nil)
+          excali--native-cache (make-hash-table :test #'eq)
+          excali--history-hold t)
+    (excali--load-current-style (alist-get 'appState excali--doc))
+    (unwind-protect
+        (cl-letf (((symbol-function 'excali--render) #'ignore)
+                  ((symbol-function 'excali--sync-views) #'ignore))
+          (my/excali-update-palette palette)
+          (let ((excali-export-background t)
+                (excali-export-padding 16)
+                (excali-export-scale 1.0)
+                (excali-export-embed-scene nil))
+            (excali-export-png output)))
+      (excali--image-release-buffer))))
+
+(defun my/excali--org-image (path publication)
+  "Return cached PNG for PATH, using Doric Light when PUBLICATION is non-nil."
+  (condition-case err
+      (require 'excali)
+    (error (user-error "Excalidraw previews require the native excali renderer: %s"
+                       (error-message-string err))))
+  (let* ((source (my/excali--org-source path))
+         (palette (if publication (my/excali--read-palette "doric-light")
+                    (my/excali--theme-palette)))
+         (digest (with-temp-buffer
+                   (insert-file-contents-literally source)
+                   (secure-hash 'sha256 (current-buffer))))
+         (key (secure-hash 'sha256
+                           (prin1-to-string
+                            (list 1 digest palette emacs-version
+                                  (locate-library "excali")
+                                  (and (boundp 'excali-font-families)
+                                       excali-font-families)))))
+         (output (expand-file-name (concat key ".png") my/excali-preview-directory)))
+    (unless (file-exists-p output)
+      (make-directory my/excali-preview-directory t)
+      (let ((temporary (make-temp-file (expand-file-name "render-" my/excali-preview-directory)
+                                      nil ".png")))
+        (unwind-protect
+            (progn
+              (my/excali--render-file source (alist-get 'theme palette) temporary)
+              (rename-file temporary output t))
+          (when (file-exists-p temporary) (delete-file temporary)))))
+    output))
+
+(defun my/excali--org-preview (overlay path link)
+  "Display generated PNG for PATH and LINK in Org OVERLAY."
+  (when (display-graphic-p)
+    (condition-case err
+        (let ((source (my/excali--org-source path))
+              (image (my/excali--org-image path nil)))
+          (when (org-link-preview-file overlay image link)
+            (overlay-put overlay 'my-excali-source source)
+            (overlay-put overlay 'my-excali-path path)
+            t))
+      (error (message "Excalidraw preview: %s" (error-message-string err)) nil))))
+
+(defun my/excali--org-display ()
+  "Display excali links when opening an Org document."
+  (when (and (or buffer-file-name (buffer-file-name (buffer-base-buffer)))
+             (display-graphic-p))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward "\\[\\[excali:" nil t)
+        (let* ((beg (match-beginning 0))
+               (link (org-element-context)))
+          (when (eq (org-element-type link) 'link)
+            (org-link-preview-region nil nil beg (org-element-end link))))))))
+
+(defun my/excali--org-refresh (&optional source)
+  "Refresh displayed excali overlays, restricting to SOURCE when supplied."
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'org-mode)
+        (dolist (ov (copy-sequence org-link-preview-overlays))
+          (when-let* ((file (overlay-get ov 'my-excali-source))
+                      ((or (null source) (file-equal-p file source)))
+                      ((overlay-buffer ov)))
+            (let ((beg (overlay-start ov)) (end (overlay-end ov)))
+              ;; Native refresh flushes image-cache entries as well as overlays.
+              (org-link-preview-region t t beg end))))))))
+
+(defun my/excali--org-after-save (&rest _)
+  "Notify displayed previews after a native or ordinary scene save."
+  (when-let* ((file (if (derived-mode-p 'excali-mode) excali--file buffer-file-name))
+              ((equal (file-name-extension file) "excalidraw")))
+    (my/excali--org-refresh (expand-file-name file))))
+
+(defun my/excali--org-export (tree backend info)
+  "Render excali links in export TREE for BACKEND using INFO.
+Only the disposable export parse tree is changed.  Native image exporters
+retain ownership of attributes, escaping and backend markup."
+  (org-element-map tree 'link
+    (lambda (link)
+      (when (equal (org-element-property :type link) "excali")
+        (unless (or (org-export-derived-backend-p backend 'html)
+                    (org-export-derived-backend-p backend 'latex))
+          (user-error "excali links support HTML and LaTeX/PDF export, not %s" backend))
+        (let* ((buffer-file-name (plist-get info :input-file))
+               (image (my/excali--org-image (org-element-property :path link) t)))
+          (org-element-put-property link :type "file")
+          (org-element-put-property link :path image)
+          (org-element-put-property link :raw-link (concat "file:" image))))))
+  tree)
+
+(defun my/excali--org-theme-enabled (&rest _)
+  "Refresh displayed diagram previews after enabling a theme."
+  (my/excali--org-refresh))
+
+(with-eval-after-load 'org
+  (org-link-set-parameters "excali"
+                           :follow #'my/excali--org-follow
+                           :complete #'my/excali--org-complete
+                           :preview #'my/excali--org-preview)
+  (add-hook 'org-mode-hook #'my/excali--org-display)
+  (add-hook 'enable-theme-functions #'my/excali--org-theme-enabled)
+  (with-eval-after-load 'ox
+    (add-hook 'org-export-filter-parse-tree-functions #'my/excali--org-export))
+  (add-hook 'after-save-hook #'my/excali--org-after-save)
+  (with-eval-after-load 'excali
+    (advice-add 'excali-save :after #'my/excali--org-after-save)))
+
 (provide 'my-emacs-excali)
 ;;; my-emacs-excali.el ends here

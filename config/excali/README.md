@@ -217,6 +217,66 @@ Custom canvas colours remain custom; disabling the background still produces a
 transparent export. If scene embedding is enabled, the PNG contains the converted
 Doric Light scene, not the original source palette.
 
+## Org authoring and inline previews
+
+Insert an authoritative scene with **`C-c C-l`**, choose **`excali`**, and
+complete a `.excalidraw` filename. Completion starts in `my/excali-directory`
+(`~/work/docs/diagrams/` by default), permits other locations, and stores a
+path relative to the saved Org document. For a document in `~/work/docs/docs/`:
+
+```org
+[[excali:../diagrams/shared-image-build.excalidraw]]
+```
+
+Save the Org document first. Follow the link with `C-c C-o` to open the scene
+in the existing editor. A link without a description displays its generated
+image on opening the document; described links follow Org's normal
+include-linked preview rules. Org's `C-c C-x C-v` toggles previews, and
+`M-x org-link-preview-refresh` explicitly redisplays/regenerates them.
+Saving a scene (including native `excali-save`) refreshes displayed references;
+enabling a theme refreshes displayed diagrams only. Ordinary prose edits do
+not regenerate unrelated diagrams. External file edits are picked up on the
+next explicit refresh or reopen; there is no file watcher.
+
+Previews render **saved source**, not an unsaved editor buffer. A scene need not
+be open in the editor. The native renderer converts a disposable copy to the
+current theme using the conservative palette rules above. Source files, live
+scene state, selection, native caches and undo/redo are untouched. Existing
+automatic theme following for editor buffers is separate and remains unchanged.
+PNG images—not Excalidraw JSON—are passed to Org's ordinary image display.
+
+Generated images are content-addressed by source content, target palette and
+renderer identity under `$XDG_CACHE_HOME/excali/` (default `~/.cache/excali/`).
+Theme changes never write generated images beside the source. Old cache entries
+can be deleted at any time; they regenerate when needed. The first render of a
+scene/palette is synchronous and may take longer for a large drawing.
+
+### Publication export
+
+Standard **HTML** and **LaTeX/PDF** export renders the same links in **Doric
+Light**, independently of the editor theme. The export parse tree uses generated
+PNG file links, so native Org image attributes and backend escaping still apply.
+Use undescribed links to embed images; ordinary described file links retain
+Org's normal link behaviour. Other export backends report an explicit error
+rather than omitting the diagram. The existing `my/excali-export` sharing command
+is unchanged.
+
+Both preview and publication generation require the configured Emacs 32+ native
+excali renderer, its native module/fonts, usable scene palette metadata, and the
+installed target palette. Missing sources, invalid palettes, empty scenes and
+renderer failures are reported; interactive preview failures leave the link
+visible, while publication failures stop export. PDF additionally requires
+Org's normal LaTeX toolchain with PNG/`graphicx` support. Exported HTML references
+cached PNGs: **copy those images with the HTML and adjust their URLs when
+publishing elsewhere**; the cache is not a portable publication bundle.
+
+Org comment-block bodies inherit the theme's `shadow` face with italic text;
+their delimiters and comment/export semantics remain native. Org and Markdown
+enable `visual-line-mode` automatically, with a left-fringe continuation arrow
+and no right indicator. This wraps to window width without inserting newlines.
+Writeroom keeps its existing width, scaling and layout restoration, and now
+restores the prior wrapping state on exit.
+
 ## Agent use and JSON
 
 Keep `.excalidraw` JSON authoritative. Copy `canvas` to
