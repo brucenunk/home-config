@@ -70,7 +70,14 @@ configured external opener to Markdown's default link handler."
   :mode "\\.md\\'"
   :custom
   (markdown-fontify-code-blocks-natively t)
+  (markdown-header-scaling t)
   :config
+  (defun my/markdown-refresh-heading-scaling (&optional _theme)
+    "Reapply Markdown's heading scaling after loading a theme."
+    (markdown-update-header-faces markdown-header-scaling))
+  ;; Themes can replace the heights installed by the option's Custom setter.
+  (add-hook 'enable-theme-functions #'my/markdown-refresh-heading-scaling)
+  (my/markdown-refresh-heading-scaling)
   (add-hook 'markdown-follow-link-functions
             #'my/markdown-follow-file-link-other-window))
 

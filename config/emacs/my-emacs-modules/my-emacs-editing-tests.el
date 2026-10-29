@@ -50,6 +50,34 @@
     (should jinx-mode)
     (should (equal (my/editing-test-misspellings) '("zqxorgtypo")))))
 
+(ert-deftest my/markdown-heading-scaling ()
+  (require 'markdown-mode)
+  (should markdown-header-scaling)
+  (should (equal markdown-header-scaling-values '(2.0 1.7 1.4 1.1 1.0 1.0)))
+  (should (equal (cl-loop for level from 1 to 6
+                          collect (face-attribute
+                                   (intern (format "markdown-header-face-%d" level))
+                                   :height nil))
+                 markdown-header-scaling-values)))
+
+(ert-deftest my/markdown-heading-scaling-survives-theme-changes ()
+  (require 'markdown-mode)
+  (let ((original-themes custom-enabled-themes))
+    (unwind-protect
+        (dolist (theme '(doric-obsidian doric-earth))
+          (require (intern (format "%s-theme" theme)))
+          (mapc #'disable-theme custom-enabled-themes)
+          (load-theme theme t)
+          (should markdown-header-scaling)
+          (should (equal (cl-loop for level from 1 to 6
+                                  collect (face-attribute
+                                           (intern (format "markdown-header-face-%d" level))
+                                           :height nil))
+                         '(2.0 1.7 1.4 1.1 1.0 1.0))))
+      (mapc #'disable-theme custom-enabled-themes)
+      (mapc #'enable-theme (reverse original-themes))
+      (my/markdown-refresh-heading-scaling))))
+
 (ert-deftest my/jinx-markdown-exclusions ()
   (require 'markdown-mode)
   (dolist (mode '(markdown-mode gfm-mode))
