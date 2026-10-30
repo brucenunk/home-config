@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; Regression coverage for reusable Denote content templates.
+;; Regression coverage for Denote startup and reusable content templates.
 
 ;;; Code:
 
@@ -14,7 +14,7 @@
          (denote-directory root)
          note-buffer)
     (unwind-protect
-        (let ((file (denote "Ordinary note" nil nil nil nil 'empty nil
+        (let ((file (denote "Ordinary note" nil nil nil nil "" nil
                             "20261030T110000")))
           (setq note-buffer (find-buffer-visiting file))
           (should (equal (file-name-extension file) "org"))
@@ -31,14 +31,141 @@
       (delete-directory root t))))
 
 (ert-deftest my/denote-task-template-is-content-only ()
-  (let ((template (alist-get 'task-workflow-v3 denote-templates)))
+  (let* ((reader (alist-get 'task-workflow denote-templates))
+         (template (funcall reader)))
+    (should (functionp reader))
     (should (stringp template))
-    (dolist (heading '("* Context" "* Goals" "* Non-Goals" "* Constraints"))
-      (should (string-match-p (regexp-quote heading) template)))
-    (should (equal (alist-get 'task denote-templates) template))
-    (should (equal (alist-get 'empty denote-templates) ""))
+    (should (equal template "* Context\n\n"))
+    (should (equal (mapcar #'car denote-templates) '(task-workflow)))
     (should-not (string-match-p "Dependencies" template))
     (should-not (string-match-p "repo:" template))))
+
+(ert-deftest my/denote-template-reads-requested-file-on-demand ()
+  (let ((user-emacs-directory (make-temp-file "denote-templates-" t)))
+    (unwind-protect
+        (dolist (filename '("task-workflow.org" "technical-note.org"))
+          (let ((file (locate-user-emacs-file (concat "denote-templates/" filename))))
+            (make-directory (file-name-directory file) t)
+            (dolist (body '("* First version\n" "* Revised version\n"))
+              (write-region body nil file nil 'silent)
+              (should (equal (my/denote-template filename) body))
+              (when (equal filename "task-workflow.org")
+                (should (equal (funcall (alist-get 'task-workflow denote-templates))
+                               body))))))
+      (delete-directory user-emacs-directory t))))
+
+(ert-deftest my/denote-extracted-template-inserts-into-org-notes ()
+  (let* ((root (make-temp-file "denote-template-note-" t))
+         (denote-directory root))
+    (unwind-protect
+        (let* ((file (denote "Template test" nil 'org nil nil 'task-workflow))
+               (buffer (find-buffer-visiting file)))
+          (unwind-protect
+              (with-current-buffer buffer
+                (should (derived-mode-p 'org-mode))
+                (should (string-suffix-p (my/denote-template "task-workflow.org")
+                                         (buffer-string))))
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))
+      (delete-directory root t))))
+
+(ert-deftest my/denote-startup-sorts-all-files-newest-first ()
+  (let* ((root (make-temp-file "denote-startup-" t))
+         (denote-directory root)
+         (my/denote-startup-notes-buffer nil)
+         ;; Startup must not depend on interactive settings or prompt history.
+         (denote-sort-dired-default-sort-component 'title)
+         (denote-sort-component-history '("keywords"))
+         (files '("20261030T100000--alpha.org"
+                  "tasks/20261031T100000--zulu.org"
+                  "20261029T100000--middle.md"))
+         notes-buffer)
+    (unwind-protect
+        (progn
+          (dolist (name files)
+            (let ((file (expand-file-name name root)))
+              (make-directory (file-name-directory file) t)
+              (write-region "" nil file nil 'silent)))
+          (save-window-excursion
+            (let ((original (window-buffer)))
+              (setq notes-buffer (my/denote-startup-buffer))
+              (should (eq (window-buffer) original))))
+          (with-current-buffer notes-buffer
+            (should (derived-mode-p 'dired-mode))
+            (should (equal denote-sort-dired--last-arguments
+                           '("" identifier t nil nil)))
+            (should (equal (cdr dired-directory)
+                           (list (nth 1 files) (nth 0 files) (nth 2 files)))))
+          (should (eq denote-sort-dired-default-sort-component 'title))
+          (should (equal denote-sort-component-history '("keywords"))))
+      (when (buffer-live-p notes-buffer) (kill-buffer notes-buffer))
+      (delete-directory root t))))
+
+(ert-deftest my/denote-startup-falls-back-for-empty-or-missing-directory ()
+  (let ((root (make-temp-file "denote-empty-startup-" t))
+        (my/denote-startup-notes-buffer nil))
+    (unwind-protect
+        (dolist (denote-directory (list root (expand-file-name "missing/" root)))
+          (should (eq (my/denote-startup-buffer) (get-scratch-buffer-create))))
+      (delete-directory root t))))
+
+(ert-deftest my/denote-startup-reuses-refreshes-and-recreates-notes-buffer ()
+  (let* ((root (make-temp-file "denote-repeated-startup-" t))
+         (denote-directory root)
+         (my/denote-startup-notes-buffer nil)
+         (old (expand-file-name "20261029T100000--old.org" root))
+         (new (expand-file-name "20261030T100000--new.org" root)))
+    (unwind-protect
+        (progn
+          (write-region "" nil old nil 'silent)
+          (let ((first (my/denote-startup-buffer)))
+            (write-region "" nil new nil 'silent)
+            (should (eq (my/denote-startup-buffer) first))
+            (with-current-buffer first
+              (should (equal (cdr dired-directory)
+                             (list (file-name-nondirectory new)
+                                   (file-name-nondirectory old)))))
+            (kill-buffer first)
+            (let ((second (my/denote-startup-buffer)))
+              (should (buffer-live-p second))
+              (should-not (eq first second))
+              (delete-file old)
+              (delete-file new)
+              (should (eq (my/denote-startup-buffer) (get-scratch-buffer-create)))
+              (kill-buffer second))))
+      (when (buffer-live-p my/denote-startup-notes-buffer)
+        (kill-buffer my/denote-startup-notes-buffer))
+      (delete-directory root t))))
+
+(ert-deftest my/denote-startup-preserves-requested-buffers ()
+  (let ((noninteractive nil)
+        (initial-buffer-choice nil))
+    (cl-letf (((symbol-function 'daemonp) (lambda () nil))
+              ((symbol-function 'my/denote-startup-buffer)
+               (lambda () (ert-fail "Replaced an explicitly requested buffer"))))
+      (dolist (mode '(org-mode dired-mode fundamental-mode))
+        (with-temp-buffer
+          (setq major-mode mode)
+          (let ((original (current-buffer)))
+            (my/denote-startup)
+            (should (eq (current-buffer) original)))))
+      (should (eq initial-buffer-choice #'my/denote-startup-buffer)))))
+
+(ert-deftest my/denote-startup-shows-notes-only-on-empty-interactive-startup ()
+  (let ((initial-buffer-choice nil)
+        (notes (generate-new-buffer " *startup-notes-test*")))
+    (unwind-protect
+        (save-window-excursion
+          (cl-letf (((symbol-function 'my/denote-startup-buffer) (lambda () notes)))
+            (dolist (state '((nil nil t) (nil t nil) (t nil nil)))
+              (let ((noninteractive (nth 0 state)))
+                (cl-letf (((symbol-function 'daemonp) (lambda () (nth 1 state))))
+                  (switch-to-buffer (get-scratch-buffer-create))
+                  (my/denote-startup)
+                  (should (eq (eq (current-buffer) notes) (nth 2 state)))
+                  (should (eq initial-buffer-choice #'my/denote-startup-buffer)))))))
+      (kill-buffer notes))))
 
 (ert-deftest my/denote-task-binding-releases-old-prefix ()
   (should (eq (keymap-lookup (current-global-map) "C-c n T") #'my/denote-task))

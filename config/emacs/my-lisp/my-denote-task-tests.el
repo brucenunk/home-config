@@ -25,8 +25,7 @@
           (denote-directory root)
           (my/agent-machines (copy-tree my/denote-task-test--machines))
           (denote-save-buffers t)
-          (denote-templates '((task-workflow-v3 . "* Context\n\nCapture context.\n")
-                             (empty . ""))))
+          (denote-templates '((task-workflow . "* Context\n\nCapture context.\n"))))
      (unwind-protect
          (progn
            (cl-letf (((symbol-function 'my/denote-task-directory) (lambda () root))
@@ -55,7 +54,7 @@
      (should-not (find-buffer-visiting file))
      (with-temp-buffer
        (insert-file-contents file)
-       (should (search-forward "#+skill: task-workflow-v3" nil t))
+       (should (search-forward "#+skill: task-workflow" nil t))
        (should (search-forward "* Context" nil t))
        (goto-char (point-min))
        (dolist (line '("#+repo: example/project" "#+machine: machine-a"
@@ -67,7 +66,7 @@
        (goto-char (point-min))
        (should-not (re-search-forward "^#\\+base-ref:" nil t))))))
 
-(ert-deftest my/denote-task-named-skill-uses-an-empty-template ()
+(ert-deftest my/denote-task-named-skill-uses-an-empty-body ()
   (my/denote-task-test--with-directory
    (let ((file (my/denote-task "Bump inputs" "bump-nix")))
      (with-temp-buffer
@@ -81,6 +80,16 @@
      (with-temp-buffer
        (insert-file-contents file)
        (should-not (re-search-forward "^#\\+skill:" nil t))))))
+
+(ert-deftest my/denote-task-empty-bodies-do-not-require-a-template-entry ()
+  (my/denote-task-test--with-directory
+   (let ((original (symbol-function 'denote)))
+     (cl-letf (((symbol-function 'denote)
+                (lambda (&rest args)
+                  (should (equal (nth 5 args) ""))
+                  (apply original args))))
+       (dolist (workflow '("none" "bump-nix"))
+         (my/denote-task "No body" workflow))))))
 
 (ert-deftest my/denote-task-interactive-streamlined-prompts ()
   (my/denote-task-test--with-directory

@@ -8,7 +8,7 @@ Personal repositories. Finish mode is **merge-local** (squash-merge locally and 
 
 ## Git Finish Workflow (merge-local)
 
-When finishing a task on a merge-local repo, first ensure the reviewed feature result is committed. For a `task-workflow-v3` task, use its post-review commit gate; commit approval does not authorize the later merge or push.
+When finishing a task on a merge-local repo, first ensure the reviewed feature result is committed. For a `task-workflow` task, use its post-review commit gate; commit approval does not authorize the later merge or push.
 
 Then:
 

@@ -75,7 +75,10 @@ my-agent-session.el ── starts fresh conversations through ──► agent-sh
   recovery, or lifecycle notification system.
 - Task-file auto-refresh and document-wide Denote configuration live in
   `my-emacs-denote.el`. The task predicate checks the task root independently
-  of the broader Denote document root. Configured note templates use Org.
+  of the broader Denote document root. The sole named template is `task-workflow`,
+  read on demand from `config/emacs/denote-templates/task-workflow.org`.
+  Ordinary task capture writes `#+skill: task-workflow`; other capture choices
+  pass an empty body directly rather than selecting an empty template entry.
 
 ## Placement Guide
 

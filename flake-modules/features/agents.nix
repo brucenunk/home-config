@@ -11,7 +11,7 @@ let
       skillNames = [
         "pull-request"
         "review"
-        "task-workflow-v3"
+        "task-workflow"
       ];
 
       skillEntries = lib.listToAttrs (
@@ -79,7 +79,7 @@ in
             [
               "pull-request"
               "review"
-              "task-workflow-v3"
+              "task-workflow"
             ];
           assert plainHome.config.home.file."work/AGENTS.md".source == ../../work/AGENTS.md;
           assert plainHome.config.home.file."work/TASKS.md".source == ../../work/TASKS.md;

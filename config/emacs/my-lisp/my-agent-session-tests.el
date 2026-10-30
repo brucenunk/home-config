@@ -126,13 +126,13 @@
     (unwind-protect
         (progn
           (with-temp-file file
-            (insert "#+title: Full title: with punctuation\n#+repo: owner/repo\n#+model: provider/vendor/model\n#+thinking: high\n#+skill: task-workflow-v3\n\nBody\n---\nMore body\n"))
+            (insert "#+title: Full title: with punctuation\n#+repo: owner/repo\n#+model: provider/vendor/model\n#+thinking: high\n#+skill: task-workflow\n\nBody\n---\nMore body\n"))
           (let ((task (my/agent-session--task-read file)))
             (should (equal (plist-get task :title) "Full title: with punctuation"))
             (should (equal (plist-get task :model) "provider/vendor/model"))
             (should (string-match-p "Body\n---\nMore body" (plist-get task :prompt)))
             (should (string-match-p "not necessarily accessible or editable" (plist-get task :prompt)))
-            (should (string-match-p "Load the task-workflow-v3 agent skill" (plist-get task :prompt)))))
+            (should (string-match-p "Load the task-workflow agent skill" (plist-get task :prompt)))))
       (delete-file file))))
 
 (ert-deftest my/agent-session-task-invalid-and-no-skill ()
@@ -199,7 +199,7 @@
 (ert-deftest my/agent-session-captured-org-roundtrips-to-saved-launch-context ()
   (require 'my-denote-task)
   (let* ((root (make-temp-file "org-capture-launch-" t))
-         (denote-templates '((task-workflow-v3 . "* Context\n\nSaved context.\n")))
+         (denote-templates '((task-workflow . "* Context\n\nSaved context.\n")))
          (my/agent-machines
           '(("machine-a" :repositories ((:name "owner/repo"))
              :default-model "provider/vendor/model"
@@ -220,7 +220,7 @@
             (should (equal (plist-get task :model) "provider/vendor/model"))
             (should (equal (plist-get task :thinking) "medium"))
             (should (string-suffix-p
-                     (concat snapshot "\n\nLoad the task-workflow-v3 agent skill and follow instructions.")
+                     (concat snapshot "\n\nLoad the task-workflow agent skill and follow instructions.")
                      (plist-get task :prompt)))))
       (delete-directory root t))))
 
@@ -554,7 +554,7 @@
                   ((symbol-function 'my/agent-session--start) #'identity)
                   ((symbol-function 'completing-read) (lambda (&rest _) (ert-fail "Valid hint and sole machine")))
                   ((symbol-function 'read-string) (lambda (&rest _) "main")))
-          (with-temp-file file (insert "#+title: Explicit task\n#+repo: repo\n#+skill: task-workflow-v3\n#+model: vendor/model\n#+thinking: high\n\nBody @README.md"))
+          (with-temp-file file (insert "#+title: Explicit task\n#+repo: repo\n#+skill: task-workflow\n#+model: vendor/model\n#+thinking: high\n\nBody @README.md"))
           (let* ((default-directory (file-name-directory file))
                  (context (my/agent-session-start-from-file (file-name-nondirectory file))))
             (should (equal (plist-get context :title) "Explicit task"))
@@ -562,7 +562,7 @@
             (should (equal (plist-get context :thinking) "high"))
             (should (string-match-p (regexp-quote file) (plist-get context :prompt)))
             (should (string-match-p "Body @README.md" (plist-get context :prompt)))
-            (should (string-match-p "Load the task-workflow-v3 agent skill" (plist-get context :prompt))))
+            (should (string-match-p "Load the task-workflow agent skill" (plist-get context :prompt))))
           (with-temp-file file (insert "Invalid task"))
           (should-error (my/agent-session-start-from-file file) :type 'user-error))
       (delete-file file))))
@@ -820,7 +820,7 @@
   ;; The boundary is the public API, not literal ACP wire output.  Agent-shell
   ;; keeps its normal @file processing, exactly as for pasted user input.
   (let* ((file (make-temp-file "task-public-api-" nil ".org"))
-         (text "#+title: Full task\n#+model: provider/vendor/other\n#+thinking: high\n#+skill: task-workflow-v3\n\nRead @README.md and @\"file with spaces.md\".\n---\nKeep this whole body.\n")
+         (text "#+title: Full task\n#+model: provider/vendor/other\n#+thinking: high\n#+skill: task-workflow\n\nRead @README.md and @\"file with spaces.md\".\n---\nKeep this whole body.\n")
          (my/agent-machines '(("remote" :directory "/rpc:host:/browse/"
                                       :repositories ((:name "repo" :path "/project/main" :base-ref "main"))))))
     (unwind-protect
@@ -854,7 +854,7 @@
                   (should (equal (plist-get args :text)
                                  (concat
                                   (format "Task snapshot read by Emacs from %s.\nThis provenance path is not necessarily accessible or editable on the agent host.\n\n" file)
-                                  text "\n\nLoad the task-workflow-v3 agent skill and follow instructions."))))
+                                  text "\n\nLoad the task-workflow agent skill and follow instructions."))))
                 (should (equal (mapcar #'car (reverse my/agent-session-test--calls))
                                '(start set set insert)))
                 (should-not my/agent-session-test--subscriptions)))))

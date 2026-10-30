@@ -41,7 +41,7 @@ Denote's naming convention:
 #+date: [2026-03-04 Wed 15:32]
 #+filetags:
 #+identifier: 20260304T153250
-#+skill: task-workflow-v3
+#+skill: task-workflow
 #+repo: example/project
 #+machine: machine-a
 #+model: example-provider/vendor/model
@@ -64,6 +64,16 @@ Initial thoughts, background, and links for future pickup.
 - Durable constraints, locked details, or invariants that should survive session handoff.
 ```
 
+This example shows optional detail for richer task notes, including notes
+written by agents. The capture template itself starts with just `* Context`;
+Goals, Non-Goals, and Constraints can be added when useful, not as required
+boilerplate.
+
+The capture body comes from `config/emacs/denote-templates/task-workflow.org`
+in home-config, deployed under `$XDG_CONFIG_HOME/emacs/denote-templates/`.
+`task-workflow` is the sole named Denote template. Ordinary notes need no
+template; task capture choices that do not use this workflow insert no body.
+
 Fill the note with useful bootstrap context rather than leaving placeholders:
 why it exists, desired outcome, current state, relevant files/commands/links,
 boundaries, and the intended verification target. For a note spawned from other
@@ -73,17 +83,20 @@ not an enforced or automatically checked-off dependency.
 The launch-hint values above are illustrative; use the generated catalogue and
 the intended repository/destination, not these example values.
 
-`skill` is optional metadata for downstream consumers. Use `task-workflow-v3`
+`skill` is optional metadata for downstream consumers. Use `task-workflow`
 for scope alignment, autonomous implementation/verification/review, and a
 review-ready handoff. Named capture choices such as `bump-nix` set that skill;
 `none` creates an empty body without skill metadata, while retaining capture's
 launch hints.
 
+Existing notes retain their stored skill names. When renaming a skill, update
+their `#+skill:` metadata before launching them with the renamed skill.
+
 ## Capture Choices and Launch Hints
 
 `C-c n T` (`my/denote-task`) asks for an optional epic/subdirectory, title, and
 repository and, when multiple destinations qualify, machine. It uses
-`task-workflow-v3` and the shared catalogue's model and thinking defaults.
+`task-workflow` and the shared catalogue's model and thinking defaults.
 `C-u C-c n T` additionally offers skill
 selection and the capture hints in this order:
 

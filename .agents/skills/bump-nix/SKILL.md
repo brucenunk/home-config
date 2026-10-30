@@ -7,7 +7,7 @@ description: "Bump default Nix flake inputs in tasks that explicitly set skill: 
 
 Use this skill only when the task front matter sets `skill: bump-nix`.
 
-This workflow is intentionally direct and does not use the structured `task-workflow-v3` discovery, planning, review, routing, or handoff ceremony. Treat it as a cheap, disposable execution path: update, verify, and either deliver a successful bump or promptly restore and discard a broken one. A routine bump is not an open-ended upstream repair task.
+This workflow is intentionally direct and does not use the structured `task-workflow` discovery, planning, review, routing, or handoff ceremony. Treat it as a cheap, disposable execution path: update, verify, and either deliver a successful bump or promptly restore and discard a broken one. A routine bump is not an open-ended upstream repair task.
 
 ## Scope
 

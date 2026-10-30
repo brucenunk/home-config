@@ -1,9 +1,9 @@
 ---
-name: task-workflow-v3
-description: "Chat-first development task workflow. Align on scope in chat, then autonomously build, verify, review, and hand staged or committed changes back for user review. Load when task has skill: task-workflow-v3. Do not execute implementation work until this skill is loaded."
+name: task-workflow
+description: "Chat-first development task workflow. Align on scope in chat, then autonomously build, verify, review, and hand staged or committed changes back for user review. Load when task has skill: task-workflow. Do not execute implementation work until this skill is loaded."
 ---
 
-# Task Workflow V3
+# Task Workflow
 
 Chat-first delivery with one explicit approval gate before implementation and a review-ready handoff at the end.
 

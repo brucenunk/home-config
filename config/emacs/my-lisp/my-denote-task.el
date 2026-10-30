@@ -31,7 +31,7 @@
 
 (defvar my/denote-task-workflows '("task" "bump-nix" "none")
   "Capture choices for note templates and skill metadata.
-`task' uses the structured template, `none' uses an empty template without
+`task' uses the task-workflow template, `none' uses an empty body without
 skill metadata, and other choices write their name as the skill.")
 
 (defun my/denote-task--choice-read (prompt choices default)
@@ -107,7 +107,7 @@ skill metadata, and other choices write their name as the skill.")
   "Return canonical capture label for WORKFLOW."
   (pcase workflow
     ((or `nil "none") "none")
-    ("task-workflow-v3" "task")
+    ("task-workflow" "task")
     (_ workflow)))
 
 (defun my/denote-task--read-workflow (extended-p)
@@ -121,7 +121,7 @@ skill metadata, and other choices write their name as the skill.")
 (defun my/denote-task (&optional title workflow extended-workflow-p)
   "Create a task note with TITLE and WORKFLOW.
 Interactively, prompt for the title and optional epic subdirectory.  A prefix
-argument enables skill and launch-hint choices; otherwise use task-workflow-v3
+argument enables skill and launch-hint choices; otherwise use task-workflow
 and catalogue defaults.  Repository is always prompted, as is machine when
 multiple destinations qualify, with no machine default.  Capture does not
 gather a base ref or launch a session.
@@ -143,10 +143,10 @@ New notes have no filename signature.  No status lifecycle is managed."
                             (my/denote-task--read-workflow extended-workflow-p)
                           "task"))))
          (skill (pcase workflow
-                  ("task" "task-workflow-v3")
+                  ("task" "task-workflow")
                   ("none" nil)
                   (_ workflow)))
-         (template (if (equal workflow "task") 'task-workflow-v3 'empty))
+         (template (if (equal workflow "task") 'task-workflow ""))
          ;; Finish all selection before Denote creates any file or buffer.
          (metadata (my/denote-task--metadata-read extended-workflow-p)))
     (make-directory target-dir t)

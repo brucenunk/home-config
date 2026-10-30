@@ -19,6 +19,47 @@ with avoiding redundant reverts during rapid agent edits."
 (defvar-local my/denote-task-auto-revert-debounce-timer nil
   "Debounce timer for task file auto-revert notifications.")
 
+(defun my/denote-template (filename)
+  "Read FILENAME from the Emacs denote-templates directory."
+  (with-temp-buffer
+    (insert-file-contents
+     (expand-file-name filename (locate-user-emacs-file "denote-templates/")))
+    (buffer-string)))
+
+(defvar my/denote-startup-notes-buffer nil
+  "Reusable notes buffer for empty startup and no-file clients.")
+
+(defun my/denote-startup-buffer ()
+  "Return all Denote files sorted newest first, or the scratch buffer.
+Do not leave the caller's window layout changed while preparing the buffer."
+  (let ((scratch (get-scratch-buffer-create)))
+    (if (not (file-directory-p denote-directory))
+        scratch
+      (save-window-excursion
+        (if (and (buffer-live-p my/denote-startup-notes-buffer)
+                 (with-current-buffer my/denote-startup-notes-buffer
+                   (derived-mode-p 'dired-mode)))
+            (progn
+              (switch-to-buffer my/denote-startup-notes-buffer)
+              (revert-buffer nil t))
+          (switch-to-buffer scratch)
+          (denote-sort-dired "" 'identifier t nil))
+        (if (derived-mode-p 'dired-mode)
+            (setq my/denote-startup-notes-buffer (current-buffer))
+          (setq my/denote-startup-notes-buffer nil)
+          scratch)))))
+
+(defun my/denote-startup ()
+  "Show notes on empty startup, preserving explicitly requested buffers.
+Install `initial-buffer-choice' afterward for future no-file clients."
+  (when (and (not noninteractive)
+             (not (daemonp))
+             (eq (current-buffer) (get-buffer "*scratch*")))
+    (switch-to-buffer (my/denote-startup-buffer)))
+  (setq initial-buffer-choice #'my/denote-startup-buffer))
+
+(add-hook 'emacs-startup-hook #'my/denote-startup)
+
 (use-package denote
   :ensure nil
   :demand t
@@ -32,12 +73,8 @@ with avoiding redundant reverts during rapid agent edits."
          ("C-c n b" . denote-backlinks))
   :config
   (require 'my-denote-task)
-  (let ((task-workflow-v3-template
-         "* Context\n\nInitial thoughts, background, and links for future pickup.\n\n* Goals\n\n- \n\n* Non-Goals\n\n- \n\n* Constraints\n\n- Durable constraints, locked details, or invariants that should survive session handoff.\n"))
-    (setq denote-templates
-          `((task-workflow-v3 . ,task-workflow-v3-template)
-            (task . ,task-workflow-v3-template)
-            (empty . ""))))
+  (setq denote-templates
+        '((task-workflow . (lambda () (my/denote-template "task-workflow.org")))))
   (setq denote-directory (expand-file-name "~/work/docs/"))
   (setq denote-dired-directories (list denote-directory))
   (setq denote-dired-directories-include-subdirectories t)

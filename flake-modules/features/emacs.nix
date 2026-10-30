@@ -163,6 +163,7 @@ let
         xdg.configFile."emacs/init.el".source = ../../config/emacs/init.el;
         xdg.configFile."emacs/my-lisp".source = ../../config/emacs/my-lisp;
         xdg.configFile."emacs/my-emacs-modules".source = ../../config/emacs/my-emacs-modules;
+        xdg.configFile."emacs/denote-templates".source = ../../config/emacs/denote-templates;
         xdg.configFile."emacs/sounds/agent-attention.wav".source =
           import ../../pkgs/agent-attention-sound.nix
             { inherit pkgs; };
@@ -216,6 +217,20 @@ in
     {
       packages.emacs-master = emacsMaster;
       checks = {
+        emacs-denote =
+          let
+            emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;
+          in
+          pkgs.runCommand "emacs-denote-check" { nativeBuildInputs = [ emacs ]; } ''
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME/.config/emacs"
+            ln -s ${../../config/emacs/denote-templates} "$HOME/.config/emacs/denote-templates"
+            emacs --batch -Q -L ${../../config/emacs/my-lisp} -L ${../../config/emacs/my-emacs-modules} \
+              --eval '(setq user-emacs-directory (expand-file-name "~/.config/emacs/"))' \
+              --load my-emacs-denote-tests --load my-denote-task-tests \
+              --funcall ert-run-tests-batch-and-exit
+            touch "$out"
+          '';
         emacs-mode-selection =
           let
             emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;
