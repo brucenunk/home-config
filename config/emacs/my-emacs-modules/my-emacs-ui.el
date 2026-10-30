@@ -235,7 +235,8 @@ Stored as (MODE AMOUNT), or nil outside the writing view.")
   :commands (writeroom-mode)
   :custom
   (writeroom-width 80)
-  (writeroom-restore-window-config t)
+  (writeroom-maximize-window nil)
+  (writeroom-restore-window-config nil)
   (writeroom-local-effects '(my/writeroom-visual-line my/writeroom-text-scale)))
 
 (use-package pulsar

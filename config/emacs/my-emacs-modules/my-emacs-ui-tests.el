@@ -141,16 +141,17 @@
       (setq frame-background-mode old-background)
       (mapc #'frame-set-background-mode (frame-list)))))
 
-(ert-deftest my/ui-writeroom-is-opt-in-and-restores-writing-layout ()
+(ert-deftest my/ui-writeroom-is-opt-in-and-restores-writing-formatting ()
   (should (commandp 'writeroom-mode))
   (require 'writeroom-mode)
   (should (= writeroom-width 80))
-  (should writeroom-restore-window-config)
+  (should-not writeroom-maximize-window)
+  (should-not writeroom-restore-window-config)
   (should (equal writeroom-local-effects
                  '(my/writeroom-visual-line my/writeroom-text-scale)))
   (should-not (bound-and-true-p global-writeroom-mode))
   ;; Frame effects need a graphical manual check.  Exercise the real buffer
-  ;; effects and window restoration without changing fullscreen in batch.
+  ;; effects without changing fullscreen in batch.
   (let ((writeroom-global-effects nil))
     (dolist (mode '(text-mode markdown-mode))
       (save-window-excursion
@@ -168,7 +169,7 @@
             (unwind-protect
                 (progn
                   (writeroom-mode 1)
-                  (should (= (length (window-list)) 1))
+                  (should (= (length (window-list)) 2))
                   (should visual-line-mode)
                   (should text-scale-mode)
                   (should (= text-scale-mode-amount 1))
@@ -186,6 +187,44 @@
             (should-not visual-fill-column-mode)
             (should (equal text (buffer-string)))
             (should-not (buffer-modified-p))))))))
+
+(ert-deftest my/ui-writeroom-preserves-user-controlled-window-layouts ()
+  (require 'writeroom-mode)
+  (let ((writeroom-global-effects nil))
+    (dolist (change '(nil split delete focus))
+      (save-window-excursion
+        (with-temp-buffer
+          (let ((reference-buffer (current-buffer)))
+            (with-temp-buffer
+              (text-mode)
+              (switch-to-buffer (current-buffer))
+              (delete-other-windows)
+              (let* ((writing-window (selected-window))
+                     (reference-window (split-window-below))
+                     (layout (lambda ()
+                               (mapcar (lambda (window)
+                                         (list window (window-buffer window)
+                                               (window-edges window)))
+                                       (window-list)))))
+                (set-window-buffer reference-window reference-buffer)
+                (let ((before (funcall layout)))
+                  (unwind-protect
+                      (progn
+                        (writeroom-mode 1)
+                        (should (equal before (funcall layout)))
+                        (should (eq writing-window (selected-window)))
+                        (pcase change
+                          ('split
+                           (set-window-buffer (split-window-right) reference-buffer))
+                          ('delete (delete-window reference-window))
+                          ;; C-x 1 remains an explicit user choice.
+                          ('focus (delete-other-windows)))
+                        (let ((during (funcall layout)))
+                          (writeroom-mode -1)
+                          (should (equal during (funcall layout)))
+                          (should (eq writing-window (selected-window)))))
+                    (when (bound-and-true-p writeroom-mode)
+                      (writeroom-mode -1))))))))))))
 
 (ert-deftest my/ui-writeroom-preserves-prose-wrapping-and-fringes ()
   (require 'org)
