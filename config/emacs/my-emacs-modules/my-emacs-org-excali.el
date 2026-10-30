@@ -59,6 +59,178 @@ overrides this cap, but cannot exceed that area."
   "Open authoritative scene PATH through the existing drawing integration."
   (my/excali-open (my/excali--org-source path)))
 
+;;; New drawings with an explicit save-and-return boundary.
+
+(defvar-local my/excali--org-origin nil "Origin insertion marker for this drawing.")
+(defvar-local my/excali--org-window nil "Window from which this drawing was created.")
+(defvar-local my/excali--org-target nil "Chosen new drawing filename.")
+(defvar-local my/excali--org-saved nil "Whether this workflow has saved its target.")
+(defvar-local my/excali--org-linked nil "Whether this workflow inserted its link.")
+(defvar-local my/excali--org-baseline nil "Scene fingerprint at creation or last save.")
+
+(defun my/excali--org-scene-fingerprint ()
+  "Fingerprint persistent scene data, including current drawing defaults."
+  (let ((doc (copy-alist excali--doc)))
+    (setf (alist-get 'appState doc)
+          (excali--save-current-style (alist-get 'appState doc)))
+    (secure-hash 'sha256 (excali--serialize-doc doc excali--elements))))
+
+(defun my/excali--org-can-kill ()
+  "Confirm before discarding changes in a workflow drawing only."
+  (or (equal my/excali--org-baseline (my/excali--org-scene-fingerprint))
+      (yes-or-no-p "Discard unsaved drawing work? ")))
+
+(defun my/excali--org-release-origin ()
+  "Release this drawing's insertion marker when it is killed."
+  (when (markerp my/excali--org-origin)
+    (set-marker my/excali--org-origin nil)))
+
+(define-minor-mode my/excali-org-creation-mode
+  "Private buffer-local bindings for a drawing created from Org."
+  :lighter " Org drawing"
+  :keymap (let ((map (make-sparse-keymap)))
+            (define-key map (kbd "C-c C-c") #'my/excali-org-save-and-return)
+            (define-key map (kbd "C-c C-k") #'my/excali-org-cancel)
+            map))
+
+(defun my/excali--org-path-key (file)
+  "Canonicalize FILE for reservations, respecting its filesystem's case rules."
+  (let ((canonical (file-truename file)))
+    ;; FILE need not exist yet, so query its existing containing directory.
+    (if (file-name-case-insensitive-p (file-name-directory canonical))
+        (downcase canonical)
+      canonical)))
+
+(defun my/excali--org-check-new-path (file)
+  "Reject existing FILE and another workflow's reserved path."
+  (when (or (file-exists-p file) (file-symlink-p file)
+            (seq-some
+             (lambda (buffer)
+               (and (not (eq buffer (current-buffer)))
+                    (buffer-local-value 'my/excali-org-creation-mode buffer)
+                    (equal (my/excali--org-path-key file)
+                           (my/excali--org-path-key
+                            (buffer-local-value 'my/excali--org-target buffer)))))
+             (buffer-list)))
+    (user-error "Drawing path already exists or is in use: %s" file)))
+
+(defun my/excali-org-new (file)
+  "Create a themed drawing for FILE, remembering this saved Org location.
+Do not create FILE or insert a link until explicitly saved."
+  (interactive
+   (progn
+     (unless (derived-mode-p 'org-mode) (user-error "Select an Org document first"))
+     (my/excali--org-base)
+     (barf-if-buffer-read-only)
+     (list (read-file-name "New drawing: " my/excali-directory))))
+  (unless (derived-mode-p 'org-mode) (user-error "Select an Org document first"))
+  (my/excali--org-base)
+  (barf-if-buffer-read-only)
+  (setq file (expand-file-name file my/excali-directory))
+  (unless (file-name-extension file) (setq file (concat file ".excalidraw")))
+  (unless (equal (file-name-extension file) "excalidraw")
+    (user-error "Choose an .excalidraw filename"))
+  (my/excali--org-check-new-path file)
+  (unless (file-directory-p (file-name-directory file))
+    (user-error "Choose an existing directory: %s" (file-name-directory file)))
+  (let ((origin (copy-marker (point) t))
+        (window (selected-window))
+        ready)
+    (unwind-protect
+        (progn
+          (my/excali-new)
+          (setq my/excali--org-origin origin
+                my/excali--org-window window
+                my/excali--org-target file
+                excali--file file
+                my/excali--org-baseline (my/excali--org-scene-fingerprint))
+          (my/excali-org-creation-mode 1)
+          (add-hook 'kill-buffer-query-functions #'my/excali--org-can-kill nil t)
+          (add-hook 'kill-buffer-hook #'my/excali--org-release-origin nil t)
+          (setq ready t)
+          (message "Draw, then C-c C-c to save and return; C-c C-k to cancel"))
+      (unless ready (set-marker origin nil)))))
+
+(defun my/excali--org-workflow-save (save &rest args)
+  "Call native SAVE, protecting the first write of a workflow target.
+Unrelated drawings retain native save behavior.  A temporary sibling and
+exclusive rename avoid overwriting a file created since naming the drawing."
+  (if (not my/excali-org-creation-mode)
+      (apply save args)
+    (unless (equal excali--file my/excali--org-target)
+      (user-error "Workflow drawing path changed; expected %s" my/excali--org-target))
+    (let ((first-save (not my/excali--org-saved)))
+      (if (not first-save)
+          (apply save args)
+        (my/excali--org-check-new-path my/excali--org-target)
+        (let ((temporary (make-temp-file
+                          (expand-file-name ".excali-new-"
+                                            (file-name-directory my/excali--org-target)))))
+          (unwind-protect
+              (progn
+                (let ((excali--file temporary)) (apply save args))
+                (rename-file temporary my/excali--org-target nil)
+                (setq my/excali--org-saved t))
+            (when (file-exists-p temporary) (delete-file temporary)))))
+      (setq my/excali--org-baseline (my/excali--org-scene-fingerprint))
+      (set-buffer-modified-p nil)
+      ;; Only the first save needs notification: native advice saw its temp path.
+      (when first-save (my/excali--org-after-save)))
+    (message "Saved %s" my/excali--org-target)))
+
+(defun my/excali--org-return (origin window)
+  "Return to ORIGIN in WINDOW if it survives, otherwise the current window."
+  (unless (and (markerp origin) (marker-buffer origin))
+    (user-error "Origin document is no longer available"))
+  (when (window-live-p window) (select-window window))
+  (switch-to-buffer (marker-buffer origin))
+  (when (<= (point-min) origin (point-max)) (goto-char origin)))
+
+(defun my/excali-org-save-and-return ()
+  "Save this workflow drawing, insert its relative link once, and return."
+  (interactive)
+  (unless my/excali-org-creation-mode (user-error "Not an Org drawing workflow"))
+  (excali-save)
+  (let ((origin my/excali--org-origin)
+        (window my/excali--org-window)
+        (file my/excali--org-target)
+        (drawing (current-buffer)))
+    (condition-case err
+        (progn
+          (unless (and (markerp origin) (marker-buffer origin))
+            (user-error "Origin document is no longer available"))
+          (with-current-buffer (marker-buffer origin)
+            (unless (and (derived-mode-p 'org-mode)
+                         (<= (point-min) origin (point-max)))
+              (user-error "Origin insertion location is unavailable"))
+            (unless (buffer-local-value 'my/excali--org-linked drawing)
+              (barf-if-buffer-read-only)
+              (let ((link (org-link-make-string
+                           (concat "excali:" (org-link-escape
+                                             (file-relative-name file (my/excali--org-base)))))))
+                (save-excursion
+                  (goto-char origin)
+                  (atomic-change-group (insert link)))
+                ;; Record success before display, which may fail independently.
+                (with-current-buffer drawing (setq my/excali--org-linked t)))))
+          (my/excali--org-return origin window)
+          (my/excali--org-inserted))
+      (error (user-error "Drawing saved at %s; %s" file (error-message-string err))))))
+
+(defun my/excali-org-cancel ()
+  "Discard this workflow buffer and return, without inserting or deleting files."
+  (interactive)
+  (unless my/excali-org-creation-mode (user-error "Not an Org drawing workflow"))
+  (let ((origin (copy-marker my/excali--org-origin))
+        (window my/excali--org-window)
+        (file (and my/excali--org-saved my/excali--org-target)))
+    (unwind-protect
+        (when (kill-buffer (current-buffer))
+          (if (marker-buffer origin)
+              (my/excali--org-return origin window)
+            (message "Origin unavailable%s" (if file (format "; drawing preserved at %s" file) ""))))
+      (set-marker origin nil))))
+
 (defun my/excali--org-image (path publication)
   "Return cached SVG for PATH, using Doric Light when PUBLICATION is non-nil."
   (condition-case err
@@ -378,6 +550,7 @@ refresh removes overlays that cannot be regenerated without a palette."
     (advice-add 'org-md-link :around #'my/excali--org-md-link))
   (add-hook 'after-save-hook #'my/excali--org-after-save)
   (with-eval-after-load 'excali
+    (advice-add 'excali-save :around #'my/excali--org-workflow-save '((depth . -10)))
     (advice-add 'excali-save :after #'my/excali--org-after-save)))
 
 (provide 'my-emacs-org-excali)
