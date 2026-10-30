@@ -7,6 +7,12 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'markdown-mode)
+(require 'rainbow-delimiters)
+;; Match configured language hooks before native Markdown creates its cached
+;; language buffers.  No other programming-mode services run in this suite.
+(add-hook 'prog-mode-hook #'rainbow-delimiters-mode)
+(add-hook 'emacs-lisp-mode-hook #'rainbow-delimiters-mode)
 (require 'agent-shell-gc)
 ;; Load policy without starting global tracking outside a disposable fixture.
 (cl-letf (((symbol-function 'agent-shell-gc-mode) #'ignore))
@@ -114,6 +120,205 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
      (push-mark (point-max) t t)
      (let ((transient-mark-mode t)) ,@body)))
 
+(defun my/agent-shell-test--faces-at (text)
+  "Return faces at the beginning of TEXT, leaving point after it."
+  (goto-char (point-min))
+  (search-forward text)
+  (let ((faces (get-text-property (- (point) (length text)) 'face)))
+    (if (listp faces) faces (list faces))))
+
+(ert-deftest my/agent-shell-compose-markdown-faces-and-visible-markup ()
+  (let ((markdown-hide-markup t))
+    (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
+      (with-temp-buffer
+        (agent-shell-viewport-edit-mode)
+        (let ((draft (concat "# Heading\n\nProse with `identifier` and **bold**.\n\n"
+                             "```elisp\n(let ((x \"hello\")) x)\n```\n\n"
+                             "```diff\n@@ -1 +1 @@\n-old\n+new\n```\n\n"
+                             "```unknown-language\nunknown body\n```\n\n"
+                             "```\nuntyped body\n```\n")))
+          (insert draft)
+          (set-buffer-modified-p nil)
+          (font-lock-ensure)
+          (should-not (buffer-modified-p))
+          (should (equal (buffer-substring-no-properties (point-min) (point-max)) draft))
+          (should (memq 'markdown-inline-code-face (my/agent-shell-test--faces-at "identifier")))
+          (should (memq 'font-lock-keyword-face (my/agent-shell-test--faces-at "let")))
+          (should (memq 'font-lock-string-face (my/agent-shell-test--faces-at "hello")))
+          (should (memq 'rainbow-delimiters-depth-1-face
+                        (my/agent-shell-test--faces-at "(let")))
+          (dolist (pair '(("@@ -1" . diff-hunk-header)
+                          ("old\n" . diff-removed) ("new\n" . diff-added)
+                          ("unknown body" . markdown-code-face)
+                          ("untyped body" . markdown-code-face)))
+            (should (memq (cdr pair) (my/agent-shell-test--faces-at (car pair)))))
+          (dotimes (offset (buffer-size))
+            (should-not (invisible-p (1+ offset)))
+            (should-not (get-text-property (1+ offset) 'invisible))
+            (should-not (get-text-property (1+ offset) 'display)))
+          (should-not markdown-hide-markup))))))
+
+(ert-deftest my/agent-shell-compose-markdown-incremental-fences ()
+  (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
+    (with-temp-buffer
+      (agent-shell-viewport-edit-mode)
+      ;; Batch Emacs leaves font-lock-mode disabled.  Install the interactive
+      ;; change tracking so these edits exercise actual JIT invalidation.
+      (setq font-lock-mode t)
+      (font-lock-mode-internal t)
+      (insert "Before.\n\n```elisp\n(message \"first\")\n")
+      (font-lock-ensure)
+      ;; Native Markdown waits for a closing fence before language colouring.
+      (should-not (memq 'font-lock-string-face (my/agent-shell-test--faces-at "first")))
+      ;; Continue an unfinished block, then close it and add prose.
+      (goto-char (point-max))
+      (let ((start (point)))
+        (insert "(message \"second\")\n```\n\nAfter.\n")
+        (font-lock-ensure start (point-max)))
+      (should (memq 'font-lock-string-face (my/agent-shell-test--faces-at "second")))
+      (should-not (memq 'markdown-code-face (my/agent-shell-test--faces-at "After")))
+      ;; Only request the edited region: installed extension hooks must
+      ;; invalidate the rest of the block, not a test's full-buffer flush.
+      (goto-char (point-min))
+      (search-forward "elisp")
+      (replace-match "diff")
+      (font-lock-ensure (- (point) 4) (point))
+      (should-not (memq 'font-lock-string-face (my/agent-shell-test--faces-at "first")))
+      (goto-char (point-min))
+      (search-forward "```diff\n")
+      (replace-match "")
+      (font-lock-ensure (point) (1+ (point)))
+      (should-not (memq 'markdown-code-face (my/agent-shell-test--faces-at "first")))
+      ;; An unfinished fence must remain editable.  Reclosing it must leave
+      ;; following prose outside the block; native incomplete-block colours
+      ;; can depend on whether the block was previously closed.
+      (erase-buffer)
+      (insert "```elisp\n(message \"inside\")\n```\n\n(message \"outside\")\n")
+      (font-lock-ensure)
+      (goto-char (point-min))
+      (forward-line 2)
+      (delete-region (point) (line-beginning-position 2))
+      (font-lock-ensure (point) (1+ (point)))
+      (insert "```\n")
+      (font-lock-ensure (- (point) 4) (point))
+      (should-not (memq 'font-lock-string-face (my/agent-shell-test--faces-at "outside"))))))
+
+(ert-deftest my/agent-shell-compose-fontification-preserves-native-layout ()
+  (my/agent-shell-test--isolated
+    (let* ((agent-shell-header-style 'text)
+           (shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+      (with-current-buffer viewport
+        (agent-shell-viewport--initialize)
+        (should (get-text-property (point-min) 'cursor-intangible))
+        (font-lock-ensure)
+        (should (equal (get-text-property (point-min) 'rear-nonsticky)
+                       '(cursor-intangible)))
+        (goto-char (point-max))
+        (insert "Editable draft")
+        (should-not (get-text-property (1- (point)) 'cursor-intangible))))))
+
+(ert-deftest my/agent-shell-compose-fontification-preserves-attachment-properties ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+      (with-current-buffer viewport
+        (insert "```elisp\n(message \"hello\")\n```\n\n")
+        ;; Use the real native image/link constructor with a display object
+        ;; independent of graphical image support in the batch test runner.
+        (cl-letf (((symbol-function 'agent-shell--load-image)
+                   (lambda (&rest _) '(image :type png :data "fixture"))))
+          (insert (agent-shell--get-files-context :files '("/fixture/image.png"))))
+        (let ((original (buffer-string)))
+          (dotimes (_ 2)
+            (font-lock-flush)
+            (font-lock-ensure)
+            (dotimes (offset (length original))
+              (dolist (prop '(composition display invisible rear-nonsticky keymap
+                             help-echo mouse-face pointer modification-hooks
+                             agent-shell-context-image))
+                (should (equal (get-text-property (1+ offset) prop)
+                               (get-text-property offset prop original)))))))))))
+
+(ert-deftest my/agent-shell-compose-fontification-does-not-hide-submitted-fences ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+           (draft "Explain `code`.\n\n```elisp\n(message \"hello\")\n```")
+           sent)
+      (with-current-buffer viewport
+        (insert draft)
+        (font-lock-ensure)
+        (cl-letf (((symbol-function 'agent-shell-viewport--busy-p) (lambda (&rest _) nil))
+                  ((symbol-function 'agent-shell--insert-to-shell-buffer)
+                   (lambda (&rest args) (setq sent args))))
+          ;; Exercise the real default submit/view transition and prompt echo,
+          ;; stubbing only the final shell transport boundary.
+          (let ((agent-shell-viewport-dismiss-on-send nil))
+            (agent-shell-viewport-compose-send)))
+        (should (equal (plist-get sent :text) draft))
+        (should (plist-get sent :submit))
+        (should (eq major-mode 'agent-shell-viewport-view-mode))
+        (goto-char (point-min))
+        (search-forward "```elisp")
+        (should-not (invisible-p (1- (point))))
+        (dotimes (offset (length draft))
+          (should-not (get-text-property offset 'invisible (plist-get sent :text))))))))
+
+(ert-deftest my/agent-shell-compose-markdown-draft-view-round-trip ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+           (draft "Keep `inline`.\n\n```elisp\n(message \"draft\")\n```\n"))
+      (with-current-buffer viewport
+        (insert draft)
+        (goto-char 8)
+        (font-lock-ensure)
+        ;; Keep native snapshot/restore paths; supply only a history item.
+        (cl-letf (((symbol-function 'shell-maker-history-position)
+                   (lambda () '((:current . 1) (:total . 1))))
+                  ((symbol-function 'agent-shell-goto-last-interaction) #'ignore)
+                  ((symbol-function 'agent-shell-interaction-at-point)
+                   (lambda () '((:prompt . "Question") (:response . "Response")))))
+          (agent-shell-viewport-compose-peek-last))
+        (should (eq major-mode 'agent-shell-viewport-view-mode))
+        (should-not (local-variable-p 'markdown-fontify-code-blocks-natively))
+        (should-not (eq syntax-propertize-function #'markdown-syntax-propertize))
+        (should-not (memq #'markdown-font-lock-extend-region font-lock-extend-region-functions))
+        (save-window-excursion
+          (agent-shell-viewport--show-buffer :shell-buffer shell :edit t))
+        (should (eq major-mode 'agent-shell-viewport-edit-mode))
+        ;; Native restore currently prefixes a newline to snapshots.
+        (should (equal (string-trim-left (buffer-substring-no-properties
+                                         (point-min) (point-max)) "\n") draft))
+        (should (= (point) 8))
+        (font-lock-ensure)
+        (should (memq 'markdown-inline-code-face (my/agent-shell-test--faces-at "inline")))
+        (should-not agent-shell-viewport--compose-snapshot)))))
+
+(ert-deftest my/agent-shell-compose-markdown-send-and-queue ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+           (draft "Explain `code`.\n\n```elisp\n(message \"hello\")\n```"))
+      (dolist (busy '(nil t))
+        (let (sent queued)
+          (with-current-buffer viewport
+            (agent-shell-viewport-edit-mode)
+            (insert draft)
+            (font-lock-ensure)
+            (cl-letf (((symbol-function 'agent-shell-viewport--busy-p) (lambda (&rest _) busy))
+                      ((symbol-function 'agent-shell--insert-to-shell-buffer)
+                       (lambda (&rest args) (setq sent args)))
+                      ((symbol-function 'agent-shell--busy-submit)
+                       (lambda (&rest args) (setq queued args))))
+              (agent-shell-viewport-compose-send t))
+            (should (equal (plist-get (if busy queued sent) (if busy :prompt :text)) draft))
+            (should-not (if busy sent queued))
+            (unless busy (should (plist-get sent :submit)))
+            (should (eq major-mode 'agent-shell-viewport-edit-mode))
+            (should (string-empty-p (string-trim (buffer-string))))))))))
+
 (ert-deftest my/agent-shell-quote-exact-text-and-editable-draft ()
   (my/agent-shell-test--isolated
     (let* ((shell (my/agent-shell-test--shell))
@@ -121,7 +326,8 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
       (cl-letf (((symbol-function 'agent-shell-project-buffers) (lambda () (list shell)))
                 ((symbol-function 'agent-shell--send-request)
                  (lambda (&rest _) (ert-fail "Quote submitted a prompt"))))
-        (dolist (text '("-  old\n+  new" "  partial  " "a\n\nb\n" "\tλ\n> nested"))
+        (dolist (text '("-  old\n+  new" "  partial  " "a\n\nb\n" "\tλ\n> nested"
+                        "```\n````"))
           (with-current-buffer viewport
             (agent-shell-viewport-edit-mode)
             (erase-buffer)
@@ -138,12 +344,26 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
             (with-current-buffer viewport
               (should (derived-mode-p 'agent-shell-viewport-edit-mode))
               (should (equal (buffer-substring-no-properties (point-min) (point-max))
-                             (concat "Existing draft\n\n> "
-                                     (string-join (split-string text "\n" nil) "\n> ")
-                                     "\n\n")))
+                             (let ((fence (if (string-match-p "````" text) "`````" "```")))
+                               (concat "Existing draft\n\n" fence "diff\n" text
+                                       (unless (string-suffix-p "\n" text) "\n")
+                                       fence "\n\n"))))
               (should (= (point) (point-max)))
               (insert "Explain this change.")
               (should (string-suffix-p "\n\nExplain this change." (buffer-string))))))))))
+
+(ert-deftest my/agent-shell-quote-fontifies-as-diff ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+      (cl-letf (((symbol-function 'agent-shell-project-buffers) (lambda () (list shell))))
+        (save-window-excursion
+          (my/agent-shell-test--region "@@ -1 +1 @@\n-old\n+new"
+            (my/agent-shell-quote-region))))
+      (with-current-buffer viewport
+        (font-lock-ensure)
+        (should (memq 'diff-removed (my/agent-shell-test--faces-at "old")))
+        (should (memq 'diff-added (my/agent-shell-test--faces-at "new")))))))
 
 (ert-deftest my/agent-shell-quote-restores-view-mode-draft-while-busy ()
   (my/agent-shell-test--isolated
@@ -163,7 +383,7 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
         (with-current-buffer viewport
           (should (derived-mode-p 'agent-shell-viewport-edit-mode))
           (should (equal (buffer-substring-no-properties (point-min) (point-max))
-                         "\nSaved draft\n\n> + change\n\n"))
+                         "\nSaved draft\n\n```diff\n+ change\n```\n\n"))
           (should (= (point) (point-max)))
           (should-not agent-shell-viewport--compose-snapshot))))))
 

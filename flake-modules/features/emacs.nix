@@ -285,6 +285,7 @@ in
               epkgs.avy
               epkgs.mixed-pitch
               epkgs.markdown-mode
+              epkgs.rainbow-delimiters
               (import ../../pkgs/doric-themes.nix { inherit pkgs epkgs; })
               epkgs.auto-dark
               epkgs.fontaine

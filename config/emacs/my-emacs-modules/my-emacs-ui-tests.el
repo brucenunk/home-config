@@ -10,6 +10,9 @@
 (require 'cl-lib)
 (require 'agent-shell)
 (require 'markdown-mode)
+(require 'agent-shell-gc)
+(cl-letf (((symbol-function 'agent-shell-gc-mode) #'ignore))
+  (require 'my-agent-shell))
 (require 'mixed-pitch)
 (require 'doric-themes)
 (require 'auto-dark)
@@ -445,9 +448,10 @@
   (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
     (let ((draft "Prose with `identifier`.\n\n```elisp\n(let ((x 1)) x)\n```\n\n| Name | Value |\n| --- | --- |\n| one | 1 |\n")
           baseline)
-      ;; Compare editing setup with the native mode, without our typography hook.
+      ;; Compare with native editing, without our fontification/typography hooks.
       (let ((agent-shell-viewport-edit-mode-hook
-             (remq #'mixed-pitch-mode agent-shell-viewport-edit-mode-hook)))
+             (remove #'my/agent-shell-compose-markdown
+                     (remq #'mixed-pitch-mode agent-shell-viewport-edit-mode-hook))))
         (with-temp-buffer
           (agent-shell-viewport-edit-mode)
           (setq baseline (list (current-local-map) completion-at-point-functions
@@ -462,10 +466,14 @@
         (insert draft)
         (font-lock-ensure)
         (should (equal (buffer-string) draft))
-        ;; No Markdown renderer/fontification is installed in compose. Raw code
-        ;; and table text therefore use the same default remapping as prose.
-        (dolist (text '("Prose" "identifier" "(let" "Name"))
-          (should-not (my/ui-test--faces-at text)))
+        (should (eq major-mode 'agent-shell-viewport-edit-mode))
+        (should-not (my/ui-test--faces-at "Prose"))
+        (should (memq 'markdown-inline-code-face (my/ui-test--faces-at "identifier")))
+        (should (memq 'font-lock-keyword-face (my/ui-test--faces-at "let")))
+        (dolist (face '(markdown-inline-code-face markdown-code-face markdown-pre-face
+                        markdown-language-info-face markdown-table-face))
+          (should (equal (my/ui-test--remapped-family face)
+                         (face-attribute 'default :family))))
         (should (equal (my/ui-test--remapped-family 'default)
                        (face-attribute 'variable-pitch :family)))))))
 
