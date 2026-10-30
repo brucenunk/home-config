@@ -12,11 +12,11 @@ pinned agent-shell/ACP packages, and `pi-acp` on the selected machine.
 Globally, **`C-c a f`** invokes this command with its normal task picker. The
 `C-c a` agent prefix leaves `d`, `w` and `r` unbound for future commands.
 
-Select a Denote Markdown task note recursively under `~/work/docs/tasks/`,
+Select a Denote Org task note recursively under `~/work/docs/tasks/`,
 including epic subdirectories. Both unsigned and legacy signed filenames
 qualify; unrelated files, backups and lock files are excluded. Regular notes
 elsewhere under `~/work/docs/` are not task candidates. Completion uses saved
-front-matter titles (falling back to readable filename titles) with repository
+header titles (falling back to readable filename titles) with repository
 and machine annotations. Colliding titles gain relative-path suffixes so each file remains selectable;
 normal completion narrowing applies.
 
@@ -28,10 +28,11 @@ shell. Unsaved editor changes are not part of the snapshot.
 
 The optional Lisp argument `FILE` bypasses completion, not saved-task validation:
 `(my/agent-session-start-from-file file)`. There is no direct-directory task path or generic
-prompt-file mode.
+prompt-file mode. Markdown tasks are neither discovered nor accepted through
+`FILE`; existing files are not migrated, renamed or rewritten.
 
 Task capture is `my/denote-task` on **`C-c n T`**. It creates unsigned Denote
-Markdown files under the task root without launching a session. There is no
+Org files under the task root without launching a session. There is no
 custom task-list UI or at-point launch binding.
 
 ### `M-x my/agent-session-start-new-worktree`
@@ -90,15 +91,21 @@ is a separate agent/PR-time concern; the launcher publishes nothing.
 
 ## Task text and independent overrides
 
-The task must have opening `---` front matter and a closing delimiter. Only
-that initial block supplies launch metadata; body rules such as later `---`
-lines do not delimit metadata. Standard YAML parsing handles custom scalar
-fields (using string values so quoted titles such as `"123"` stay strings);
-Denote's public metadata API retrieves the title. Saved task snapshots
-are bounded to 256 KiB. Fields used for launch must be non-empty single-line
-strings when supplied; a skill must be a simple skill name.
+The task must be an `.org` file with a contiguous opening keyword header,
+followed by a blank line. Standard Denote identity keywords accompany optional
+`#+skill:`, `#+repo:`, `#+machine:`, `#+model:` and `#+thinking:` launch hints.
+Keyword names are case-insensitive; values are literal strings without YAML
+quoting. Only the opening header supplies metadata, never later body keywords,
+headings or source blocks. Duplicate title/launch keywords are rejected.
+Completion reads at most 16 KiB per file for saved titles and annotations;
+missing or malformed headers fall back to filename titles and empty hints.
+Saved task snapshots are bounded to 256 KiB. Fields used for launch must be
+non-empty single-line strings without control characters when supplied;
+a skill must be a simple skill name. A visiting buffer must match the saved
+snapshot in full, including when narrowed, or launch stops with a save/revert
+diagnostic.
 
-The entire saved task is sent as text, with provenance explicitly stating that
+The entire saved Org task is sent in its original format as text, with provenance explicitly stating that
 its original Emacs-side path may be inaccessible or uneditable on the agent
 host. No remote file copy/access is required. A `skill` field appends
 `Load the {skill} agent skill and follow instructions.` No field means no
@@ -508,7 +515,9 @@ simulated remote file/process boundaries and asynchronous agents exercise
 selection, path routing, overrides, readiness and failure handling. A pinned
 startup/insertion/viewport regression simulates only ACP initialization/transport
 and checks task conversation view versus ad hoc compose mode. Filename-only
-completion tests check filtering, narrowing and duplicate titles. Command tests
+completion tests check Org-only filtering, narrowing and duplicate titles.
+Metadata tests cover bounded opening headers, malformed/duplicate keywords,
+body lookalikes, saved-buffer mismatches and unchanged full snapshots. Command tests
 cover optional file arguments, prompt order, explicit machine selection and
 cancellation before mutation. Native transcript tests cover flat paths,
 same-second pending sessions, filename collisions, external directory creation
@@ -526,10 +535,10 @@ layouts, and best-effort remote bookkeeping failure handling. Unrelated launcher
 tests suppress GC enablement so their simulated remote paths are not probed by
 the automatic tracking hooks.
 
-The catalogue/capture/list ERT suite also mocks the public launcher to check
-at-point file identity versus marks, invalid targets, cancellation/failure
-propagation, untouched unsaved task buffers and list state, and the global/local
-agent-prefix bindings. These tests never create live agent sessions.
+The catalogue/capture ERT suite checks Org capture, standard Denote identity,
+skill/launch-hint choices, explicit machine selection and cancellation before
+note creation. The Denote configuration suite checks Org templates, mixed-format
+link resolution and task-only refresh. These tests never create live agent sessions.
 
 Stage intended files, run the required Wampa build on x86_64 Linux, and follow
 [activation.md](activation.md) when delivery is authorized. From Woowoo, Wampa
@@ -559,17 +568,14 @@ disposable smoke-test worktrees/conversations and any cleanup:
    is withheld and the worktree is retained for manual inspection.
 6. Check task completion has no synthetic candidates, task titles are readable
    and narrow normally, duplicate titles select distinct notes, and
-   done/discarded notes are absent. Verify local/remote transcripts appear directly under the external
+   signed Org notes remain selectable and Markdown tasks are absent. Verify local/remote transcripts appear directly under the external
    Emacs-side root, including two same-second sessions; ordinary task submission
    must leave Git clean and create no `.agent-shell/` or exclusions.
 7. Cancel at each selector/base prompt: no worktree appears. Inspect a startup
    failure and uncertain delivery without deleting work or automatically resending.
-8. From a filtered task list, mark a different task, then use `C-c a f` on a saved
-   todo note. Verify there is no second task picker and only the note at point
-   launches; return to the list and check filters, sort and marks. Try a header,
-   directory or non-todo note and confirm rejection. With an unsaved visiting task
-   buffer, confirm the save/revert diagnostic leaves edits intact. Outside the
-   task list, confirm `C-c a f` uses the normal task picker.
+8. With an unsaved visiting Org task buffer, confirm the save/revert diagnostic
+   leaves edits intact. Try an explicit Markdown `FILE` and confirm rejection
+   before worktree/session creation. `C-c a f` always uses the normal task picker.
 
 Record build, activation and actual runtime-pickup evidence separately. Live
 checks above are not marked passed by the isolated suite.

@@ -19,19 +19,6 @@ with avoiding redundant reverts during rapid agent edits."
 (defvar-local my/denote-task-auto-revert-debounce-timer nil
   "Debounce timer for task file auto-revert notifications.")
 
-(defun my/denote--mermaid-template ()
-  "Return the neutral Mermaid template."
-  (let ((template
-         (expand-file-name
-          "mermaid/themes/neutral.md"
-          (or (getenv "XDG_CONFIG_HOME")
-              (expand-file-name ".config" "~")))))
-    (unless (file-readable-p template)
-      (user-error "Mermaid template is not readable: %s" template))
-    (with-temp-buffer
-      (insert-file-contents template)
-      (buffer-string))))
-
 (use-package denote
   :ensure nil
   :demand t
@@ -46,17 +33,16 @@ with avoiding redundant reverts during rapid agent edits."
   :config
   (require 'my-denote-task)
   (let ((task-workflow-v3-template
-         "## Context\n\nInitial thoughts, background, and links for future pickup.\n\n## Goals\n\n- \n\n## Non-Goals\n\n- \n\n## Constraints\n\n- Durable constraints, locked details, or invariants that should survive session handoff.\n"))
+         "* Context\n\nInitial thoughts, background, and links for future pickup.\n\n* Goals\n\n- \n\n* Non-Goals\n\n- \n\n* Constraints\n\n- Durable constraints, locked details, or invariants that should survive session handoff.\n"))
     (setq denote-templates
           `((task-workflow-v3 . ,task-workflow-v3-template)
             (task . ,task-workflow-v3-template)
-            (mermaid . my/denote--mermaid-template)
             (empty . ""))))
   (setq denote-directory (expand-file-name "~/work/docs/"))
   (setq denote-dired-directories (list denote-directory))
   (setq denote-dired-directories-include-subdirectories t)
   (setq denote-known-keywords nil)
-  (setq denote-file-type 'markdown-yaml)
+  (setq denote-file-type 'org)
   (setq denote-rename-confirmations nil)
   (defun my/denote-task-auto-revert-enable-after-save ()
     "Enable task auto-revert after a newly created task file is first saved."

@@ -20,46 +20,46 @@ than creating or editing a substitute.
 ## Creating a Note
 
 When the user says “task,” default to a Denote note. Create one through
-`my/denote-task` in Emacs, or create a Markdown file under `~/work/docs/tasks/` using
+`my/denote-task` in Emacs, or create an Org file under `~/work/docs/tasks/` using
 Denote's naming convention:
 
 ```text
-{identifier}--{title-slug}.md
+{identifier}--{title-slug}.org
 ```
 
 - **identifier**: `YYYYMMDDTHHMMSS`, matching the note's identifier field.
 - **title-slug**: lowercase with hyphens for spaces.
-- New captures have no signature. Existing signed Denote Markdown filenames
+- New captures have no signature. Existing signed Denote Org filenames
   remain valid; signatures are ordinary organisation, not managed status.
+- Existing Markdown notes are not converted. Ordinary Denote browsing and links
+  still support them, but task selection and launching support Org only.
 
 ## New Note Template
 
-```markdown
----
-title:      "task title"
-date:       2026-03-04T15:32:50+11:00
-tags:       []
-identifier: "20260304T153250"
-skill:      task-workflow-v3
-repo:       "example/project"
-machine:    "machine-a"
-model:      "example-provider/vendor/model"
-thinking:   "medium"
----
+```org
+#+title: task title
+#+date: [2026-03-04 Wed 15:32]
+#+filetags:
+#+identifier: 20260304T153250
+#+skill: task-workflow-v3
+#+repo: example/project
+#+machine: machine-a
+#+model: example-provider/vendor/model
+#+thinking: medium
 
-## Context
+* Context
 
 Initial thoughts, background, and links for future pickup.
 
-## Goals
+* Goals
 
 -
 
-## Non-Goals
+* Non-Goals
 
 -
 
-## Constraints
+* Constraints
 
 - Durable constraints, locked details, or invariants that should survive session handoff.
 ```
@@ -98,10 +98,15 @@ the machine running Emacs has no preference. The model uses the selected machine
 Thinking defaults to `medium` when supported, otherwise `off`; if neither is
 supported, even ordinary capture asks for an explicit supported choice.
 
-Every captured value is written after `skill` in front matter, in the order
+Every captured value is written after `skill` as an Org keyword, in the order
 above. Machine values are catalogue keys, not display labels. Capture neither
 prompts for nor writes `base-ref`; the Emacs launcher confirms it at launch,
 defaulting to the repository's catalogue value (`origin/${defaultBranch}`).
+
+Keep metadata in a contiguous opening keyword header followed by a blank line.
+Keyword names are case-insensitive; values are literal, non-empty single-line
+strings without YAML quoting. Duplicate title or launch keywords are rejected.
+Keywords in the body, headings or source blocks are not launch metadata.
 
 Emacs startup loads `$XDG_CONFIG_HOME/emacs/agent-catalogue.el` (normally
 `~/.config/emacs/agent-catalogue.el`) as trusted executable configuration,
@@ -126,12 +131,13 @@ There are three explicit commands, separate from capture, with no combined
 selector, dispatcher or compatibility alias:
 
 - `M-x my/agent-session-start-from-file`: styled completion of Denote
-  Markdown task notes recursively under `~/work/docs/tasks/`, including epics.
-  Saved front-matter titles (with filename fallback) and repository/machine
+  Org task notes recursively under `~/work/docs/tasks/`, including epics.
+  Saved header titles (with filename fallback) and repository/machine
   annotations describe candidates. Colliding titles gain relative-path suffixes
   so each file is selectable. Use a valid repository hint or ask,
   select an eligible machine, confirm the base ref and create a new worktree.
-  Its optional Lisp `FILE` argument bypasses completion, not task validation.
+  Its optional Lisp `FILE` argument bypasses completion, not task validation;
+  Markdown files are rejected there too.
 - `M-x my/agent-session-start-new-worktree`: select a repository, then eligible
   machine, confirm the base ref and create a new ad hoc worktree.
 - `M-x my/agent-session-start-in-directory`: select a machine, then browse from
@@ -172,9 +178,10 @@ automatic cleanup or agent-to-agent control.
 ## Managing Files
 
 Use ordinary Denote/Dired commands to open, edit, rename, move, or delete
-files. Regular Denote notes default to `~/work/docs/`; task capture and launcher
+files. New regular Denote notes default to Org under `~/work/docs/`; task capture and launcher
 discovery use its `tasks/` subtree recursively. Denote links resolve across the
-whole document tree. There is no custom task list or `C-c t` prefix.
+whole document tree, including existing Markdown notes. Task templates use Org
+headings. There is no custom task list or `C-c t` prefix.
 There are no Emacs finish/discard commands, status transitions, dependency
 parsers, or automatic edits to other notes.
 

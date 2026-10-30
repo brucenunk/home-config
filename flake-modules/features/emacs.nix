@@ -167,7 +167,6 @@ let
           import ../../pkgs/agent-attention-sound.nix
             { inherit pkgs; };
         xdg.configFile."emacs/tramp-rpc-managed-servers.json".text = builtins.toJSON managedServers;
-        xdg.configFile."mermaid/themes".source = ../../config/mermaid/themes;
         xdg.configFile."excali".source = ../../config/excali;
       };
     };

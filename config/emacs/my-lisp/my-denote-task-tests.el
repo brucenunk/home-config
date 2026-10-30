@@ -25,7 +25,7 @@
           (denote-directory root)
           (my/agent-machines (copy-tree my/denote-task-test--machines))
           (denote-save-buffers t)
-          (denote-templates '((task-workflow-v3 . "## Context\n\nCapture context.\n")
+          (denote-templates '((task-workflow-v3 . "* Context\n\nCapture context.\n")
                              (empty . ""))))
      (unwind-protect
          (progn
@@ -45,38 +45,42 @@
   (my/denote-task-test--with-directory
    (let ((file (my/denote-task "New task")))
      (should (file-exists-p file))
+     (should (equal (file-name-extension file) "org"))
+     (should (equal (denote-retrieve-front-matter-title-value file 'org) "New task"))
+     (should (equal (denote-retrieve-front-matter-identifier-value file 'org)
+                    (denote-retrieve-filename-identifier file)))
      (should (equal (file-name-directory file) (file-name-as-directory root)))
      (should (denote-file-has-denoted-filename-p file))
      (should-not (string-match-p "==" (file-name-nondirectory file)))
      (should-not (find-buffer-visiting file))
      (with-temp-buffer
        (insert-file-contents file)
-       (should (search-forward "skill:      task-workflow-v3" nil t))
-       (should (search-forward "## Context" nil t))
+       (should (search-forward "#+skill: task-workflow-v3" nil t))
+       (should (search-forward "* Context" nil t))
        (goto-char (point-min))
-       (dolist (line '("repo: \"example/project\"" "machine: \"machine-a\""
-                       "model: \"provider/vendor/model\""
-                       "thinking: \"medium\""))
+       (dolist (line '("#+repo: example/project" "#+machine: machine-a"
+                       "#+model: provider/vendor/model"
+                       "#+thinking: medium"))
          (goto-char (point-min))
          (should (search-forward line nil t)))
-       (should-not (search-forward "## Dependencies" nil t))
+       (should-not (search-forward "* Dependencies" nil t))
        (goto-char (point-min))
-       (should-not (re-search-forward "^base-ref:" nil t))))))
+       (should-not (re-search-forward "^#\\+base-ref:" nil t))))))
 
 (ert-deftest my/denote-task-named-skill-uses-an-empty-template ()
   (my/denote-task-test--with-directory
    (let ((file (my/denote-task "Bump inputs" "bump-nix")))
      (with-temp-buffer
        (insert-file-contents file)
-       (should (search-forward "skill:      bump-nix" nil t))
-       (should-not (search-forward "## Context" nil t))))))
+       (should (search-forward "#+skill: bump-nix" nil t))
+       (should-not (search-forward "* Context" nil t))))))
 
 (ert-deftest my/denote-task-unscripted-note-has-no-skill ()
   (my/denote-task-test--with-directory
    (let ((file (my/denote-task "Plain note" "none")))
      (with-temp-buffer
        (insert-file-contents file)
-       (should-not (re-search-forward "^skill:" nil t))))))
+       (should-not (re-search-forward "^#\\+skill:" nil t))))))
 
 (ert-deftest my/denote-task-interactive-streamlined-prompts ()
   (my/denote-task-test--with-directory
@@ -118,7 +122,7 @@
        (let ((current-prefix-arg '(4)))
          (call-interactively #'my/denote-task))
        (goto-char (point-min))
-       (should (search-forward "skill:      bump-nix" nil t)))
+       (should (search-forward "#+skill: bump-nix" nil t)))
      (should (equal (nreverse prompts)
                     '("Title: " "Workflow: " "Repository: " "Model: " "Thinking: "))))))
 
@@ -145,8 +149,8 @@
 
 (ert-deftest my/denote-task-file-p-recognizes-existing-notes-without-mutating-them ()
   (my/denote-task-test--with-directory
-   (let* ((file (expand-file-name "20260324T103418==done--legacy.md" root))
-          (contents "---\nrepo: example/project\n---\n\n## Dependencies\n\n- [ ] [denote:20260324T103419](Old task)\n"))
+   (let* ((file (expand-file-name "20260324T103418==done--legacy.org" root))
+          (contents "#+title: Legacy\n#+repo: example/project\n\n* Dependencies\n\n- [ ] [[denote:20260324T103419][Old task]]\n"))
      (with-temp-file file (insert contents))
      (with-temp-buffer
        (setq-local buffer-file-name file)
@@ -158,8 +162,28 @@
 (ert-deftest my/denote-task-file-p-rejects-non-denote-files ()
   (my/denote-task-test--with-directory
    (with-temp-buffer
-     (setq-local buffer-file-name (expand-file-name "ordinary.md" root))
-     (should-not (my/denote-task-file-p)))))
+     (dolist (name '("ordinary.org" "20261022T100000==todo--old-task.md"))
+       (setq-local buffer-file-name (expand-file-name name root))
+       (should-not (my/denote-task-file-p))))))
+
+(ert-deftest my/denote-task-metadata-rejects-multiline-values ()
+  (dolist (value '("" "  " "line\n#+skill: review" "tab\tvalue"))
+    (with-temp-buffer
+      (insert "#+title: Test\n\nBody\n")
+      (should-error (my/denote-task--metadata-insert `((repo . ,value)))
+                    :type 'user-error))))
+
+(ert-deftest my/denote-task-invalid-titles-stop-before-note-creation ()
+  (my/denote-task-test--with-directory
+    (dolist (title '("" "  " "Fix\n#+skill: review" "Fix\n\nBody"
+                     "Fix\r#+repo: other/repo" "Tab\tvalue"))
+      (dolist (workflow '("task" "none" "bump-nix"))
+        (cl-letf (((symbol-function 'denote)
+                   (lambda (&rest _) (ert-fail "Must reject before creating a note")))
+                  ((symbol-function 'my/denote-task--metadata-read)
+                   (lambda (&rest _) (ert-fail "Must reject before catalogue selection"))))
+          (should-error (my/denote-task title workflow) :type 'user-error))))
+    (should-not (directory-files root nil directory-files-no-dot-files-regexp))))
 
 (defconst my/denote-task-test--two-machines
   (append my/denote-task-test--machines
@@ -182,11 +206,11 @@
 
 (ert-deftest my/denote-task-metadata-insertion-retains-unicode-in-live-buffer ()
   (with-temp-buffer
-    (insert "---\ntitle: \"Unicode\"\n---\n\nBody.\n")
+    (insert "#+title: Unicode\n\nBody.\n")
     (my/denote-task--metadata-insert '((machine . "máquina-🦊") (base-ref . "upstream/déploiement")))
     (should (multibyte-string-p (buffer-string)))
-    (should (string-match-p "machine: \"máquina-🦊\"" (buffer-string)))
-    (should (string-match-p "base-ref: \"upstream/déploiement\"" (buffer-string)))))
+    (should (string-match-p "machine: máquina-🦊" (buffer-string)))
+    (should (string-match-p "base-ref: upstream/déploiement" (buffer-string)))))
 
 (ert-deftest my/denote-task-capture-two-machines-prompts-and-filters-by-repo ()
   (my/denote-task-test--with-directory
@@ -275,7 +299,7 @@
                       "")
                      (_ (ert-fail "Must stop at empty machine choice"))))))
         (should-error (my/denote-task "No implicit machine" "task" extended) :type 'user-error)))
-    (should-not (directory-files root nil "\\.md\\'"))))
+    (should-not (directory-files root nil "\\.org\\'"))))
 
 (ert-deftest my/denote-task-capture-vertico-does-not-preselect-a-machine ()
   ;; Batch Emacs reads stdin instead of opening a minibuffer.  Supply a
@@ -320,16 +344,16 @@
                         :default-model "" :models nil)))
       (setq my/agent-machines (list (cons "machine-a" machine)))
       (should-error (my/denote-task "No choices") :type 'user-error)
-      (should-not (directory-files root nil "\\.md\\'")))))
+      (should-not (directory-files root nil "\\.org\\'")))))
 
 (ert-deftest my/denote-task-capture-missing-configuration-stops-before-note-creation ()
   (my/denote-task-test--with-directory
    (let ((my/agent-machines nil))
      (should-error (my/denote-task "Never created") :type 'user-error)
-     (should-not (directory-files root nil "\\.md\\'")))
+     (should-not (directory-files root nil "\\.org\\'")))
    ;; File identity does not consume the catalogue.
    (with-temp-buffer
-     (setq-local buffer-file-name (expand-file-name "20261005T100000==todo--existing.md" root))
+     (setq-local buffer-file-name (expand-file-name "20261005T100000==todo--existing.org" root))
      (should (my/denote-task-file-p)))))
 
 (ert-deftest my/denote-task-capture-unusable-model-or-thinking-stops-before-note ()
@@ -340,17 +364,17 @@
    (setq my/agent-machines (copy-tree my/denote-task-test--machines))
    (setf (plist-get (car (plist-get (cdar my/agent-machines) :models)) :default-thinking) "unsupported")
    (should-error (my/denote-task "Unusable thinking") :type 'user-error)
-   (should-not (directory-files root nil "\\.md\\'"))))
+   (should-not (directory-files root nil "\\.org\\'"))))
 
 (ert-deftest my/denote-task-capture-cancellation-creates-no-files ()
   (my/denote-task-test--with-directory
    (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) (signal 'quit nil))))
      (should (eq (condition-case nil (my/denote-task "Cancelled") (quit 'cancelled)) 'cancelled)))
-   (should-not (directory-files root nil "\\.md\\'"))))
+   (should-not (directory-files root nil "\\.org\\'"))))
 
-(ert-deftest my/denote-task-metadata-insertion-preserves-unrelated-yaml-and-body ()
-  (let ((header "---\ntitle: \"Title\"\ntags: []\ncustom:\n  nested: true\nskill: review\n")
-        (body "---\n\n## Context\n\nBody with repo: untouched\n---\n"))
+(ert-deftest my/denote-task-metadata-insertion-preserves-unrelated-keywords-and-body ()
+  (let ((header "#+title: Title\n#+filetags: :tag:\n#+custom: literal text\n#+skill: review\n")
+        (body "\n* Context\n\nBody with #+repo: untouched\n"))
     (with-temp-buffer
       (insert header body)
       (my/denote-task--metadata-insert '((repo . "example/project") (machine . "machine-a")
@@ -358,10 +382,10 @@
                                   (thinking . "high")))
       (should (string-prefix-p header (buffer-string)))
       (should (string-suffix-p body (buffer-string)))
-      (should (string-match-p "base-ref: \"local: # text\"" (buffer-string)))
+      (should (string-match-p "base-ref: local: # text" (buffer-string)))
       (dolist (key '(repo machine base-ref model thinking))
         (goto-char (point-min))
-        (should (= (how-many (format "^%s:" key)) 1))))))
+        (should (= (how-many (format "^#\\+%s:" key)) 1))))))
 
 (ert-deftest my/denote-task-directory-is-under-docs ()
   (should (equal (my/denote-task-directory)
@@ -370,8 +394,8 @@
 (ert-deftest my/denote-task-file-p-is-independent-of-global-denote-root ()
   (my/denote-task-test--with-directory
     (let ((denote-directory (file-name-directory root)))
-      (dolist (name '("20261022T100000--unsigned.md"
-                      "epic/20261022T100001==todo--legacy.md"))
+      (dolist (name '("20261022T100000--unsigned.org"
+                      "epic/20261022T100001==todo--legacy.org"))
         (let ((file (expand-file-name name root)))
           (make-directory (file-name-directory file) t)
           (write-region "" nil file nil 'silent)
@@ -380,7 +404,7 @@
             (should (my/denote-task-file-p)))))
       (with-temp-buffer
         (setq-local buffer-file-name
-                    (expand-file-name "20261022T100002--regular-note.md" denote-directory))
+                    (expand-file-name "20261022T100002--regular-note.org" denote-directory))
         (should-not (my/denote-task-file-p))))))
 
 (provide 'my-denote-task-tests)

@@ -20,8 +20,14 @@ my-agent-session.el ── starts fresh conversations through ──► agent-sh
 
 ## Boundaries
 
-- Task notes are ordinary Denote Markdown files under `~/work/docs/tasks/`, with
+- New task notes are ordinary Denote Org files under `~/work/docs/tasks/`, with
   optional epic subdirectories. Use native Denote identifiers and links.
+  Capture and human task launches support Org only; existing Markdown files
+  remain untouched and available through ordinary Denote browsing and links.
+  Launch metadata uses literal single-line `#+skill:`, `#+repo:`, `#+machine:`,
+  `#+model:` and `#+thinking:` keywords in a contiguous opening header ending
+  with a blank line. Launcher parsing is case-insensitive and rejects duplicate
+  title/launch fields; body keywords never supply launch metadata.
 - The capture package owns task files and metadata—not managed
   statuses, finish/discard, dependency parsing/check-off, Git or sessions.
   `my-agent-session.el` separately owns three explicit human launch commands:
@@ -33,9 +39,9 @@ my-agent-session.el ── starts fresh conversations through ──► agent-sh
   operations and failure handling remain with the launcher; capture remains file-only.
   Session/worktree cleanup remains a separate human-coordinated action, not
   agent orchestration. See `../../../docs/agent-session.md` for launch/failure policy.
-- Regular Denote notes default to `~/work/docs/`; task capture and discovery
+- Regular Denote notes default to Org under `~/work/docs/`; task capture and discovery
   are scoped to its `tasks/` subtree. New captures have no filename signature;
-  discovery also accepts existing signed Denote Markdown notes. There is no
+  discovery also accepts existing signed Denote Org notes. There is no
   transition API or status validation. `C-c n T` invokes `my/denote-task`; the
   old task prefix and custom task-list UI are removed.
 - `skill` is optional downstream metadata. Capture always selects a repository,
@@ -69,7 +75,7 @@ my-agent-session.el ── starts fresh conversations through ──► agent-sh
   recovery, or lifecycle notification system.
 - Task-file auto-refresh and document-wide Denote configuration live in
   `my-emacs-denote.el`. The task predicate checks the task root independently
-  of the broader Denote document root.
+  of the broader Denote document root. Configured note templates use Org.
 
 ## Placement Guide
 

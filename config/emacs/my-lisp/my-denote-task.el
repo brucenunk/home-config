@@ -20,7 +20,6 @@
 
 (require 'denote)
 (require 'cl-lib)
-(require 'json)
 (require 'subr-x)
 (require 'my-agent-catalogue)
 
@@ -87,18 +86,17 @@ skill metadata, and other choices write their name as the skill.")
       (model . ,model-name) (thinking . ,thinking))))
 
 (defun my/denote-task--metadata-insert (metadata)
-  "Append captured METADATA to the new note's YAML front matter."
+  "Append single-line METADATA to the new note's Org keyword header."
   (save-excursion
     (goto-char (point-min))
-    (unless (looking-at "---\n") (error "Task note has no YAML front matter"))
-    (forward-line)
-    (unless (re-search-forward "^---$" nil t) (error "Task note has no closing front matter delimiter"))
-    (beginning-of-line)
+    (unless (looking-at "#\\+title:") (error "Task note has no Org keyword header"))
+    (unless (re-search-forward "^$" nil t) (error "Task note has no header separator"))
     (dolist (entry metadata)
-      ;; JSON strings are YAML quoted scalars, including escaped special characters.
-      (insert (format "%s: " (car entry)))
-      (json-insert (cdr entry))
-      (insert "\n"))))
+      (unless (and (stringp (cdr entry))
+                   (not (string-empty-p (string-trim (cdr entry))))
+                   (not (string-match-p "[[:cntrl:]]" (cdr entry))))
+        (user-error "Task %s must be a non-empty single-line string" (car entry)))
+      (insert (format "#+%s: %s\n" (car entry) (cdr entry))))))
 
 ;;;###autoload
 (defun my/denote-task-directory ()
@@ -119,18 +117,6 @@ skill metadata, and other choices write their name as the skill.")
        (completing-read "Workflow: " my/denote-task-workflows nil t nil nil "task"))
     "task"))
 
-(defun my/denote-task--skill-set (skill)
-  "Insert SKILL into the current note's YAML front matter."
-  (save-excursion
-    (goto-char (point-min))
-    (unless (looking-at "---\n")
-      (error "Task note has no YAML front matter"))
-    (forward-line)
-    (unless (re-search-forward "^---$" nil t)
-      (error "Task note has no closing front matter delimiter"))
-    (beginning-of-line)
-    (insert (format "skill:      %s\n" skill))))
-
 ;;;###autoload
 (defun my/denote-task (&optional title workflow extended-workflow-p)
   "Create a task note with TITLE and WORKFLOW.
@@ -147,6 +133,10 @@ New notes have no filename signature.  No status lifecycle is managed."
          (target-dir (if subdir (expand-file-name subdir denote-directory)
                        denote-directory))
          (title (or title (read-string "Title: ")))
+         (_ (unless (and (stringp title)
+                         (not (string-empty-p (string-trim title)))
+                         (not (string-match-p "[[:cntrl:]]" title)))
+              (user-error "Task title must be a non-empty single-line string")))
          (workflow (my/denote-task--normalize-workflow
                     (or workflow
                         (if interactive-p
@@ -161,9 +151,9 @@ New notes have no filename signature.  No status lifecycle is managed."
          (metadata (my/denote-task--metadata-read extended-workflow-p)))
     (make-directory target-dir t)
     (let ((denote-directory target-dir))
-      (denote title nil 'markdown-yaml nil nil template nil)
-      (when skill (my/denote-task--skill-set skill))
-      (my/denote-task--metadata-insert metadata)
+      (denote title nil 'org nil nil template nil)
+      (my/denote-task--metadata-insert
+       (append (when skill (list (cons 'skill skill))) metadata))
       (save-buffer)
       (let ((file buffer-file-name))
         (unless interactive-p (kill-buffer))
@@ -173,6 +163,7 @@ New notes have no filename signature.  No status lifecycle is managed."
 (defun my/denote-task-file-p ()
   "Return non-nil if the current buffer visits a Denote task file."
   (and buffer-file-name
+       (equal (file-name-extension buffer-file-name) "org")
        (file-in-directory-p buffer-file-name (my/denote-task-directory))
        (denote-file-has-denoted-filename-p buffer-file-name)))
 

@@ -3,7 +3,7 @@
 ;; Author: James Lee
 ;; URL: https://github.com/brucenunk/home-config
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "30.1") (denote "4.2") (yaml "1.2") (marginalia "1.0"))
+;; Package-Requires: ((emacs "30.1") (denote "4.2") (marginalia "1.0"))
 
 ;;; Commentary:
 
@@ -18,7 +18,6 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'denote)
-(require 'yaml)
 (require 'marginalia)
 (require 'agent-shell)
 (require 'agent-shell-pi)
@@ -27,7 +26,7 @@
 (defvar vertico-preselect)
 
 (defun my/agent-session--task-candidates (root)
-  "Return filename titles paired with Denote Markdown files under ROOT.
+  "Return filename titles paired with Denote Org files under ROOT.
 Discovery is recursive and filename-only, ordered by Denote identifier
 oldest first.  Titles need not be unique; the picker resolves saved titles."
   (when (file-directory-p root)
@@ -39,26 +38,41 @@ oldest first.  Titles need not be unique; the picker resolves saved titles."
                        'face 'denote-faces-title)
                       file))
               (denote-sort-files
-               (denote-directory-files "\\.md\\'" nil nil nil t)
+               (denote-directory-files "\\.org\\'" nil nil nil t)
                'identifier)))))
+
+(defun my/agent-session--task-metadata ()
+  "Read task metadata from the current buffer's opening Org keyword header.
+The header is contiguous keyword lines followed by a blank line.  Never scan
+the body for metadata.  Reject duplicate launch fields rather than choosing
+between conflicting values.  Values are literal Org strings, not YAML."
+  (goto-char (point-min))
+  (let ((case-fold-search t)
+        header-p metadata)
+    (while (looking-at "#\\+\\([[:alnum:]_-]+\\):[ \t]*\\([^\n\r]*\\)\r?\n")
+      (setq header-p t)
+      (let ((key (downcase (match-string-no-properties 1)))
+            (value (match-string-no-properties 2))
+            (next (match-end 0)))
+        (when (member key '("title" "repo" "machine" "model" "thinking" "skill"))
+          (when (assoc key metadata)
+            (user-error "Duplicate task %s keyword" key))
+          (push (cons key (string-trim value " +" " +")) metadata))
+        (goto-char next)))
+    (unless (and header-p (looking-at "[ \t]*\r?\n"))
+      (user-error "Task requires an opening Org keyword header and blank separator"))
+    metadata))
 
 (defun my/agent-session--task-hints (file)
   "Return display-only title, repo and machine hints as a plist for FILE.
-Read at most 16 KiB and parse only a complete opening YAML block.  Missing,
+Read at most 16 KiB and parse only a complete opening Org header.  Missing,
 invalid or unreadable values yield nil for title and an em dash for hints.
 Launch validation is separate."
   (let ((metadata
          (condition-case nil
              (with-temp-buffer
                (insert-file-contents file nil 0 (* 16 1024))
-               (goto-char (point-min))
-               (when (looking-at "---\r?\n")
-                 (goto-char (match-end 0))
-                 (let ((start (point)))
-                   (when (re-search-forward "^---\r?$" nil t)
-                     (yaml-parse-string
-                      (buffer-substring-no-properties start (match-beginning 0))
-                      :object-type 'alist :object-key-type 'string :string-values t)))))
+               (my/agent-session--task-metadata))
            (error nil))))
     (cl-flet ((hint (key)
                 (let ((value (and (listp metadata) (cdr (assoc key metadata)))))
@@ -128,8 +142,9 @@ Colliding titles gain a relative-path suffix so every file is selectable."
     (cdr entry)))
 
 (defun my/agent-session--task-read (file)
-  "Read a saved task FILE and its bounded YAML front matter.
-Only the opening delimiter and its first closing delimiter delimit metadata."
+  "Read a saved Org task FILE and its bounded opening keyword header."
+  (unless (equal (file-name-extension file) "org")
+    (user-error "Task launch supports Org files only: %s" file))
   (with-temp-buffer
     ;; The read limit is in bytes, whereas decoded buffer-size is characters.
     ;; Validate the raw bounded read before decoding, or UTF-8 could silently
@@ -140,31 +155,16 @@ Only the opening delimiter and its first closing delimiter delimit metadata."
               (when (> (buffer-size) (* 256 1024))
                 (user-error "Task exceeds 256 KiB: %s" file))
               (decode-coding-string (buffer-string) 'utf-8)))
-    (goto-char (point-min))
-    (unless (looking-at "---\r?\n")
-      (user-error "Task requires opening YAML front matter: %s" file))
-    (goto-char (match-end 0))
-    (let* ((start (point))
-           (end (or (and (re-search-forward "^---\r?$" nil t)
-                         (match-beginning 0))
-                    (user-error "Task has no closing front matter delimiter")))
-           (metadata (yaml-parse-string (buffer-substring-no-properties start end)
-                                        :object-type 'alist :object-key-type 'string
-                                        :string-values t))
+    (let* ((metadata (my/agent-session--task-metadata))
            (text (buffer-string))
-           ;; Denote's public reader prefers a visiting buffer.  Do not mix its
-           ;; unsaved/stale title with the saved snapshot sent to the agent.
+           ;; Never mix unsaved/stale buffer content with the saved snapshot.
            (_ (when-let* ((visiting (get-file-buffer file)))
                 (unless (equal text (with-current-buffer visiting
                                      (save-restriction
                                        (widen)
                                        (buffer-substring-no-properties (point-min) (point-max)))))
                   (user-error "Task buffer differs from disk; save or revert before launching"))))
-           (title (when (assoc "title" metadata)
-                    (with-current-buffer (or (get-file-buffer file) (current-buffer))
-                      (save-restriction
-                        (widen)
-                        (denote-retrieve-front-matter-title-value file 'markdown-yaml))))))
+           (title (cdr (assoc "title" metadata))))
       (dolist (key '("title" "repo" "machine" "model" "thinking" "skill"))
         (when-let* ((entry (assoc key metadata)))
           (unless (and (stringp (cdr entry))

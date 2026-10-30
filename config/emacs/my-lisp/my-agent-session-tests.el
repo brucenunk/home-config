@@ -122,11 +122,11 @@
          (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest my/agent-session-task-snapshot ()
-  (let ((file (make-temp-file "task-" nil ".md")))
+  (let ((file (make-temp-file "task-" nil ".org")))
     (unwind-protect
         (progn
           (with-temp-file file
-            (insert "---\ntitle: \"Full title: with punctuation\"\nrepo: owner/repo\nmodel: provider/vendor/model\nthinking: high\nskill: task-workflow-v3\n---\nBody\n---\nMore body\n"))
+            (insert "#+title: Full title: with punctuation\n#+repo: owner/repo\n#+model: provider/vendor/model\n#+thinking: high\n#+skill: task-workflow-v3\n\nBody\n---\nMore body\n"))
           (let ((task (my/agent-session--task-read file)))
             (should (equal (plist-get task :title) "Full title: with punctuation"))
             (should (equal (plist-get task :model) "provider/vendor/model"))
@@ -136,27 +136,93 @@
       (delete-file file))))
 
 (ert-deftest my/agent-session-task-invalid-and-no-skill ()
-  (let ((file (make-temp-file "task-" nil ".md")))
+  (let ((file (make-temp-file "task-" nil ".org")))
     (unwind-protect
         (progn
-          (dolist (text '("Plain prompt" "---\ntitle: Unclosed\n" "---\nmodel: []\n---\nbody"
-                          "---\nskill: bad name\n---\nbody"))
+          (dolist (text '("Plain prompt" "#+title: Unclosed\n" "#+model: \n\nBody"
+                          "#+skill: bad name\n\nBody" "#+skill: ../review\n\nBody"
+                          "#+repo: bad\tvalue\n\nBody"
+                          "#+title: First\n#+TITLE: Conflicting\n\nBody"
+                          "#+model: vendor/model\nmalformed header\n\nBody"))
             (with-temp-file file (insert text))
             (should-error (my/agent-session--task-read file)))
-          (with-temp-file file (insert "---\nthinking: off\n---\nBody"))
+          (with-temp-file file (insert "#+thinking: off\n\nBody"))
           (let ((task (my/agent-session--task-read file)))
             (should (equal (plist-get task :thinking) "off"))
             (should (equal (plist-get task :title) (file-name-base file)))
-            (should-not (string-match-p "Load the" (plist-get task :prompt)))))
+            (should-not (string-match-p "Load the" (plist-get task :prompt))))
+          (with-temp-file file (insert "#+identifier: 20261030T100000\n\nBody"))
+          (should (equal (plist-get (my/agent-session--task-read file) :title)
+                         (file-name-base file))))
       (delete-file file))))
 
-(ert-deftest my/agent-session-quoted-scalar-titles-stay-strings ()
-  (let ((file (make-temp-file "task-title-" nil ".md")))
+(ert-deftest my/agent-session-literal-keyword-titles-stay-strings ()
+  (let ((file (make-temp-file "task-title-" nil ".org")))
     (unwind-protect
         (dolist (title '("123" "true" "false" "null" "~" "0x10"))
-          (with-temp-file file (insert (format "---\ntitle: %S\n---\nbody" title)))
+          (with-temp-file file (insert (format "#+title: %s\n\nBody" title)))
           (should (equal (plist-get (my/agent-session--task-read file) :title) title)))
       (delete-file file))))
+
+(ert-deftest my/agent-session-markdown-explicit-file-rejected-before-mutation ()
+  (let ((file (make-temp-file "legacy-task-" nil ".md"))
+        (text "---\ntitle: Legacy\nrepo: owner/repo\n---\nBody\n"))
+    (unwind-protect
+        (progn
+          (write-region text nil file nil 'silent)
+          (cl-letf (((symbol-function 'my/agent-session--worktree-options)
+                     (lambda (&rest _) (ert-fail "Must reject before launch choices")))
+                    ((symbol-function 'my/agent-session--start)
+                     (lambda (&rest _) (ert-fail "Must not start a session"))))
+            (should-error (my/agent-session-start-from-file file) :type 'user-error))
+          (with-temp-buffer
+            (insert-file-contents file)
+            (should (equal (buffer-string) text))))
+      (delete-file file))))
+
+(ert-deftest my/agent-session-org-body-keywords-do-not-override-or-inject-skill ()
+  (let ((file (make-temp-file "org-task-body-" nil ".org"))
+        (text (concat "#+title: Saved title\n#+repo: owner/repo\n\n"
+                      "* Context\n#+title: Not a title\n#+skill: review\n"
+                      "#+begin_src org\n#+model: wrong/model\n#+end_src\n")))
+    (unwind-protect
+        (progn
+          (write-region text nil file nil 'silent)
+          (let ((task (my/agent-session--task-read file)))
+            (should (equal (plist-get task :title) "Saved title"))
+            (should (equal (plist-get task :repo) "owner/repo"))
+            (should-not (plist-get task :model))
+            (should-not (string-match-p "Load the" (plist-get task :prompt)))
+            (should (string-suffix-p text (plist-get task :prompt)))))
+      (delete-file file))))
+
+(ert-deftest my/agent-session-captured-org-roundtrips-to-saved-launch-context ()
+  (require 'my-denote-task)
+  (let* ((root (make-temp-file "org-capture-launch-" t))
+         (denote-templates '((task-workflow-v3 . "* Context\n\nSaved context.\n")))
+         (my/agent-machines
+          '(("machine-a" :repositories ((:name "owner/repo"))
+             :default-model "provider/vendor/model"
+             :models ((:name "provider/vendor/model" :thinking-levels ("medium")
+                       :default-thinking "medium"))))))
+    (unwind-protect
+        (cl-letf (((symbol-function 'my/denote-task-directory) (lambda () root))
+                  ((symbol-function 'completing-read)
+                   (lambda (&rest _) "owner/repo")))
+          (let* ((file (my/denote-task "Capture: API/Org"))
+                 (task (my/agent-session--task-read file))
+                 (hints (my/agent-session--task-hints file))
+                 (snapshot (with-temp-buffer (insert-file-contents file) (buffer-string))))
+            (should (equal (plist-get task :title) "Capture: API/Org"))
+            (should (equal (plist-get hints :title) (plist-get task :title)))
+            (should (equal (plist-get hints :repo) "owner/repo"))
+            (should (equal (plist-get hints :machine) "machine-a"))
+            (should (equal (plist-get task :model) "provider/vendor/model"))
+            (should (equal (plist-get task :thinking) "medium"))
+            (should (string-suffix-p
+                     (concat snapshot "\n\nLoad the task-workflow-v3 agent skill and follow instructions.")
+                     (plist-get task :prompt)))))
+      (delete-directory root t))))
 
 (ert-deftest my/agent-session-naming-collisions ()
   (my/agent-session-test--repository
@@ -227,28 +293,29 @@
 (ert-deftest my/agent-session-task-candidates-filter-and-identify-without-body-reads ()
   (let ((root (make-temp-file "agent-candidates-" t)))
     (unwind-protect
-        (let* ((notes '("20261017T152149==todo--a-readable-title.md"
-                        "epic/20261017T152150==todo--duplicate-title.md"
-                        "other/20261017T152150==todo--duplicate-title.md"
-                        "epic/20261017T152151==todo--duplicate-title.md"
-                        "epic/20261017T152151==todo--duplicate-title__copy.md"
-                        "20261017T152152==todo--duplicate-title--[1].md"
-                        "20261017T152149==done--legacy.md"
-                        "epic/20261017T152149==discarded--legacy.md"
-                        "20261017T152149--no-signature.md"
-                        "20261017T152153.md"
-                        "epic/20261017T152154==reference.md"
-                        "20261017T152155__keyword.md"))
-               (excluded '("unrelated==todo--file.md"
-                           "20261017T152149==todo--backup.md~"
-                           "#20261017T152149==todo--autosave.md#"
-                           ".#20261017T152149==todo--lock.md"
-                           "epic/20261017T152149==todo--other-extension.txt")))
+        (let* ((notes '("20261017T152149==todo--a-readable-title.org"
+                        "epic/20261017T152150==todo--duplicate-title.org"
+                        "other/20261017T152150==todo--duplicate-title.org"
+                        "epic/20261017T152151==todo--duplicate-title.org"
+                        "epic/20261017T152151==todo--duplicate-title__copy.org"
+                        "20261017T152152==todo--duplicate-title--[1].org"
+                        "20261017T152149==done--legacy.org"
+                        "epic/20261017T152149==discarded--legacy.org"
+                        "20261017T152149--no-signature.org"
+                        "20261017T152153.org"
+                        "epic/20261017T152154==reference.org"
+                        "20261017T152155__keyword.org"))
+               (excluded '("unrelated==todo--file.org"
+                           "20261017T152149==todo--backup.org~"
+                           "#20261017T152149==todo--autosave.org#"
+                           ".#20261017T152149==todo--lock.org"
+                           "epic/20261017T152149==todo--other-extension.txt"
+                           "20261017T152149==todo--old-markdown.md")))
           (dolist (name (append notes excluded))
             (let ((file (expand-file-name name root)))
               (make-directory (file-name-directory file) t)
               (with-temp-file file (insert "Never read this body"))))
-          (make-directory (expand-file-name "20261017T152149==todo--directory.md" root))
+          (make-directory (expand-file-name "20261017T152149==todo--directory.org" root))
           (cl-letf (((symbol-function 'insert-file-contents)
                      (lambda (&rest _) (ert-fail "Candidate presentation read a body")))
                     ((symbol-function 'my/agent-session--task-read)
@@ -276,11 +343,11 @@
         (unrelated (make-temp-file "agent-unrelated-" t)))
     (unwind-protect
         (progn
-          (dolist (name '("20261017T152149==todo--included.md"
-                          "epic/20261017T152149==todo--nested.md"
-                          ".hidden/20261017T152149==todo--hidden.md"
-                          "excluded/20261017T152149==todo--excluded.md"
-                          "20261017T152149==todo--ignored.md"))
+          (dolist (name '("20261017T152149==todo--included.org"
+                          "epic/20261017T152149==todo--nested.org"
+                          ".hidden/20261017T152149==todo--hidden.org"
+                          "excluded/20261017T152149==todo--excluded.org"
+                          "20261017T152149==todo--ignored.org"))
             (let ((file (expand-file-name name root)))
               (make-directory (file-name-directory file) t)
               (write-region "" nil file nil 'silent)))
@@ -294,32 +361,34 @@
       (delete-directory unrelated t))))
 
 (ert-deftest my/agent-session-task-hints-parse-only-bounded-saved-front-matter ()
-  (let ((file (make-temp-file "agent-hints-" nil ".md")))
+  (let ((file (make-temp-file "agent-hints-" nil ".org")))
     (unwind-protect
         (progn
-          (dolist (case '(("---\nrepo: 'owner/repo'\nmachine: \"wampa\"\n---\nrepo: wrong\n: [invalid YAML body"
+          (dolist (case '(("#+repo: owner/repo\n#+machine: wampa\n\n#+repo: wrong\n#+begin_src org\n#+machine: wrong\n#+end_src"
                            . ("owner/repo" . "wampa"))
-                          ("---\r\nrepo: owner/repo\r\nmachine: wampa\r\n---\r\nbody"
+                          ("#+REPO: owner/repo\r\n#+MACHINE: wampa\r\n\r\nbody"
                            . ("owner/repo" . "wampa"))
-                          ("---\nrepo: ' padded/repo '\n---\n" . ("padded/repo" . "—"))
-                          ("---\nrepo: [not, a, string]\nmachine: ''\n---\n" . ("—" . "—"))
-                          ("---\nrepo: \"bad\\nvalue\"\nmachine: wampa\n---\n" . ("—" . "wampa"))
-                          ("---\nrepo: [broken\n---\n" . ("—" . "—"))
-                          ("---\nrepo: owner/repo\n" . ("—" . "—"))
-                          ("body\n---\nrepo: wrong\n---\n" . ("—" . "—"))))
+                          ("#+repo:  padded/repo  \n\n" . ("padded/repo" . "—"))
+                          ("#+repo: \n#+machine: \n\n" . ("—" . "—"))
+                          ("#+repo: bad\tvalue\n#+machine: wampa\n\n" . ("—" . "wampa"))
+                          ("#+repo: one\n#+REPO: two\n\n" . ("—" . "—"))
+                          ("#+repo: owner/repo\n" . ("—" . "—"))
+                          ("body\n\n#+repo: wrong\n\n" . ("—" . "—"))
+                          ("* Heading\n#+repo: wrong\n\n" . ("—" . "—"))
+                          ("#+begin_src org\n#+repo: wrong\n#+end_src\n\n" . ("—" . "—"))))
             (write-region (car case) nil file nil 'silent)
             (let ((hints (my/agent-session--task-hints file)))
               (should-not (plist-get hints :title))
               (should (equal (cons (plist-get hints :repo) (plist-get hints :machine))
                              (cdr case)))))
-          (write-region "---\ntitle: 'Fix HTTP/2: Preserve API Casing!'\n---\n" nil file nil 'silent)
+          (write-region "#+title: Fix HTTP/2: Preserve API Casing!\n\n" nil file nil 'silent)
           (should (equal (plist-get (my/agent-session--task-hints file) :title)
                          "Fix HTTP/2: Preserve API Casing!"))
-          (dolist (title '("''" "[not, a, string]" "\"bad\\nvalue\""))
-            (write-region (format "---\ntitle: %s\n---\n" title) nil file nil 'silent)
+          (dolist (title '("" "  " "bad\tvalue"))
+            (write-region (format "#+title: %s\n\n" title) nil file nil 'silent)
             (should-not (plist-get (my/agent-session--task-hints file) :title)))
-          (write-region (concat "---\n# " (make-string (* 17 1024) ?x)
-                                "\nrepo: beyond/limit\n---\n") nil file nil 'silent)
+          (write-region (concat "#+title: " (make-string (* 17 1024) ?x)
+                                "\n#+repo: beyond/limit\n\n") nil file nil 'silent)
           (let ((read-file (symbol-function 'insert-file-contents)))
             (cl-letf (((symbol-function 'insert-file-contents)
                        (lambda (name &optional visit beg end &rest args)
@@ -335,14 +404,14 @@
 
 (ert-deftest my/agent-session-task-marginalia-aligns-columns-and-disambiguates-titles ()
   (let* ((root (make-temp-file "agent-picker-" t))
-         (notes '(("20261017T152149==todo--short.md" "a/b" "wampa" "Fix API Casing: HTTP/2")
-                  ("20261017T152150==todo--a-much-longer-readable-title.md" "owner/long-repository" "work" "A Much Longer Readable Title")
-                  ("epic/20261017T152151==todo--duplicate.md" "a/b" "work" "Duplicate: API")
-                  ("other/20261017T152151==todo--different-filename.md" "a/b" "work" "Duplicate: API")
-                  ("epic/20261017T152151==todo--duplicate__copy.md" "a/b" "work" "Duplicate: API")
-                  ("20261017T152154==todo--literal-title.md" "a/b" "work" "Duplicate: API  [1]")
-                  ("20261017T152153==todo--unicode-repo.md" "owner/工具" "wampa")
-                  ("20261017T152152==done--legacy.md" "a/b" "work")))
+         (notes '(("20261017T152149==todo--short.org" "a/b" "wampa" "Fix API Casing: HTTP/2")
+                  ("20261017T152150==todo--a-much-longer-readable-title.org" "owner/long-repository" "work" "A Much Longer Readable Title")
+                  ("epic/20261017T152151==todo--duplicate.org" "a/b" "work" "Duplicate: API")
+                  ("other/20261017T152151==todo--different-filename.org" "a/b" "work" "Duplicate: API")
+                  ("epic/20261017T152151==todo--duplicate__copy.org" "a/b" "work" "Duplicate: API")
+                  ("20261017T152154==todo--literal-title.org" "a/b" "work" "Duplicate: API  [1]")
+                  ("20261017T152153==todo--unicode-repo.org" "owner/工具" "wampa")
+                  ("20261017T152152==done--legacy.org" "a/b" "work")))
          (original-annotators marginalia-annotators)
          (original-mode marginalia-mode)
          (read-hints (symbol-function 'my/agent-session--task-hints))
@@ -353,8 +422,8 @@
           (dolist (note notes)
             (let ((file (expand-file-name (car note) root)))
               (make-directory (file-name-directory file) t)
-              (write-region (format "---\n%srepo: %s\nmachine: %s\n---\n"
-                                    (if (nth 3 note) (format "title: %S\n" (nth 3 note)) "")
+              (write-region (format "%s#+repo: %s\n#+machine: %s\n\n"
+                                    (if (nth 3 note) (format "#+title: %s\n" (nth 3 note)) "")
                                     (nth 1 note) (nth 2 note)) nil file nil 'silent)))
           (let* ((candidates (my/agent-session--task-candidates root))
                  (selection-index 0))
@@ -416,13 +485,13 @@
 (ert-deftest my/agent-session-same-title-signed-and-unsigned-tasks-launch-exact-snapshot ()
   (let* ((root (make-temp-file "agent-duplicate-launch-" t))
          (files (mapcar (lambda (name) (expand-file-name name root))
-                        '("20261022T100000==done--old.md"
-                          "20261022T100001--new.md")))
+                        '("20261022T100000==done--old.org"
+                          "20261022T100001--new.org")))
          (discover (symbol-function 'my/agent-session--task-candidates)))
     (unwind-protect
         (progn
           (dolist (file files)
-            (write-region "---\ntitle: Same title\n---\n" nil file nil 'silent))
+            (write-region "#+title: Same title\n\n" nil file nil 'silent))
           (cl-letf (((symbol-function 'my/agent-session--task-candidates)
                      (lambda (_) (funcall discover root)))
                     ((symbol-function 'my/agent-session--worktree-options) #'identity)
@@ -440,8 +509,8 @@
       (delete-directory root t))))
 
 (ert-deftest my/agent-session-task-completion-narrows-to-distinct-files ()
-  (let ((candidates '(("alpha task [one]" . "/one.md")
-                      ("alpha task [two]" . "/two.md") ("zebra task" . "/zebra.md"))))
+  (let ((candidates '(("alpha task [one]" . "/one.org")
+                      ("alpha task [two]" . "/two.org") ("zebra task" . "/zebra.org"))))
     (cl-letf (((symbol-function 'my/agent-session--task-candidates) (lambda (_) candidates)))
       (dolist (entry candidates)
         (let ((completing-read-function
@@ -471,12 +540,12 @@
                (lambda (root)
                  (should (equal root (expand-file-name "~/work/docs/tasks/" "/")))
                  (should-not (file-remote-p root))
-                 '(("Task" . "/local/task.md"))))
+                 '(("Task" . "/local/task.org"))))
               ((symbol-function 'completing-read) (lambda (&rest _) "Task")))
-      (should (equal (my/agent-session--task-select) "/local/task.md")))))
+      (should (equal (my/agent-session--task-select) "/local/task.org")))))
 
 (ert-deftest my/agent-session-optional-file-bypasses-picker-not-validation ()
-  (let* ((file (make-temp-file "agent-explicit-task-" nil ".md"))
+  (let* ((file (make-temp-file "agent-explicit-task-" nil ".org"))
          (my/agent-machines '(("only" :directory "/local/" :repositories
                                      ((:name "repo" :path "/repo/main" :base-ref "main"))))))
     (unwind-protect
@@ -485,7 +554,7 @@
                   ((symbol-function 'my/agent-session--start) #'identity)
                   ((symbol-function 'completing-read) (lambda (&rest _) (ert-fail "Valid hint and sole machine")))
                   ((symbol-function 'read-string) (lambda (&rest _) "main")))
-          (with-temp-file file (insert "---\ntitle: Explicit task\nrepo: repo\nskill: task-workflow-v3\nmodel: vendor/model\nthinking: high\n---\nBody @README.md"))
+          (with-temp-file file (insert "#+title: Explicit task\n#+repo: repo\n#+skill: task-workflow-v3\n#+model: vendor/model\n#+thinking: high\n\nBody @README.md"))
           (let* ((default-directory (file-name-directory file))
                  (context (my/agent-session-start-from-file (file-name-nondirectory file))))
             (should (equal (plist-get context :title) "Explicit task"))
@@ -675,21 +744,30 @@
         (should (string-match-p "Nothing removed" (car my/agent-session-test--messages)))))))
 
 (ert-deftest my/agent-session-task-unsaved-buffer-does-not-mix-snapshots ()
-  (let ((file (make-temp-file "task-snapshot-" nil ".md")) buffer)
+  (let ((file (make-temp-file "task-snapshot-" nil ".org")) buffer)
     (unwind-protect
         (progn
-          (with-temp-file file (insert "---\ntitle: Saved\n---\nbody"))
+          (with-temp-file file (insert "#+title: Saved\n\nBody"))
           (setq buffer (find-file-noselect file))
           (with-current-buffer buffer (goto-char (point-max)) (insert "unsaved"))
-          (should-error (my/agent-session--task-read file) :type 'user-error))
+          (should-error (my/agent-session--task-read file) :type 'user-error)
+          (with-current-buffer buffer
+            (narrow-to-region (point-min) (1+ (point-min)))
+            ;; Even an unmodified flag cannot authorize a stale snapshot.
+            (set-buffer-modified-p nil))
+          (should-error (my/agent-session--task-read file) :type 'user-error)
+          (with-current-buffer buffer
+            (should (buffer-narrowed-p))
+            (widen)
+            (should (string-suffix-p "unsaved" (buffer-string)))))
       (when buffer (with-current-buffer buffer (set-buffer-modified-p nil)) (kill-buffer buffer))
       (delete-file file))))
 
 (ert-deftest my/agent-session-narrowed-task-retains-front-matter-title ()
-  (let ((file (make-temp-file "task-narrowed-" nil ".md")) buffer)
+  (let ((file (make-temp-file "task-narrowed-" nil ".org")) buffer)
     (unwind-protect
         (progn
-          (with-temp-file file (insert "---\ntitle: Full task title\n---\ntitle: Not metadata\nBody"))
+          (with-temp-file file (insert "#+title: Full task title\n\n#+title: Not metadata\nBody"))
           (setq buffer (find-file-noselect file))
           (with-current-buffer buffer
             (goto-char (point-min))
@@ -703,15 +781,15 @@
       (delete-file file))))
 
 (ert-deftest my/agent-session-task-byte-limit-before-decoding ()
-  (let ((file (make-temp-file "task-bytes-" nil ".md")))
+  (let ((file (make-temp-file "task-bytes-" nil ".org")))
     (unwind-protect
         (progn
           (with-temp-file file
-            (insert "---\ntitle: Multibyte\n---\n" (make-string 100000 ?雪)))
+            (insert "#+title: Multibyte\n\n" (make-string 100000 ?雪)))
           ;; Fewer than 256 Ki characters but more than 256 Ki bytes: never
           ;; launch with just the first bounded read decoded as a partial task.
           (should-error (my/agent-session--task-read file) :type 'user-error)
-          (with-temp-file file (insert "---\ntitle: Multibyte\n---\n雪☃"))
+          (with-temp-file file (insert "#+title: Multibyte\n\n雪☃"))
           (should (string-suffix-p "雪☃" (plist-get (my/agent-session--task-read file) :prompt))))
       (delete-file file))))
 
@@ -741,8 +819,8 @@
 (ert-deftest my/agent-session-complete-task-to-public-api-after-overrides ()
   ;; The boundary is the public API, not literal ACP wire output.  Agent-shell
   ;; keeps its normal @file processing, exactly as for pasted user input.
-  (let* ((file (make-temp-file "task-public-api-" nil ".md"))
-         (text "---\ntitle: Full task\nmodel: provider/vendor/other\nthinking: high\nskill: task-workflow-v3\n---\nRead @README.md and @\"file with spaces.md\".\n---\nKeep this whole body.\n")
+  (let* ((file (make-temp-file "task-public-api-" nil ".org"))
+         (text "#+title: Full task\n#+model: provider/vendor/other\n#+thinking: high\n#+skill: task-workflow-v3\n\nRead @README.md and @\"file with spaces.md\".\n---\nKeep this whole body.\n")
          (my/agent-machines '(("remote" :directory "/rpc:host:/browse/"
                                       :repositories ((:name "repo" :path "/project/main" :base-ref "main"))))))
     (unwind-protect
@@ -1123,13 +1201,13 @@
            (agent-shell-prefer-viewport-interaction nil)
            (agent-shell-show-welcome-message nil)
            (agent-shell-pi-acp-command (list (executable-find "git")))
-           (task-file (expand-file-name "task.md" root))
+           (task-file (expand-file-name "task.org" root))
            (my/agent-machines (list (list "only" :directory root :repositories
                                          (list (list :name "repo" :path source :base-ref "main")))))
            (exclude (expand-file-name ".git/info/exclude" source))
            (exclude-before (with-temp-buffer (insert-file-contents exclude) (buffer-string)))
            shell requests)
-      (with-temp-file task-file (insert "---\ntitle: Task\nrepo: repo\n---\nTask snapshot"))
+      (with-temp-file task-file (insert "#+title: Task\n#+repo: repo\n\nTask snapshot"))
       (unwind-protect
           (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "main"))
                     ((symbol-function 'agent-shell--handle)
