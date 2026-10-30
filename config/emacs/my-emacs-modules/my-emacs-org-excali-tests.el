@@ -156,6 +156,17 @@
               (earth (overlay-get ov 'display)) dark saved)
          (should (eq (car earth) 'image))
          (should (equal (overlay-get ov 'my-excali-source) source))
+         ;; Unsupported themes must not let native refresh remove the overlay
+         ;; before rendering discovers that no palette is available.
+         (dolist (themes '((leuven) nil))
+           (let ((custom-enabled-themes themes))
+             (cl-letf (((symbol-function 'message)
+                        (lambda (&rest args)
+                          (ert-fail (format "Unexpected preview message: %S" args)))))
+               (run-hook-with-args 'enable-theme-functions (car themes)))
+             (should (equal org-link-preview-overlays (list ov)))
+             (should (eq (overlay-buffer ov) (current-buffer)))
+             (should (eq (overlay-get ov 'display) earth))))
          (let ((custom-enabled-themes '(doric-obsidian)))
            (run-hook-with-args 'enable-theme-functions 'doric-obsidian)
            (setq dark (overlay-get (car org-link-preview-overlays) 'display)))

@@ -349,8 +349,14 @@ buffer/string export.  DESCRIPTION and INFO are native translator arguments."
     (funcall transcode link description info)))
 
 (defun my/excali--org-theme-enabled (&rest _)
-  "Refresh displayed diagram previews after enabling a theme."
-  (my/excali--org-refresh))
+  "Refresh displayed diagrams only when the active theme has a palette.
+Unsupported themes leave existing previews intact.  Check before native Org
+refresh removes overlays that cannot be regenerated without a palette."
+  (let* ((theme (car custom-enabled-themes))
+         (name (and theme (symbol-name theme))))
+    (when (and name (file-readable-p
+                     (expand-file-name (concat name ".json") my/excali-palette-directory)))
+      (my/excali--org-refresh))))
 
 (with-eval-after-load 'org
   (org-link-set-parameters "excali"
