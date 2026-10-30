@@ -105,6 +105,134 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
   (let ((coding-system-for-write 'binary))
     (write-region my/agent-shell-test--png nil path nil 'silent)))
 
+(defmacro my/agent-shell-test--region (text &rest body)
+  "Run BODY with TEXT selected in a disposable source buffer."
+  (declare (indent 1))
+  `(with-temp-buffer
+     (insert ,text)
+     (goto-char (point-min))
+     (push-mark (point-max) t t)
+     (let ((transient-mark-mode t)) ,@body)))
+
+(ert-deftest my/agent-shell-quote-exact-text-and-editable-draft ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+      (cl-letf (((symbol-function 'agent-shell-project-buffers) (lambda () (list shell)))
+                ((symbol-function 'agent-shell--send-request)
+                 (lambda (&rest _) (ert-fail "Quote submitted a prompt"))))
+        (dolist (text '("-  old\n+  new" "  partial  " "a\n\nb\n" "\tλ\n> nested"))
+          (with-current-buffer viewport
+            (agent-shell-viewport-edit-mode)
+            (erase-buffer)
+            (insert "Existing draft"))
+          (save-window-excursion
+            ;; Select only the interior; neither surrounding text nor face
+            ;; properties should become part of the quote.
+            (with-temp-buffer
+              (insert "BEFORE" (propertize text 'face 'bold) "AFTER")
+              (goto-char (+ (point-min) 6))
+              (push-mark (+ (point) (length text)) t t)
+              (let ((transient-mark-mode t))
+                (call-interactively #'my/agent-shell-quote-region)))
+            (with-current-buffer viewport
+              (should (derived-mode-p 'agent-shell-viewport-edit-mode))
+              (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                             (concat "Existing draft\n\n> "
+                                     (string-join (split-string text "\n" nil) "\n> ")
+                                     "\n\n")))
+              (should (= (point) (point-max)))
+              (insert "Explain this change.")
+              (should (string-suffix-p "\n\nExplain this change." (buffer-string))))))))))
+
+(ert-deftest my/agent-shell-quote-restores-view-mode-draft-while-busy ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+      (with-current-buffer viewport
+        (agent-shell-viewport-view-mode)
+        (setq agent-shell-viewport--compose-snapshot
+              '((:content . "Saved draft") (:location . 3))))
+      (cl-letf (((symbol-function 'agent-shell-project-buffers) (lambda () (list shell)))
+                ((symbol-function 'agent-shell-viewport--busy-p) (lambda () t))
+                ((symbol-function 'agent-shell--send-request)
+                 (lambda (&rest _) (ert-fail "Quote submitted while busy"))))
+        (save-window-excursion
+          (my/agent-shell-test--region "+ change"
+            (my/agent-shell-quote-region)))
+        (with-current-buffer viewport
+          (should (derived-mode-p 'agent-shell-viewport-edit-mode))
+          (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                         "\nSaved draft\n\n> + change\n\n"))
+          (should (= (point) (point-max)))
+          (should-not agent-shell-viewport--compose-snapshot))))))
+
+(ert-deftest my/agent-shell-quote-routes-to-worktree-or-chosen-session ()
+  (my/agent-shell-test--isolated
+    (pcase-let* ((`(,main ,task) (my/agent-shell-test--repo root))
+                 (default-directory (file-name-as-directory main))
+                 (other (my/agent-shell-test--shell))
+                 (default-directory (file-name-as-directory task))
+                 (local (my/agent-shell-test--shell))
+                 (selected nil)
+                 (inserted nil))
+      (cl-letf (((symbol-function 'agent-shell-insert)
+                 (lambda (&rest args) (setq inserted (plist-get args :shell-buffer)) nil))
+                ((symbol-function 'completing-read)
+                 (lambda (_prompt candidates &rest _)
+                   (setq selected t)
+                   (seq-find (lambda (name)
+                               (string-prefix-p "main " name))
+                             (all-completions "" candidates)))))
+        (my/agent-shell-test--region "change"
+          (my/agent-shell-quote-region)
+          (should (eq inserted local))
+          (should-not selected)
+          (my/agent-shell-quote-region t)
+          (should selected)
+          (should (eq inserted other))
+          (setq selected nil inserted nil)
+          (let ((default-directory (file-name-as-directory root)))
+            (my/agent-shell-quote-region))
+          (should selected)
+          (should (eq inserted other)))))))
+
+(ert-deftest my/agent-shell-quote-errors-and-cancellation-do-not-insert ()
+  (my/agent-shell-test--isolated
+    (cl-letf (((symbol-function 'agent-shell-insert)
+               (lambda (&rest _) (ert-fail "Unexpected insertion"))))
+      (with-temp-buffer
+        (should-error (my/agent-shell-quote-region) :type 'user-error))
+      (my/agent-shell-test--region "change"
+        ;; No existing session: the chooser must error, not create one.
+        (cl-letf (((symbol-function 'agent-shell--start)
+                   (lambda (&rest _) (ert-fail "Quote started a session"))))
+          (should-error (my/agent-shell-quote-region) :type 'user-error)
+          (should-error (my/agent-shell-quote-region t) :type 'user-error)))
+      (let* ((shell (my/agent-shell-test--shell))
+             (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+        (with-current-buffer viewport (insert "Keep draft"))
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (&rest _) (signal 'quit nil))))
+          (my/agent-shell-test--region "change"
+            (should (eq (condition-case nil
+                            (my/agent-shell-quote-region t)
+                          (quit 'cancelled))
+                        'cancelled))
+            (should (equal (buffer-string) "change"))
+            (should (use-region-p))))
+        (with-current-buffer viewport (should (equal (buffer-string) "Keep draft")))))))
+
+(ert-deftest my/agent-shell-quote-diff-only-binding ()
+  ;; The minimal Nix agent-shell check does not include Magit; exercise the
+  ;; real maps when running with the full configured Emacs package set.
+  (skip-unless (require 'magit-diff nil t))
+  (should (eq (lookup-key magit-diff-mode-map (kbd "C-c r"))
+              #'my/agent-shell-quote-region))
+  (should (eq (lookup-key magit-diff-mode-map (kbd "r")) #'magit-rebase))
+  (should-not (eq (lookup-key magit-mode-map (kbd "C-c r"))
+                  #'my/agent-shell-quote-region)))
+
 (ert-deftest my/agent-shell-artifact-paths-and-bindings ()
   (my/agent-shell-test--isolated
     (should (eq agent-shell-dot-subdir-function #'my/agent-shell--dot-subdir))

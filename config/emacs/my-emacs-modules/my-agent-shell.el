@@ -32,6 +32,30 @@ Random names separate same-second sessions; skip existing Markdown paths."
       (setq path (concat (make-temp-name prefix) ".md")))
     path))
 
+(defun my/agent-shell-quote-region (&optional pick-shell)
+  "Quote the active region into an existing agent's editable prompt.
+Use the most recently accessed shell in the current project, or offer
+the native existing-shell chooser when none exists.  With prefix
+PICK-SHELL, always offer the chooser.  Never start a shell or submit."
+  (interactive "P")
+  (unless (use-region-p)
+    (user-error "No region selected"))
+  ;; Capture before session selection can change the current buffer or region.
+  (let ((text (buffer-substring-no-properties (region-beginning) (region-end))))
+    (require 'agent-shell)
+    (let* ((shell (or (unless pick-shell (car (agent-shell-project-buffers)))
+                      (agent-shell--read-shell-buffer :prompt "Quote region to shell: ")))
+           (insertion (agent-shell-insert
+                       :text (concat (agent-shell--block-quote text) "\n\n")
+                       :shell-buffer shell :submit nil)))
+      ;; Native viewport append preserves drafts but leaves point unchanged.
+      (when insertion
+        (with-current-buffer (map-elt insertion :buffer)
+          (goto-char (map-elt insertion :end)))))))
+
+(with-eval-after-load 'magit-diff
+  (define-key magit-diff-mode-map (kbd "C-c r") #'my/agent-shell-quote-region))
+
 (use-package agent-shell
   :ensure nil
   :bind (:map agent-shell-viewport-edit-mode-map
