@@ -123,4 +123,6 @@ The default handoff remains staged and uncommitted. When the user explicitly app
 
 If the reviewed result is already committed, do not create an empty commit. Commit approval does not authorize a push, merge, PR creation, or other finish mutation. Once committed, load the applicable finish guidance.
 
-Unless explicitly requested, do not maintain phase state in the note, write PR or Jira text, merge, raise a PR, mutate the task note as a completion action, or close the worktree. Treat later landing or finish requests as follow-up work and load the relevant workflow guidance then. In a repository whose applicable policy declares `finish-mode: pull-request`, load the `pull-request` skill when the user asks to prepare or deliver the PR.
+Unless explicitly requested, do not maintain phase state in the note, write Jira text, merge, mutate the task note as a completion action, or close the worktree. Treat later non-PR landing or finish requests as follow-up work and read the applicable repository and owner delivery guidance then.
+
+PR delivery is human-owned. Hand reviewed work back to the user; do not draft PR text, push for PR delivery, create or update PRs, merge them, or enable auto-merge.

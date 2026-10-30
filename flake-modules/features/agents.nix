@@ -9,7 +9,6 @@ let
 
     let
       skillNames = [
-        "pull-request"
         "review"
         "task-workflow"
       ];
@@ -77,10 +76,10 @@ in
               == ../../config/agents/skills/${skillName}
             )
             [
-              "pull-request"
               "review"
               "task-workflow"
             ];
+          assert !(builtins.hasAttr ".agents/skills/pull-request" plainHome.config.home.file);
           assert plainHome.config.home.file."work/AGENTS.md".source == ../../work/AGENTS.md;
           assert plainHome.config.home.file."work/TASKS.md".source == ../../work/TASKS.md;
           assert plainHome.config.home.file."work/EMACS-SERVER.md".source == ../../work/EMACS-SERVER.md;
