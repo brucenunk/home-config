@@ -246,7 +246,7 @@ Modes which omit the global CAPF fallback marker `t' keep their own policy."
   (avy-keys '(?a ?t ?e ?n ?i ?c))
   (avy-style 'de-bruijn)
   :bind
-  ("C-'" . avy-goto-char-timer))
+  ("M-s c" . avy-goto-char-timer))
 
 (provide 'my-emacs-completion)
 ;;; my-emacs-completion.el ends here
