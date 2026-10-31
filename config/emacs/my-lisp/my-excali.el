@@ -1,17 +1,30 @@
-;;; my-emacs-excali.el --- Native drawings with theme defaults -*- lexical-binding: t; -*-
+;;; my-excali.el --- Local Excalidraw integration -*- lexical-binding: t -*-
 
-;; Drawings store ordinary Excalidraw colours.  The current Emacs theme supplies
-;; new-drawing defaults and explicit presets.  Opening and theme changes convert
-;; recognised palette styling; custom colours stay intact.  These are native
-;; edits, not live roles, and are never saved automatically.
+;; Author: James Lee
+;; URL: https://github.com/brucenunk/home-config
+;; Version: 0.1.0
+;; Package-Requires: ((emacs "30.1"))
+
+;;; Commentary:
+
+;; Implementation for the configuration in my-emacs.org.
+;; Public functions/commands:
+;;   - my/excali-use-preset
+;;   - my/excali-update-palette
+;;   - my/excali-export
+;;   - my/excali-set-canvas-background
+;;   - my/excali-new
+;;   - my/excali-open
+
+;;; Code:
 
 (require 'cl-lib)
 (require 'color)
 (require 'json)
 (require 'seq)
-(require 'use-package)
 
 (defgroup my-excali nil "Personal Excalidraw integration." :group 'multimedia)
+
 (defcustom my/excali-directory (expand-file-name "~/work/docs/diagrams/")
   "Default directory for drawing entry points; other locations remain allowed."
   :type 'directory :group 'my-excali)
@@ -26,6 +39,7 @@
 This snapshot is cleared by native colour overrides, not theme changes.")
 
 (defconst my/excali--base-presets '(default neutral accented muted))
+
 (defconst my/excali--presets
   '(default neutral accented muted red green yellow blue magenta cyan))
 
@@ -145,6 +159,7 @@ Never infer colours across differing snapshots."
               (copy-tree (alist-get role (alist-get 'presets palette)) t)
               (alist-get 'palette excali--doc) extended)))))
 
+;;;###autoload
 (defun my/excali-use-preset (role)
   "Apply current-theme preset ROLE to selected elements and their bound labels.
 Also set native defaults for new elements.  Only colours and fill style are
@@ -438,6 +453,7 @@ This structural convention deliberately excludes custom fills and patterns."
        (my/excali--palette-color-equal-p (excali--get element 'backgroundColor)
                                        (alist-get 'canvas palette))))
 
+;;;###autoload
 (defun my/excali-update-palette (&optional name)
   "Convert recognised palette styling in this diagram to palette NAME.
 Interactively choose an installed Doric palette, defaulting to the current
@@ -532,6 +548,7 @@ Automatic theme following uses this same conversion."
     (message "Palette %s: %d elements updated; %d ambiguous/unsupported matches left unchanged"
              (alist-get 'theme target) changed ambiguous)))
 
+;;;###autoload
 (defun my/excali-export (file &optional selection-only)
   "Export a Doric Light PNG to FILE without editing this drawing.
 Convert a disposable scene copy, preserving custom styling just like
@@ -657,6 +674,7 @@ When colours cannot distinguish roles, prefer their declared palette order."
     (apply #'color-rgb-to-hex
            (append (mapcar (lambda (v) (/ v 65535.0)) rgb) '(2)))))
 
+;;;###autoload
 (defun my/excali-set-canvas-background (color)
   "Set this drawing's canvas to COLOR; save normally to persist it.
 The interactive default is the current theme's background.  Canvas/view settings
@@ -680,12 +698,14 @@ are separate upstream; our local history extension includes the canvas colour."
     (make-directory directory t)
     directory))
 
+;;;###autoload
 (defun my/excali-new ()
   "Create a drawing using the current theme and `my/excali-directory'."
   (interactive)
   (my/excali--check-compatible)
   (let ((default-directory (my/excali--directory))) (excali-new)))
 
+;;;###autoload
 (defun my/excali-open (file)
   "Open FILE in `my/excali-directory', following the active palette when usable."
   (interactive (list (read-file-name "Drawing: " (my/excali--directory) nil t)))
@@ -693,6 +713,7 @@ are separate upstream; our local history extension includes the canvas colour."
   (excali-open file))
 
 (defvar my/excali--creating nil)
+
 (defun my/excali--new-drawing (function &rest args)
   "Distinguish new scenes from existing scenes imported from PNG/SVG."
   (let ((my/excali--creating t)) (apply function args)))
@@ -773,31 +794,6 @@ opening or prevent other drawings from following a theme change."
   "Install the buffer-local scene event before its document is opened."
   (add-hook 'excali-after-open-hook #'my/excali--after-open nil t))
 
-(use-package excali
-  :commands (excali-open excali-new)
-  :config
-  (my/excali--install-palette-menu)
-  (advice-add 'excali--snapshot :filter-return #'my/excali--history-snapshot)
-  (advice-add 'excali--same-scene-p :around #'my/excali--history-same-scene)
-  (advice-add 'excali--restore :after #'my/excali--history-restore)
-  (advice-add 'excali--apply-current-style :filter-return #'my/excali--new-text-style)
-  (advice-add 'excali-set-style :before #'my/excali--native-style-override)
-  (advice-add 'excali--eyedropper-apply :before #'my/excali--eyedropper-override)
-  (advice-add 'excali-new :around #'my/excali--new-drawing)
-  (add-hook 'excali-mode-hook #'my/excali--setup-buffer)
-  (add-hook 'enable-theme-functions #'my/excali--theme-enabled)
-  ;; Browsers use CSS aliases; Pango needs the embedded family names.
-  (setopt excali-font-families
-          (append excali-font-families
-                  (cl-remove-if (lambda (entry) (assq (car entry) excali-font-families))
-                                '((6 . "Nunito ExtraLight, Nunito, sans-serif")
-                                  (8 . "Comic Shanns Regular, Comic Shanns, monospace"))))))
-
-(use-package excali-dsl
-  :mode ("\\.excalidsl\\'" . excali-dsl-mode))
-
-;;; Disposable saved-scene rendering for local consumers.
-
 (defun my/excali--render-file (source palette output)
   "Render saved SOURCE in PALETTE to SVG OUTPUT in a disposable buffer."
   (condition-case err
@@ -823,5 +819,5 @@ opening or prevent other drawings from following a theme change."
             (excali-export-svg output)))
       (excali--image-release-buffer))))
 
-(provide 'my-emacs-excali)
-;;; my-emacs-excali.el ends here
+(provide 'my-excali)
+;;; my-excali.el ends here

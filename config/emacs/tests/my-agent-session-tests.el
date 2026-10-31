@@ -8,7 +8,7 @@
 
 (require 'ert)
 (require 'my-agent-session)
-(require 'my-agent-shell)
+(require 'my-emacs-agents)
 (require 'agent-shell-tramp)
 (require 'tramp-rpc)
 (require 'vertico)

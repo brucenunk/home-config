@@ -167,16 +167,18 @@ Dired, and Magit behavior and measure performance. Remote envrc importing is
 currently disabled, not verified by these checks. Home
 Manager build success is neither activation nor runtime-pickup evidence.
 
-After building the staged Wampa configuration on x86_64 Linux, the adjacent
+After building the staged Wampa configuration on x86_64 Linux, the focused
 ERT suite can also be run with the actual Home Manager Emacs package:
 
 ```sh
 scratch=$(mktemp -d)
+generated=$(nix build --no-link --print-out-paths .#emacs-config)
 emacs_package=$(nix eval --raw '.#homeConfigurations."james@wampa".config.programs.emacs.finalPackage')
 mkdir -p "$scratch/home" "$scratch/config"
 HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" \
   "$emacs_package/bin/emacs" --batch -q \
-  -L "$PWD/config/emacs/my-emacs-modules" \
+  -L "$generated/my-emacs-modules" \
+  -L "$PWD/config/emacs/my-lisp" -L "$PWD/config/emacs/tests" \
   -l my-emacs-remote-tests -f ert-run-tests-batch-and-exit
 ```
 

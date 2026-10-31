@@ -1,8 +1,28 @@
-;;; my-emacs-ui.el --- UI and appearance configuration -*- lexical-binding: t -*-
+;;; my-ui.el --- Appearance and mode line helpers -*- lexical-binding: t -*-
+
+;; Author: James Lee
+;; URL: https://github.com/brucenunk/home-config
+;; Version: 0.1.0
+;; Package-Requires: ((emacs "30.1"))
 
 ;;; Commentary:
 
-;; Theme, fonts, a quiet mode line, spacious-padding, and pulsar configuration.
+;; Implementation for the configuration in my-emacs.org.
+;; Public functions/commands:
+;;   - my/agent-shell-header-no-underline
+;;   - my/viewport-prompt-variable-pitch
+;;   - my/refresh-mixed-pitch-mode
+;;   - my/doric-theme-preload
+;;   - my/auto-dark-select-themes
+;;   - my/fontaine-setup-frame
+;;   - my/writeroom-text-scale
+;;   - my/writeroom-visual-line
+;;   - my/modeline-status
+;;   - my/modeline-buffer-name
+;;   - my/modeline-details-p
+;;   - my/modeline-context
+;;   - my/modeline-diagnostics
+;;   - my/modeline-info
 
 ;;; Code:
 
@@ -11,12 +31,15 @@
 (declare-function mixed-pitch-mode "mixed-pitch" (&optional arg))
 
 (defvar mixed-pitch-mode)
+
 (defvar vc-mode)
+
 (defvar display-time-string)
 
 (defvar-local my/agent-shell-header-face-cookies nil
   "Remapping cookies for agent-shell header underlines.")
 
+;;;###autoload
 (defun my/agent-shell-header-no-underline ()
   "Suppress face underlines beneath agent-shell headers locally."
   (mapc #'face-remap-remove-relative my/agent-shell-header-face-cookies)
@@ -29,13 +52,10 @@
         (push (face-remap-add-relative face :underline nil)
               my/agent-shell-header-face-cookies)))))
 
-(add-hook 'agent-shell-mode-hook #'my/agent-shell-header-no-underline)
-(add-hook 'agent-shell-viewport-view-mode-hook #'my/agent-shell-header-no-underline)
-(add-hook 'agent-shell-viewport-edit-mode-hook #'my/agent-shell-header-no-underline)
-
 (defvar-local my/viewport-prompt-face-cookie nil
   "Remapping cookie for the echoed viewport prompt.")
 
+;;;###autoload
 (defun my/viewport-prompt-variable-pitch ()
   "Let viewport prompts follow prose without changing documentation faces."
   (when my/viewport-prompt-face-cookie
@@ -50,6 +70,7 @@
            'agent-shell-viewport-prompt
            :family (face-attribute 'variable-pitch :family)))))
 
+;;;###autoload
 (defun my/refresh-mixed-pitch-mode ()
   "Refresh mixed-pitch-mode in all buffers where it's active."
   (dolist (buf (buffer-list))
@@ -58,154 +79,84 @@
         (mixed-pitch-mode -1)
         (mixed-pitch-mode 1)))))
 
-;; https://github.com/protesilaos/doric-themes
-(use-package doric-themes
-  :ensure nil
-  :demand t
-  :preface
-  (defun my/doric-theme-preload (theme)
-    "Load Doric THEME definitions without enabling the theme.
+;;;###autoload
+(defun my/doric-theme-preload (theme)
+  "Load Doric THEME definitions without enabling the theme.
 
 Requiring `doric-themes' only loads the package library, not each individual
 theme definition.  `auto-dark' preloads `auto-dark-themes' with `load-theme',
 but the first such call for a Doric theme can fail with an `Unknown theme'
 error.  Evaluate the theme's package source once and retry to register it."
-    (condition-case err
-        (load-theme theme :no-confirm :no-enable)
-      (error
-       (let* ((library (locate-library "doric-themes"))
-              (source (and library
-                           (expand-file-name
-                            (format "%s-theme.el" theme)
-                            (file-name-directory library)))))
-         (if (and source (file-exists-p source))
-             (progn
-               (load source nil t)
-               (load-theme theme :no-confirm :no-enable))
-           (signal (car err) (cdr err)))))))
-  :config
-  (mapc #'my/doric-theme-preload '(doric-obsidian doric-earth)))
+  (condition-case err
+      (load-theme theme :no-confirm :no-enable)
+    (error
+     (let* ((library (locate-library "doric-themes"))
+            (source (and library
+                         (expand-file-name
+                          (format "%s-theme.el" theme)
+                          (file-name-directory library)))))
+       (if (and source (file-exists-p source))
+           (progn
+             (load source nil t)
+             (load-theme theme :no-confirm :no-enable))
+         (signal (car err) (cdr err)))))))
 
-;; https://github.com/LionyxML/auto-dark-emacs
-(use-package auto-dark
-  :ensure nil
-  :demand t
-  ;; Doric is already demanded above.  An :after handler would rerun this
-  ;; configuration when new theme definitions reload the Doric library.
-  :custom
-  (auto-dark-themes '((doric-obsidian) (doric-earth)))
-  :config
-  (defun my/auto-dark--read-doric-theme (prompt themes current)
-    "Read an available Doric theme from THEMES with PROMPT and CURRENT default."
-    (let* ((available (custom-available-themes))
-           (candidates
-            (sort (mapcar #'symbol-name
-                          (seq-filter (lambda (theme) (memq theme available))
-                                      themes))
-                  #'string-lessp))
-           (default (and current (symbol-name current))))
-      (intern
-       (completing-read
-        (format-prompt prompt default)
-        (lambda (string pred action)
-          (if (eq action 'metadata)
-              '(metadata (category . theme)
-                         (display-sort-function . identity)
-                         (cycle-sort-function . identity))
-            (complete-with-action action candidates string pred)))
-        nil t nil nil default))))
+(defun my/auto-dark--read-doric-theme (prompt themes current)
+  "Read an available Doric theme from THEMES with PROMPT and CURRENT default."
+  (let* ((available (custom-available-themes))
+         (candidates
+          (sort (mapcar #'symbol-name
+                        (seq-filter (lambda (theme) (memq theme available))
+                                    themes))
+                #'string-lessp))
+         (default (and current (symbol-name current))))
+    (intern
+     (completing-read
+      (format-prompt prompt default)
+      (lambda (string pred action)
+        (if (eq action 'metadata)
+            '(metadata (category . theme)
+                       (display-sort-function . identity)
+                       (cycle-sort-function . identity))
+          (complete-with-action action candidates string pred)))
+      nil t nil nil default))))
 
-  (defun my/auto-dark-select-themes ()
-    "Select one light and one dark Doric theme for this session only.
+;;;###autoload
+(defun my/auto-dark-select-themes ()
+  "Select one light and one dark Doric theme for this session only.
 Prompt light first, defaulting to the current selections.  Update
 `auto-dark-themes' only after both prompts complete, and let its setter
 apply the current OS appearance when `auto-dark-mode' is enabled.
 Subsequent automatic appearance changes use the selected themes."
-    (interactive)
-    (let* ((light (my/auto-dark--read-doric-theme
-                   "Light Doric theme" doric-themes-light-themes
-                   (car (cadr auto-dark-themes))))
-           (dark (my/auto-dark--read-doric-theme
-                  "Dark Doric theme" doric-themes-dark-themes
-                  (caar auto-dark-themes))))
-      ;; Register new Doric definitions before auto-dark's setter preloads them.
-      (mapc #'my/doric-theme-preload (list light dark))
-      (setopt auto-dark-themes (list (list dark) (list light)))))
-  (auto-dark-mode 1))
+  (interactive)
+  (let* ((light (my/auto-dark--read-doric-theme
+                 "Light Doric theme" doric-themes-light-themes
+                 (car (cadr auto-dark-themes))))
+         (dark (my/auto-dark--read-doric-theme
+                "Dark Doric theme" doric-themes-dark-themes
+                (caar auto-dark-themes))))
+    ;; Register new Doric definitions before auto-dark's setter preloads them.
+    (mapc #'my/doric-theme-preload (list light dark))
+    (setopt auto-dark-themes (list (list dark) (list light)))))
 
-;; https://github.com/protesilaos/spacious-padding
-(use-package spacious-padding
-  :ensure nil
-  :hook (after-init . spacious-padding-mode)
-  :custom
-  (spacious-padding-subtle-frame-lines
-      '( :mode-line-active spacious-padding-line-active
-         :mode-line-inactive spacious-padding-line-inactive
-         :header-line-active spacious-padding-line-active
-         :header-line-inactive spacious-padding-line-inactive)))
-;; https://github.com/protesilaos/fontaine
-(use-package fontaine
-  :ensure nil
-  :preface
-  (defun my/fontaine-setup-frame (&optional frame)
-    "Enable Fontaine only for graphical FRAMEs."
-    (let ((frame (or frame (selected-frame))))
-      (when (display-graphic-p frame)
-        (with-selected-frame frame
-          (fontaine-mode 1)
-          (let ((preset (fontaine-restore-latest-preset)))
-            (fontaine-set-preset
-             (if (assq preset fontaine-presets)
-                 preset
-               'aporetic-serif-mono)))))))
-  :hook
-  ((after-init . my/fontaine-setup-frame)
-   (after-make-frame-functions . my/fontaine-setup-frame))
-  :bind ("C-c F" . fontaine-set-preset)
-  :config
-  (setq fontaine-presets
-        '((t
-           :default-family "Aporetic Serif Mono"
-           :default-height 130
-           :fixed-pitch-family "Aporetic Serif Mono"
-           :fixed-pitch-height 1.0
-           :variable-pitch-family "Bricolage Grotesque"
-           :variable-pitch-height 1.0)
-          (aporetic-serif-mono)
-          (aporetic-sans-mono
-           :default-family "Aporetic Sans Mono"
-           :fixed-pitch-family "Aporetic Sans Mono")
-          (open-sans
-           :variable-pitch-family "Open Sans"))))
+;;;###autoload
+(defun my/fontaine-setup-frame (&optional frame)
+  "Enable Fontaine only for graphical FRAMEs."
+  (let ((frame (or frame (selected-frame))))
+    (when (display-graphic-p frame)
+      (with-selected-frame frame
+        (fontaine-mode 1)
+        (let ((preset (fontaine-restore-latest-preset)))
+          (fontaine-set-preset
+           (if (assq preset fontaine-presets)
+               preset
+             'aporetic-serif-mono)))))))
 
-(use-package mixed-pitch
-  :ensure nil
-  :hook ((markdown-mode . mixed-pitch-mode)
-         (org-mode . mixed-pitch-mode)
-         (agent-shell-viewport-view-mode . mixed-pitch-mode)
-         (agent-shell-viewport-edit-mode . mixed-pitch-mode))
-  :config
-  ;; mixed-pitch already keeps Org blocks, code/verbatim, tables, metadata,
-  ;; checkboxes, and indentation fixed-pitch; retain its native face list.
-  ;; The renderer's base faces also cover source labels, syntax-highlighted
-  ;; bodies, and table headers/borders through inheritance.  Remap them only
-  ;; in mixed-pitch buffers; ordinary shell buffers keep their own font.
-  ;; The composer reuses Org or Markdown faces, keeping all markup editable.
-  ;; Include pre-face for untyped/unknown-language code bodies too.
-  (dolist (face '(markdown-table-face
-                  markdown-pre-face
-                  agent-shell-markdown-inline-code
-                  agent-shell-markdown-source-block
-                  agent-shell-markdown-table))
-    (add-to-list 'mixed-pitch-fixed-pitch-faces face))
-  (add-hook 'mixed-pitch-mode-hook #'my/viewport-prompt-variable-pitch)
-  (add-hook 'fontaine-set-preset-hook #'my/refresh-mixed-pitch-mode))
-
-;; On-demand writing view; Nix supplies the package and its dependencies.
 (defvar-local my/writeroom-saved-text-scale nil
   "Text scaling state to restore when leaving Writeroom.
 Stored as (MODE AMOUNT), or nil outside the writing view.")
 
+;;;###autoload
 (defun my/writeroom-text-scale (arg)
   "Enlarge writing text locally for positive ARG; otherwise restore it."
   (if (> arg 0)
@@ -221,6 +172,7 @@ Stored as (MODE AMOUNT), or nil outside the writing view.")
 (defvar-local my/writeroom-saved-visual-line nil
   "Visual-line state on entering Writeroom, wrapped in a list.")
 
+;;;###autoload
 (defun my/writeroom-visual-line (arg)
   "Enable wrapping for positive ARG; restore its prior state otherwise."
   (if (> arg 0)
@@ -232,33 +184,7 @@ Stored as (MODE AMOUNT), or nil outside the writing view.")
       (visual-line-mode (if (car my/writeroom-saved-visual-line) 1 -1))
       (setq my/writeroom-saved-visual-line nil))))
 
-(use-package writeroom-mode
-  :ensure nil
-  :commands (writeroom-mode)
-  :custom
-  (writeroom-width 80)
-  (writeroom-maximize-window nil)
-  (writeroom-restore-window-config nil)
-  (writeroom-local-effects '(my/writeroom-visual-line my/writeroom-text-scale)))
-
-(use-package pulsar
-  :ensure nil
-  :custom
-  (pulsar-highlight-face 'pulsar-generic)
-  :config
-  (pulsar-global-mode))
-
-(use-package lin
-  :ensure nil
-  :config
-  ;; Keep Doric's bg-accent selection colour.
-  (setq lin-face 'hl-line)
-  (lin-global-mode))
-
-;; Inspired by Prot's custom mode line.  Keep the native VC, Flymake, and
-;; process constructs rather than running queries or subprocesses on redisplay.
-;; Spacious padding supplies the subtle frame lines; faces inherit Doric's
-;; semantic colours so theme changes need no palette-copying hooks.
+;;;###autoload
 (defun my/modeline-status ()
   "Return a quiet read-only marker and exceptional editing states."
   (concat
@@ -268,6 +194,7 @@ Stored as (MODE AMOUNT), or nil outside the writing view.")
    (when (buffer-narrowed-p) " Narrow ")
    (when defining-kbd-macro " Recording ")))
 
+;;;###autoload
 (defun my/modeline-buffer-name ()
   "Identify the buffer, leaving room for state markers and the clock.
 Use the window being redisplayed, not the globally selected window."
@@ -289,12 +216,14 @@ Use the window being redisplayed, not the globally selected window."
                 'mouse-face 'mode-line-highlight
                 'local-map mode-line-buffer-identification-keymap)))
 
+;;;###autoload
 (defun my/modeline-details-p (minimum-width)
   "Whether secondary details fit in the active window at MINIMUM-WIDTH."
   (and (mode-line-window-selected-p)
        (>= (- (window-total-width) (string-width (my/modeline-status)))
            minimum-width)))
 
+;;;###autoload
 (defun my/modeline-context ()
   "Return separated mode, process, and VC details for this window.
 Reserve space for the clock and buffer identity before shortening VC text."
@@ -326,6 +255,7 @@ Reserve space for the clock and buffer identity before shortening VC text."
                              (truncate-string-to-width branch branch-width
                                                        nil nil "…")))))))
 
+;;;###autoload
 (defun my/modeline-diagnostics ()
   "Label non-zero native Flymake counters, retaining their faces and actions."
   (when (bound-and-true-p flymake-mode)
@@ -346,6 +276,7 @@ Reserve space for the clock and buffer identity before shortening VC text."
                   fields))))
       (string-join (nreverse fields) ", "))))
 
+;;;###autoload
 (defun my/modeline-info ()
   "Return separated native diagnostics and clock, only in the active window."
   (when (mode-line-window-selected-p)
@@ -358,27 +289,5 @@ Reserve space for the clock and buffer identity before shortening VC text."
          (list (string-replace "%" "%%" diagnostics) "  ·  "))
        display-time-string " "))))
 
-(setq mode-line-right-align-edge 'right-margin)
-(setq-default
- mode-line-format
- '("%e" " "
-   (:eval (my/modeline-status))
-   " " (:eval (my/modeline-buffer-name))
-   (:eval (my/modeline-context))
-   mode-line-format-right-align
-   (:eval (my/modeline-info))))
-
-;; Native minute-aligned updates; no separate timer or redisplay-time I/O.
-(use-package time
-  :ensure nil
-  :demand t
-  :custom
-  (display-time-format "%-I:%M %P")
-  (display-time-interval 60)
-  (display-time-default-load-average nil)
-  (display-time-mail-function #'ignore)
-  :config
-  (display-time-mode 1))
-
-(provide 'my-emacs-ui)
-;;; my-emacs-ui.el ends here
+(provide 'my-ui)
+;;; my-ui.el ends here

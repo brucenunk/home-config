@@ -5,6 +5,25 @@ conventions and review guardrails remain in `AGENTS.md`.
 
 ## Module Map
 
+Configuration is authored in `../my-emacs.org` and tangled by Nix into ordinary
+startup files and `my-emacs-modules/`. This directory owns handwritten
+implementations, never generated package declarations. ERT suites are in
+`../tests/`. See `../../../docs/emacs-literate.md` for the generation workflow.
+
+| Configuration library | Purpose |
+|-----------------------|---------|
+| `my-agent-shell.el` | Reference actions, transcript paths, quoting and GC predicates. |
+| `my-agent-shell-notifications.el` | Audio provider and waiting-session tracking; Org owns its settings and registration. |
+| `agent-shell-compose.el`, `agent-shell-compose-block-edit.el` | Reusable composer markup and separate source editing; retain their genuine cross-package deferred gates. |
+| `my-completion.el` | Project annotations and Cape completion helpers. |
+| `my-editing.el` | Stale-file policy, prose wrapping, Org and Markdown presentation functions. |
+| `my-ui.el` | Theme/font helpers, writing-view effects and mode-line formatting. |
+| `my-denote.el` | Note startup, first-save integration and deferred task auto-refresh advice. |
+| `my-languages.el`, `my-shells.el`, `my-remote.el` | Eglot, deferred shell PATH and remote inventory/connection helpers. |
+| `my-excali.el`, `my-org-excali.el` | Drawing implementation and deferred Org/exporter integration. |
+
+The existing task libraries keep their boundaries:
+
 | Module | Purpose |
 |--------|---------|
 | `my-agent-catalogue.el` | Declares the generated `my/agent-machines` configuration contract and explicit reload command; no launch/runtime operations. |
@@ -34,7 +53,7 @@ my-agent-session.el ── starts fresh conversations through ──► agent-sh
   `my/agent-session-start-from-file` creates a worktree and submits a saved task;
   `my/agent-session-start-new-worktree` creates an ad hoc worktree; and
   `my/agent-session-start-in-directory` starts ad hoc in an exact chosen directory.
-  They share Git/startup internals, with no dispatcher. `init.el` binds the global
+  They share Git/startup internals, with no dispatcher. The generated agent module binds the global
   `C-c a f` to the file launcher's normal task picker. Saved-snapshot validation and all launch choices,
   operations and failure handling remain with the launcher; capture remains file-only.
   Session/worktree cleanup remains a separate human-coordinated action, not
@@ -73,8 +92,8 @@ my-agent-session.el ── starts fresh conversations through ──► agent-sh
 - Native Denote/Dired handle file browsing and mutations. There is no custom
   task list, persisted filter state, task index, active/WIP highlighting, git
   recovery, or lifecycle notification system.
-- Task-file auto-refresh and document-wide Denote configuration live in
-  `my-emacs-denote.el`. The task predicate checks the task root independently
+- Document-wide Denote configuration lives in `my-emacs.org`, generating
+  `my-emacs-denote.el`; task-file auto-refresh implementation lives in `my-denote.el`. The task predicate checks the task root independently
   of the broader Denote document root. The sole named template is `task-workflow`,
   read on demand from `config/emacs/denote-templates/task-workflow.org`.
   Ordinary task capture writes `#+skill: task-workflow`; other capture choices
@@ -86,7 +105,8 @@ my-agent-session.el ── starts fresh conversations through ──► agent-sh
   and task-file predicate → `my-denote-task.el`
 - Generated agent configuration contract/reload → `my-agent-catalogue.el`
 - Explicit human-operated worktree/directory launches → `my-agent-session.el`
-- Package configuration, templates, links, and file auto-revert → `my-emacs-denote.el`
+- Package configuration, templates, links, and file auto-revert policy → `my-emacs.org`
+- Denote startup and auto-revert implementation → `my-denote.el`
 
 Prefer removing unused helpers over compatibility layers. New packages or state
 owners require a genuine boundary or second supported use.

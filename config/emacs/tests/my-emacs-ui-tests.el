@@ -12,7 +12,7 @@
 (require 'markdown-mode)
 (require 'agent-shell-gc)
 (cl-letf (((symbol-function 'agent-shell-gc-mode) #'ignore))
-  (require 'my-agent-shell))
+  (require 'my-emacs-agents))
 (require 'mixed-pitch)
 (require 'doric-themes)
 (require 'auto-dark)
@@ -237,6 +237,8 @@
   (let ((writeroom-global-effects nil)
         (text-mode-hook nil) (prog-mode-hook nil))
     (require 'my-emacs-editing)
+    (require 'my-emacs-writing)
+    (require 'my-emacs-org)
     (setq text-mode-hook nil prog-mode-hook nil)
     (dolist (mode '(org-mode markdown-mode))
       (save-window-excursion

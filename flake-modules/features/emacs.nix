@@ -10,6 +10,10 @@ let
     }:
 
     let
+      emacsConfig = import ../../pkgs/emacs-config.nix {
+        inherit pkgs;
+        emacs = config.programs.emacs.package;
+      };
       managedServers = config.brucenunk.homeManager.emacs.trampRpc.managedServers;
       spellingDictionaries = with pkgs.hunspellDicts; [
         en_AU
@@ -70,7 +74,7 @@ let
         ];
 
       # Keep this curated list aligned with configured languages in
-      # config/emacs/init.el rather than installing every grammar from nixpkgs.
+      # config/emacs/my-emacs.org rather than installing every grammar from nixpkgs.
       treeSitterGrammars =
         grammars: with grammars; [
           tree-sitter-bash
@@ -159,10 +163,11 @@ let
           VISUAL = "emacsclient -c";
         };
 
-        xdg.configFile."emacs/early-init.el".source = ../../config/emacs/early-init.el;
-        xdg.configFile."emacs/init.el".source = ../../config/emacs/init.el;
+        xdg.configFile."emacs/early-init.el".source = "${emacsConfig}/early-init.el";
+        xdg.configFile."emacs/init.el".source = "${emacsConfig}/init.el";
+        xdg.configFile."emacs/my-emacs.org".source = ../../config/emacs/my-emacs.org;
         xdg.configFile."emacs/my-lisp".source = ../../config/emacs/my-lisp;
-        xdg.configFile."emacs/my-emacs-modules".source = ../../config/emacs/my-emacs-modules;
+        xdg.configFile."emacs/my-emacs-modules".source = "${emacsConfig}/my-emacs-modules";
         xdg.configFile."emacs/denote-templates".source = ../../config/emacs/denote-templates;
         xdg.configFile."emacs/sounds/agent-attention.wav".source =
           import ../../pkgs/agent-attention-sound.nix
@@ -178,6 +183,11 @@ in
 
     let
       emacsMaster = import ../../pkgs/emacs-master.nix { inherit inputs pkgs; };
+      emacsConfig = import ../../pkgs/emacs-config.nix {
+        inherit pkgs;
+        emacs = emacsMaster;
+      };
+      emacsTestPaths = "-L ${../../config/emacs/my-lisp} -L ${emacsConfig}/my-emacs-modules -L ${../../config/emacs/tests}";
       mkManagedHome =
         servers:
         inputs.home-manager.lib.homeManagerConfiguration {
@@ -216,7 +226,39 @@ in
     in
     {
       packages.emacs-master = emacsMaster;
+      packages.emacs-config = emacsConfig;
       checks = {
+        emacs-literate =
+          let
+            emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;
+          in
+          pkgs.runCommand "emacs-literate-check"
+            {
+              nativeBuildInputs = [
+                emacs
+                pkgs.git
+              ];
+            }
+            ''
+              export HOME="$TMPDIR/home"
+              export XDG_CONFIG_HOME="$HOME/.config"
+              export DICPATH="${
+                lib.makeSearchPath "share/hunspell" [
+                  pkgs.hunspellDicts.en_AU
+                  pkgs.hunspellDicts.en_US
+                ]
+              }"
+              mkdir -p "$XDG_CONFIG_HOME"
+              export MY_EMACS_GENERATED=${emacsConfig}
+              export MY_EMACS_SOURCE=${../../config/emacs}
+              emacs --batch -Q ${emacsTestPaths} \
+                -l my-emacs-literate-tests -f ert-run-tests-batch-and-exit
+              # Retain Nix site-start so programming-mode spelling fixtures find grammars.
+              emacs --batch -q ${emacsTestPaths} \
+                -l my-emacs-editing-tests -f ert-run-tests-batch-and-exit
+              touch "$out"
+            '';
+
         emacs-denote =
           let
             emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;
@@ -225,7 +267,7 @@ in
             export HOME="$TMPDIR/home"
             mkdir -p "$HOME/.config/emacs"
             ln -s ${../../config/emacs/denote-templates} "$HOME/.config/emacs/denote-templates"
-            emacs --batch -Q -L ${../../config/emacs/my-lisp} -L ${../../config/emacs/my-emacs-modules} \
+            emacs --batch -Q ${emacsTestPaths} \
               --eval '(setq user-emacs-directory (expand-file-name "~/.config/emacs/"))' \
               --load my-emacs-denote-tests --load my-denote-task-tests \
               --funcall ert-run-tests-batch-and-exit
@@ -238,8 +280,7 @@ in
           pkgs.runCommand "emacs-deferred-check" { nativeBuildInputs = [ emacs ]; } ''
             export HOME="$TMPDIR/home"
             mkdir -p "$HOME"
-            export MY_EMACS_INIT_FILE=${../../config/emacs/init.el}
-            emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+            emacs --batch -Q ${emacsTestPaths} \
               --load my-emacs-deferred-tests --funcall ert-run-tests-batch-and-exit
             touch "$out"
           '';
@@ -250,9 +291,8 @@ in
           pkgs.runCommand "emacs-mode-selection-check" { nativeBuildInputs = [ emacs ]; } ''
             export HOME="$TMPDIR/home"
             mkdir -p "$HOME"
-            export MY_EMACS_INIT_FILE=${../../config/emacs/init.el}
             # Keep Nix site-start for grammar paths; batch skips the user init.
-            emacs --batch -q -L ${../../config/emacs/my-emacs-modules} \
+            emacs --batch -q ${emacsTestPaths} \
               --load my-emacs-mode-selection-tests --funcall ert-run-tests-batch-and-exit
             touch "$out"
           '';
@@ -265,7 +305,7 @@ in
             mkdir -p "$HOME"
             mkdir -p "$HOME/.config"
             ln -s ${../../config/excali} "$HOME/.config/excali"
-            emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+            emacs --batch -Q ${emacsTestPaths} \
               --load my-emacs-org-excali-tests --funcall ert-run-tests-batch-and-exit
             touch "$out"
           '';
@@ -321,9 +361,9 @@ in
               export HOME="$TMPDIR"
               # Never enable configured cleanup during unrelated launcher tests.
               # The dedicated GC suite checks real enablement in isolated state.
-              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+              emacs --batch -Q ${emacsTestPaths} \
                 --eval '(progn (require (quote agent-shell-gc)) (advice-add (quote agent-shell-gc-mode) :override (quote ignore)))' \
-                -l my-agent-shell --eval '
+                -l my-emacs-agents --eval '
                 (progn
                   (require (quote agent-shell))
                   (unless (and (eq agent-shell-preferred-agent-config (quote pi))
@@ -346,7 +386,7 @@ in
                     (error "Pi integration is missing"))
                   ;; Inspect only launcher autoload forms, without running init.
                   (with-temp-buffer
-                    (insert-file-contents "${../../config/emacs/init.el}")
+                    (insert-file-contents "${emacsConfig}/my-emacs-modules/my-emacs-agents.el")
                     (goto-char (point-min))
                     (condition-case nil
                         (while t
@@ -368,16 +408,16 @@ in
                 -f ert-run-tests-batch-and-exit
               emacs --batch -Q -l ${agentShellGc.src}/tests/agent-shell-gc-tests.el \
                 -f ert-run-tests-batch-and-exit
-              emacs --batch -Q -L ${../../config/emacs/my-lisp} -L ${../../config/emacs/my-emacs-modules} \
+              emacs --batch -Q ${emacsTestPaths} \
                 --eval '(progn (require (quote agent-shell-gc)) (advice-add (quote agent-shell-gc-mode) :override (quote ignore)))' \
                 -l my-agent-session-tests -f ert-run-tests-batch-and-exit
-              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+              emacs --batch -Q ${emacsTestPaths} \
                 -l my-agent-shell-tests -f ert-run-tests-batch-and-exit
-              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+              emacs --batch -Q ${emacsTestPaths} \
                 -l my-agent-shell-notifications-tests -f ert-run-tests-batch-and-exit
-              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+              emacs --batch -Q ${emacsTestPaths} \
                 -l my-emacs-ui-tests -f ert-run-tests-batch-and-exit
-              emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+              emacs --batch -Q ${emacsTestPaths} \
                 -l my-emacs-completion-tests -f ert-run-tests-batch-and-exit
               touch "$out"
             '';
@@ -429,12 +469,12 @@ in
               cp ${managedConfig.source} "$TMPDIR/emacs/tramp-rpc-managed-servers.json"
               export MY_TRAMP_RPC_MANAGED_SERVERS_TEST=1
               emacs --batch -Q --eval "(setq user-emacs-directory \"$TMPDIR/emacs/\")" \
-                -L ${../../config/emacs/my-emacs-modules} \
+                ${emacsTestPaths} \
                 --load my-emacs-remote-tests \
                 --funcall ert-run-tests-batch-and-exit
               MY_TRAMP_RPC_PRELOADED_TEST=1 \
                 emacs --batch -Q --eval "(setq user-emacs-directory \"$TMPDIR/emacs/\")" \
-                -L ${../../config/emacs/my-emacs-modules} \
+                ${emacsTestPaths} \
                 --load my-emacs-remote-tests \
                 --funcall ert-run-tests-batch-and-exit
               touch "$out"

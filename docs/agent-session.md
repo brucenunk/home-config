@@ -331,7 +331,8 @@ remain pending; do not load feature-worktree code into the shared Emacs daemon.
 
 ## Automatic session cleanup
 
-`my-agent-shell.el` enables `agent-shell-gc-mode` automatically. Nix installs
+`my-emacs.org` configures `agent-shell-gc-mode` in the generated
+`my-emacs-agents.el` module. Nix installs
 agent-shell-gc 0.1.0 at `e3b5e1d62187bc7dd3b1d34bdfe7b571ffb1efae`, sharing
 the pinned agent-shell/ACP dependencies; there is no runtime package download.
 

@@ -7,7 +7,8 @@
 
 (require 'ert)
 (require 'cl-lib)
-(require 'my-agent-shell-notifications)
+(require 'my-emacs-agents)
+(require 'agent-shell)
 
 (defmacro my/agent-notification-test--isolated (&rest body)
   "Run BODY in a disposable shell with isolated notification state."
@@ -219,7 +220,7 @@
                                       agent-shell-notifications-libnotify))
                    (ert-fail (format "Visual backend required: %s" feature)))
                  (apply original-require feature args))))
-      (load "my-agent-shell-notifications" nil t)
+      (load "my-emacs-agents" nil t)
       (should-not agent-shell-notifications-provider)
       (should (eq agent-shell-notifications-send-function #'my/agent-notification--send))
       (should (eq agent-shell-notifications-close-function #'my/agent-notification--close)))))

@@ -234,7 +234,7 @@ in
             ''
               export HOME="$TMPDIR"
               export AGENT_CATALOGUE_TEST=${home.config.xdg.configFile."emacs/agent-catalogue.el".source}
-              emacs --batch -Q -L ${../../config/emacs/my-lisp} \
+              emacs --batch -Q -L ${../../config/emacs/my-lisp} -L ${../../config/emacs/tests} \
                 -l my-agent-catalogue-tests -l my-denote-task-tests \
                 -f ert-run-tests-batch-and-exit
               AGENT_CATALOGUE_TEST=${localNamedHome.config.xdg.configFile."emacs/agent-catalogue.el".source} \

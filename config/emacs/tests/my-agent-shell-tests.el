@@ -18,7 +18,7 @@
 (require 'agent-shell-gc)
 ;; Load policy without starting global tracking outside a disposable fixture.
 (cl-letf (((symbol-function 'agent-shell-gc-mode) #'ignore))
-  (require 'my-agent-shell))
+  (require 'my-emacs-agents))
 
 (defvar my/agent-shell-test--buffers nil)
 
@@ -704,7 +704,7 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
 (ert-deftest my/agent-shell-gc-configured-mode-and-settings ()
   (my/agent-shell-test--isolated
     ;; Exercise the actual :config enablement, not a mocked mode call.
-    (load "my-agent-shell" nil t)
+    (load "my-emacs-agents" nil t)
     (should agent-shell-gc-mode)
     (should (timerp agent-shell-gc--timer))
     (should (agent-shell-gc--in-grace-p))

@@ -1,15 +1,28 @@
-;;; my-agent-shell.el --- Agent shell configuration -*- lexical-binding: t -*-
+;;; my-agent-shell.el --- Agent shell helpers -*- lexical-binding: t -*-
+
+;; Author: James Lee
+;; URL: https://github.com/brucenunk/home-config
+;; Version: 0.1.0
+;; Package-Requires: ((emacs "30.1"))
 
 ;;; Commentary:
 
-;; Use Pi with agent-shell's viewport interface.
-;; Map remote project paths through TRAMP; keep artifacts outside projects.
-;; Nix provides the Emacs packages and the pi-acp adapter.
+;; Implementation for the configuration in my-emacs.org.
+;; Public functions/commands:
+;;   - my/agent-shell-insert-reference
+;;   - my/agent-shell-register-reference-actions
+;;   - my/agent-shell-quote-region
+;;   - my/agent-shell-gc-protect-in-flight-p
+;;   - my/agent-shell-gc-protect-queued-input-p
+;;   - my/agent-shell-gc-protect-viewport-draft-p
+
+;;   - my/agent-shell-restore-transcript-policy
 
 ;;; Code:
 
 (require 'cl-lib)
 
+;;;###autoload
 (defun my/agent-shell-insert-reference ()
   "Insert one Consult file or grep candidate into the originating composer.
 Use this Embark action from `consult-fd' or `consult-ripgrep'.  The
@@ -77,6 +90,7 @@ Grep locations are whole-file mentions followed by a line hint."
         (unless (or (eobp) (memq (char-after) '(?\s ?\t ?\n)))
           (insert " "))))))
 
+;;;###autoload
 (defun my/agent-shell-register-reference-actions ()
   "Register composer reference actions after Embark and Consult load.
 Called by the single `embark-consult' declaration in completion configuration."
@@ -119,18 +133,7 @@ Random names separate same-second sessions; skip existing Markdown paths."
       (setq path (concat (make-temp-name prefix) ".md")))
     path))
 
-(use-package agent-shell-compose
-  :ensure nil
-  :after agent-shell
-  :demand t
-  :custom
-  (agent-shell-compose-markup 'org)
-  (agent-shell-compose-language-modes '(("go" . go-ts-mode)
-                                       ("yaml" . yaml-mode)))
-  :bind (:map agent-shell-viewport-edit-mode-map
-              ("C-c C-," . agent-shell-compose-insert-source-block))
-  :hook (agent-shell-viewport-edit-mode . agent-shell-compose-setup))
-
+;;;###autoload
 (defun my/agent-shell-quote-region (&optional pick-shell)
   "Insert the active region as a diff block into an editable prompt.
 Use the destination composer's explicitly selected markup.  Use the most
@@ -155,41 +158,7 @@ always offer the chooser.  Never start a shell or submit."
         (with-current-buffer (map-elt insertion :buffer)
           (goto-char (map-elt insertion :end)))))))
 
-(use-package agent-shell
-  :ensure nil
-  :bind (:map agent-shell-viewport-edit-mode-map
-              ("C-c C-y" . agent-shell-send-clipboard-image))
-  :custom
-  (agent-shell-dot-subdir-function #'my/agent-shell--dot-subdir)
-  (agent-shell-transcript-file-path-function #'my/agent-shell--transcript-file-path)
-  (agent-shell-preferred-agent-config 'pi)
-  (agent-shell-prefer-viewport-interaction t)
-  :config
-  (require 'my-agent-shell-notifications)
-  ;; Keep Linux clipboard-first: the upstream direct default uses X11 import.
-  (when (eq system-type 'darwin)
-    (define-key agent-shell-viewport-edit-mode-map (kbd "C-c C-s")
-                #'agent-shell-send-screenshot)))
-
-(use-package agent-shell-compose-block-edit
-  :ensure nil
-  :after agent-shell
-  :demand t
-  :bind (:map agent-shell-viewport-edit-mode-map
-              ("C-c '" . agent-shell-compose-block-edit)))
-
-(use-package agent-shell-tramp
-  :ensure nil
-  :after agent-shell
-  :config
-  ;; The pinned TRAMP mode replaces the public transcript customization when
-  ;; enabled.  Reassert our policy *after* it runs, including later toggles;
-  ;; leave its path resolver in place for remote ACP/file operations.
-  (add-hook 'agent-shell-tramp-mode-hook
-            (lambda ()
-              (setq agent-shell-transcript-file-path-function #'my/agent-shell--transcript-file-path)))
-  (agent-shell-tramp-mode 1))
-
+;;;###autoload
 (defun my/agent-shell-gc-protect-in-flight-p (buffer)
   "Protect BUFFER while busy or waiting for permission/elicitation input.
 If status cannot be determined, leave the session alone."
@@ -197,10 +166,12 @@ If status cannot be determined, leave the session alone."
       (memq (agent-shell-status :shell-buffer buffer) '(busy blocked))
     (error t)))
 
+;;;###autoload
 (defun my/agent-shell-gc-protect-queued-input-p (buffer)
   "Protect BUFFER while it holds unsent queued prompts."
   (map-elt (buffer-local-value 'agent-shell--state buffer) :pending-prompts))
 
+;;;###autoload
 (defun my/agent-shell-gc-protect-viewport-draft-p (buffer)
   "Protect BUFFER when its viewport holds an unsent draft.
 Include drafts saved while peeking at a response in view mode."
@@ -214,27 +185,10 @@ Include drafts saved while peeking at a response in view mode."
                                         :content)
                                  ""))))))))
 
-(use-package agent-shell-gc
-  :ensure nil
-  :after agent-shell
-  :custom
-  (agent-shell-gc-idle-session-ttl (* 4 24 60 60))
-  ;; Leave worktrees and branches intact: the pinned GC's worktree resolver
-  ;; does not support our RPC and bare-source layouts.
-  (agent-shell-gc-idle-worktree-ttl nil)
-  (agent-shell-gc-delete-worktree-branch nil)
-  (agent-shell-gc-dry-run nil)
-  ;; Visibility alone does not protect an abandoned conversation.  Native
-  ;; busy protection excludes blocked sessions; native draft protection only
-  ;; checks the shell, not its viewport.
-  (agent-shell-gc-session-protect-functions
-   '(my/agent-shell-gc-protect-in-flight-p
-     my/agent-shell-gc-protect-queued-input-p
-     agent-shell-gc-protect-pending-input-p
-     my/agent-shell-gc-protect-viewport-draft-p
-     agent-shell-gc-protect-kept-p))
-  :config
-  (agent-shell-gc-mode 1))
+;;;###autoload
+(defun my/agent-shell-restore-transcript-policy ()
+  "Restore local transcripts after enabling or toggling TRAMP integration."
+  (setq agent-shell-transcript-file-path-function #'my/agent-shell--transcript-file-path))
 
 (provide 'my-agent-shell)
 ;;; my-agent-shell.el ends here

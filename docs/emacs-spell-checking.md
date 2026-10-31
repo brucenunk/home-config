@@ -98,17 +98,19 @@ On x86_64 Linux, after building the staged Wampa configuration:
 
 ```sh
 scratch=$(mktemp -d)
+generated=$(nix build --no-link --print-out-paths .#emacs-config)
 emacs_package=$(nix eval --raw '.#homeConfigurations."james@wampa".config.programs.emacs.finalPackage')
 dict_path=$(nix eval --raw '.#homeConfigurations."james@wampa".config.home.sessionVariables.DICPATH')
 mkdir -p "$scratch/home" "$scratch/config"
 HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" DICPATH="$dict_path" \
   "$emacs_package/bin/emacs" --batch -q \
   --eval '(require (quote use-package))' \
-  -L "$PWD/config/emacs/my-emacs-modules" \
+  -L "$generated/my-emacs-modules" \
+  -L "$PWD/config/emacs/my-lisp" -L "$PWD/config/emacs/tests" \
   -l my-emacs-editing-tests -f ert-run-tests-batch-and-exit
 ```
 
-This loads only the editing module, not `init.el`, and does not contact or start
+This loads only the generated editing, Org and Markdown modules, not `init.el`, and does not contact or start
 the user's Emacs server. The personal-dictionary test requires a temporary XDG
 configuration directory so it cannot write test words into the normal user
 dictionary. Verification does not activate Home Manager or update a daemon.

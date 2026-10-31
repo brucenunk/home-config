@@ -1,18 +1,26 @@
-;;; my-emacs-org-excali.el --- Local Org Excalidraw integration -*- lexical-binding: t; -*-
+;;; my-org-excali.el --- Org drawing integration -*- lexical-binding: t -*-
+
+;; Author: James Lee
+;; URL: https://github.com/brucenunk/home-config
+;; Version: 0.1.0
+;; Package-Requires: ((emacs "30.1"))
 
 ;;; Commentary:
 
-;; Links, disposable preview caching, text-area layout and publication export.
-;; Drawing/editor policy and native saved-scene rendering remain in
-;; `my-emacs-excali'.  This is a local module, not a standalone package API.
+;; Implementation for the configuration in my-emacs.org.
+;; Public functions/commands:
+;;   - my/excali-org-new
+;;   - my/excali-org-save-and-return
+;;   - my/excali-org-cancel
+;;   - my/excali-org-register
+
+;;   - my/excali-org-register
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'seq)
-(require 'my-emacs-excali)
-
-;;; Org links: saved scenes are the only input to disposable rendering.
+(require 'my-excali)
 
 (defcustom my/excali-preview-directory
   (expand-file-name "excali/" (or (getenv "XDG_CACHE_HOME") "~/.cache/"))
@@ -59,13 +67,16 @@ overrides this cap, but cannot exceed that area."
   "Open authoritative scene PATH through the existing drawing integration."
   (my/excali-open (my/excali--org-source path)))
 
-;;; New drawings with an explicit save-and-return boundary.
-
 (defvar-local my/excali--org-origin nil "Origin insertion marker for this drawing.")
+
 (defvar-local my/excali--org-window nil "Window from which this drawing was created.")
+
 (defvar-local my/excali--org-target nil "Chosen new drawing filename.")
+
 (defvar-local my/excali--org-saved nil "Whether this workflow has saved its target.")
+
 (defvar-local my/excali--org-linked nil "Whether this workflow inserted its link.")
+
 (defvar-local my/excali--org-baseline nil "Scene fingerprint at creation or last save.")
 
 (defun my/excali--org-scene-fingerprint ()
@@ -114,6 +125,7 @@ overrides this cap, but cannot exceed that area."
              (buffer-list)))
     (user-error "Drawing path already exists or is in use: %s" file)))
 
+;;;###autoload
 (defun my/excali-org-new (file)
   "Create a themed drawing for FILE, remembering this saved Org location.
 Do not create FILE or insert a link until explicitly saved."
@@ -186,6 +198,7 @@ exclusive rename avoid overwriting a file created since naming the drawing."
   (switch-to-buffer (marker-buffer origin))
   (when (<= (point-min) origin (point-max)) (goto-char origin)))
 
+;;;###autoload
 (defun my/excali-org-save-and-return ()
   "Save this workflow drawing, insert its relative link once, and return."
   (interactive)
@@ -217,6 +230,7 @@ exclusive rename avoid overwriting a file created since naming the drawing."
           (my/excali--org-inserted))
       (error (user-error "Drawing saved at %s; %s" file (error-message-string err))))))
 
+;;;###autoload
 (defun my/excali-org-cancel ()
   "Discard this workflow buffer and return, without inserting or deleting files."
   (interactive)
@@ -530,31 +544,35 @@ refresh removes overlays that cannot be regenerated without a palette."
                      (expand-file-name (concat name ".json") my/excali-palette-directory)))
       (my/excali--org-refresh))))
 
-;; This integration owns the combined Org/exporter/editor behavior.  Keep the
-;; two-way gates here instead of duplicating the Org and Excali declarations or
-;; forcing optional exporters/the graphical editor to load with this module.
-(with-eval-after-load 'org
-  (org-link-set-parameters "excali"
-                           :follow #'my/excali--org-follow
-                           :complete #'my/excali--org-complete
-                           :preview #'my/excali--org-preview)
-  (add-hook 'org-mode-hook #'my/excali--org-display)
-  (advice-add 'org-insert-link :after #'my/excali--org-inserted)
-  (advice-add 'org-link-preview-region :around #'my/excali--org-preview-described)
-  (add-hook 'clone-indirect-buffer-hook #'my/excali--org-cloned)
-  (add-hook 'window-state-change-functions #'my/excali--org-resize)
-  (add-hook 'enable-theme-functions #'my/excali--org-theme-enabled)
-  (with-eval-after-load 'ox
-    (require 'ox-md)
-    (add-hook 'org-export-filter-parse-tree-functions #'my/excali--org-export))
-  (with-eval-after-load 'ox-html
-    (advice-add 'org-html-link :around #'my/excali--org-html-link))
-  (with-eval-after-load 'ox-md
-    (advice-add 'org-md-link :around #'my/excali--org-md-link))
-  (add-hook 'after-save-hook #'my/excali--org-after-save)
-  (with-eval-after-load 'excali
-    (advice-add 'excali-save :around #'my/excali--org-workflow-save '((depth . -10)))
-    (advice-add 'excali-save :after #'my/excali--org-after-save)))
+;;;###autoload
+;;;###autoload
+(defun my/excali-org-register ()
+  "Register deferred Org, exporter and drawing integrations."
+  ;; This integration owns the combined Org/exporter/editor behavior.  Keep the
+  ;; two-way gates here instead of duplicating the Org and Excali declarations or
+  ;; forcing optional exporters/the graphical editor to load with this module.
+  (with-eval-after-load 'org
+    (org-link-set-parameters "excali"
+                             :follow #'my/excali--org-follow
+                             :complete #'my/excali--org-complete
+                             :preview #'my/excali--org-preview)
+    (add-hook 'org-mode-hook #'my/excali--org-display)
+    (advice-add 'org-insert-link :after #'my/excali--org-inserted)
+    (advice-add 'org-link-preview-region :around #'my/excali--org-preview-described)
+    (add-hook 'clone-indirect-buffer-hook #'my/excali--org-cloned)
+    (add-hook 'window-state-change-functions #'my/excali--org-resize)
+    (add-hook 'enable-theme-functions #'my/excali--org-theme-enabled)
+    (with-eval-after-load 'ox
+      (require 'ox-md)
+      (add-hook 'org-export-filter-parse-tree-functions #'my/excali--org-export))
+    (with-eval-after-load 'ox-html
+      (advice-add 'org-html-link :around #'my/excali--org-html-link))
+    (with-eval-after-load 'ox-md
+      (advice-add 'org-md-link :around #'my/excali--org-md-link))
+    (add-hook 'after-save-hook #'my/excali--org-after-save)
+    (with-eval-after-load 'excali
+      (advice-add 'excali-save :around #'my/excali--org-workflow-save '((depth . -10)))
+      (advice-add 'excali-save :after #'my/excali--org-after-save))))
 
-(provide 'my-emacs-org-excali)
-;;; my-emacs-org-excali.el ends here
+(provide 'my-org-excali)
+;;; my-org-excali.el ends here

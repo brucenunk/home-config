@@ -9,6 +9,8 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'my-emacs-editing)
+(require 'my-emacs-writing)
+(require 'my-emacs-org)
 
 (defun my/editing-test-misspellings ()
   "Return misspelled words after fontifying and checking the current buffer."

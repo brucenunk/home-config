@@ -4,10 +4,8 @@
 (require 'cl-lib)
 (require 'use-package)
 
-(defconst my/deferred-test--directory (file-name-directory load-file-name))
-(defconst my/deferred-test--init
-  (or (getenv "MY_EMACS_INIT_FILE")
-      (expand-file-name "../init.el" my/deferred-test--directory)))
+(defconst my/deferred-test--directory
+  (file-name-directory (locate-library "my-emacs-completion")))
 
 (defun my/deferred-test--declaration (file package)
   "Read PACKAGE's single top-level declaration from FILE."
@@ -39,12 +37,12 @@
       (ert-info ((buffer-string)) (should (equal status 0))))))
 
 (ert-deftest my/deferred-embark-reference-registration-load-orders ()
-  (dolist (order '((my-agent-shell my-emacs-completion consult embark)
-                   (consult embark my-agent-shell my-emacs-completion)
-                   (embark consult my-emacs-completion my-agent-shell)
-                   (embark-consult my-emacs-completion my-agent-shell)
-                   (embark-consult my-agent-shell my-emacs-completion)
-                   (my-emacs-completion embark my-agent-shell consult)))
+  (dolist (order '((my-emacs-agents my-emacs-completion consult embark)
+                   (consult embark my-emacs-agents my-emacs-completion)
+                   (embark consult my-emacs-completion my-emacs-agents)
+                   (embark-consult my-emacs-completion my-emacs-agents)
+                   (embark-consult my-emacs-agents my-emacs-completion)
+                   (my-emacs-completion embark my-emacs-agents consult)))
     (ert-info (order)
       (my/deferred-test--fresh
        ;; Disable only background cleanup; never launch an agent/session.
@@ -86,7 +84,7 @@
    '(should-not (featurep 'agent-shell))))
 
 (ert-deftest my/deferred-eglot-nix-registration-load-orders ()
-  (let ((declaration (my/deferred-test--declaration my/deferred-test--init 'eglot)))
+  (let ((declaration (my/deferred-test--declaration (locate-library "my-emacs-languages") 'eglot)))
     (dolist (loaded '(nil t))
       (my/deferred-test--fresh
        `(when ,loaded (require 'eglot))
@@ -98,7 +96,7 @@
                          (:formatting (:command ["nixfmt"])))))))))
 
 (ert-deftest my/deferred-magit-diff-binding-load-orders ()
-  (let ((declaration (my/deferred-test--declaration my/deferred-test--init 'magit-diff)))
+  (let ((declaration (my/deferred-test--declaration (locate-library "my-emacs-git") 'magit-diff)))
     (dolist (loaded '(nil t))
       (my/deferred-test--fresh
        `(when ,loaded (require 'magit-diff))
@@ -114,14 +112,61 @@
 (ert-deftest my/deferred-go-association-in-mode-declaration ()
   (my/deferred-test--fresh
    '(should-not (featurep 'go-ts-mode))
-   (my/deferred-test--declaration my/deferred-test--init 'go-ts-mode)
+   (my/deferred-test--declaration (locate-library "my-emacs-languages") 'go-ts-mode)
    '(should-not (featurep 'go-ts-mode))
    '(should (eq (cdr (assoc "\\.go\\'" auto-mode-alist)) 'go-ts-mode))))
 
+(ert-deftest my/deferred-prose-registration-load-orders ()
+  (dolist (entry '((org my-emacs-org org-mode-hook my/org-refresh-heading-scaling)
+                   (markdown-mode my-emacs-writing markdown-mode-hook
+                                  my/markdown-refresh-heading-scaling)))
+    (dolist (loaded '(nil t))
+      (pcase-let ((`(,package ,module ,hook ,refresh) entry))
+        (my/deferred-test--fresh
+         `(when ,loaded (require ',package))
+         `(require ',module)
+         `(should (eq (featurep ',package) ,loaded))
+         `(require ',package)
+         `(should (memq #'my/prose-wrap ,hook))
+         `(should (memq #',refresh enable-theme-functions))
+         `(when (eq ',package 'org)
+            (should (advice-member-p #'my/org-fontify-comment-block
+                                     'org-fontify-meta-lines-and-blocks))))))))
+
+(ert-deftest my/deferred-org-drawings-load-editor-configuration-independently ()
+  (dolist (org-first '(nil t))
+    (my/deferred-test--fresh
+     '(should-not (featurep 'my-emacs-excali))
+     `(when ,org-first (require 'org))
+     '(require 'my-emacs-org-excali)
+     '(should (featurep 'my-emacs-excali))
+     '(should-not (featurep 'excali))
+     '(require 'org)
+     '(should (eq (org-link-get-parameter "excali" :follow) #'my/excali--org-follow))
+     '(require 'excali)
+     '(should (advice-member-p #'my/excali--new-drawing 'excali-new))
+     '(should (advice-member-p #'my/excali--history-snapshot 'excali--snapshot))
+     '(should (memq #'my/excali--setup-buffer excali-mode-hook)))))
+
+(ert-deftest my/deferred-denote-auto-revert-load-orders ()
+  (dolist (loaded '(nil t))
+    (my/deferred-test--fresh
+     `(when ,loaded (require 'autorevert))
+     '(require 'my-denote)
+     '(my/denote-register-auto-revert)
+     `(should (eq (featurep 'autorevert) ,loaded))
+     '(require 'autorevert)
+     '(should (advice-member-p #'my/denote-task-auto-revert-suppress-redisplay
+                              'auto-revert-handler))
+     '(should (advice-member-p #'my/denote-task-auto-revert-debounce-notify
+                              'auto-revert-notify-handler)))))
+
 (ert-deftest my/deferred-package-declarations-are-unique ()
   (let ((seen (make-hash-table :test #'eq)))
-    (dolist (file (cons my/deferred-test--init
-                        (directory-files my/deferred-test--directory t "\\.el\\'")))
+    (dolist (file (append (list (expand-file-name "../init.el" my/deferred-test--directory))
+                          (directory-files my/deferred-test--directory t "\\.el\\'")
+                          (directory-files (file-name-directory (locate-library "my-agent-shell"))
+                                           t "\\.el\\'")))
       (unless (string-suffix-p "-tests.el" file)
         (with-temp-buffer
           (insert-file-contents file)

@@ -1,8 +1,15 @@
 ;;; my-agent-shell-notifications.el --- Local attention cues -*- lexical-binding: t -*-
 
+;; Author: James Lee
+;; URL: https://github.com/brucenunk/home-config
+;; Version: 0.1.0
+;; Package-Requires: ((emacs "30.1"))
+
 ;;; Commentary:
-;; agent-shell-notifications owns event delivery, delays and dismissal.
-;; Our audio-only adapter adds local sound and waiting-session navigation.
+
+;; Implementation for the configuration in my-emacs.org.
+;; Public functions/commands:
+;;   - my/agent-notification-visit-waiting
 
 ;;; Code:
 
@@ -22,7 +29,9 @@
   :type 'natnum)
 
 (defvar-local my/agent-notification--subscription nil)
+
 (defvar-local my/agent-notification--reply-pending nil)
+
 (defvar-local my/agent-notification--permissions nil)
 
 (defun my/agent-notification--play ()
@@ -53,18 +62,11 @@
   "Nothing to dismiss for an already-started, one-shot chime."
   nil)
 
-;; Configure the public provider API before loading the library: it validates
-;; these functions at load time, even when automatic provider loading is off.
 (defvar agent-shell-notifications-provider)
+
 (defvar agent-shell-notifications-send-function)
+
 (defvar agent-shell-notifications-close-function)
-(setq agent-shell-notifications-provider nil
-      agent-shell-notifications-send-function #'my/agent-notification--send
-      agent-shell-notifications-close-function #'my/agent-notification--close)
-(require 'agent-shell-notifications)
-;; The pinned core resolves :app-icon before calling our provider, even though
-;; audio-only cues discard it.  Prevent synchronous network I/O on this path.
-(advice-add 'agent-shell-notifications--icon-file :override #'ignore)
 
 (defun my/agent-notification--active-p (shell)
   "Whether SHELL's selected viewport/shell has focused, recent Emacs input."
@@ -135,6 +137,7 @@ This inhibit hook always permits delivery; upstream still filters cancellation."
   "Acknowledge interaction in either viewport mode, including compose typing."
   (add-hook 'post-command-hook #'my/agent-notification--acknowledge nil t))
 
+;;;###autoload
 (defun my/agent-notification-visit-waiting ()
   "Choose a live session awaiting a reply or permission, using its viewport."
   (interactive)
@@ -151,17 +154,6 @@ This inhibit hook always permits delivery; upstream still filters cancellation."
                                              (mapcar #'buffer-name waiting) nil t))))
       (agent-shell-notifications--switch-to-shell shell)
       (with-current-buffer shell (setq my/agent-notification--reply-pending nil)))))
-
-(setq agent-shell-notifications-idle-timeout my/agent-notification-active-seconds
-      agent-shell-notifications-shell-visible-function #'my/agent-notification--active-p
-      agent-shell-notifications-format-function #'my/agent-notification--format)
-;; Upstream mode's lighter says "libnotify", regardless of provider.  Keep the
-;; already crowded mode line untouched.
-(setf (alist-get 'agent-shell-notifications-mode minor-mode-alist) nil)
-(add-hook 'agent-shell-notifications-inhibit-functions #'my/agent-notification--prepare t)
-(add-hook 'agent-shell-mode-hook #'my/agent-notification--setup)
-(add-hook 'agent-shell-viewport-edit-mode-hook #'my/agent-notification--viewport-setup)
-(add-hook 'agent-shell-viewport-view-mode-hook #'my/agent-notification--viewport-setup)
 
 (provide 'my-agent-shell-notifications)
 ;;; my-agent-shell-notifications.el ends here

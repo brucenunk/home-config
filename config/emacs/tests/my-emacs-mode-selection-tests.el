@@ -8,24 +8,8 @@
 (package-initialize)
 (require 'use-package)
 
-(defconst my/mode-selection-test--init-file
-  (or (getenv "MY_EMACS_INIT_FILE")
-      (expand-file-name "../init.el" (file-name-directory load-file-name))))
-
-;; Evaluate the real language configuration without starting the rest of init
-;; (UI, agent processes, server, or user custom-file).  No copy of the policy.
-(with-temp-buffer
-  (insert-file-contents my/mode-selection-test--init-file)
-  (goto-char (point-min))
-  (search-forward ";; Languages & LSP")
-  (forward-line 1)
-  (let ((start (point)))
-    (search-forward ";; Remote Access & Shell")
-    (narrow-to-region start (line-beginning-position))
-    (goto-char (point-min))
-    (condition-case nil
-        (while t (eval (read (current-buffer)) t))
-      (end-of-file nil))))
+;; Load the real generated language module, without UI, server or user overrides.
+(require 'my-emacs-languages)
 
 (require 'my-emacs-excali)
 (require 'eglot)

@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ "$#" -ne 1 ]; then
+  echo "usage: $0 OUTPUT-DIRECTORY" >&2
+  exit 2
+fi
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec emacs --batch -Q --load "$root/config/emacs/tangle.el" \
+  --funcall my/emacs-tangle-batch "$root/config/emacs/my-emacs.org" "$1"

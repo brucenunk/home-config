@@ -1,7 +1,9 @@
 # Emacs major-mode selection
 
 This policy targets the pinned Emacs 32.0.50. Nix supplies packages and grammars;
-`config/emacs/init.el` owns language selection and Eglot configuration.
+`config/emacs/my-emacs.org` owns language selection and Eglot configuration,
+tangled into `my-emacs-languages.el` during the Nix build. See
+[the literate maintenance guide](emacs-literate.md) for generation and tests.
 These are repository and isolated-batch observations, not shared-daemon evidence.
 
 ## Selection policy
@@ -30,7 +32,7 @@ that setter with plain `setq`, or overwrite the resulting remap list later.
 | `.rego` | `rego-mode` | Unchanged external package association |
 | `.tf` | `terraform-mode` | Unchanged external package association |
 | `BUILD.bazel` | `bazel-build-mode` | Unchanged external package association |
-| `.md` | `markdown-mode` | Unchanged; explicit configuration in `my-emacs-editing.el` |
+| `.md` | `markdown-mode` | Unchanged; explicit configuration in `my-emacs-writing.el` |
 | `.excalidsl` | `excali-dsl-mode` | Unchanged explicit association in `my-emacs-excali.el` |
 | `.el`, `.js`, `.css` | `emacs-lisp-mode`, `js-mode`, `css-mode` | Unchanged built-in associations |
 

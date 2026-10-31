@@ -54,7 +54,9 @@ presentation stubbed. They are not live graphical acceptance evidence.
 Run with the configured Emacs package:
 
 ```sh
-emacs --batch -Q -L config/emacs/my-emacs-modules \
+generated=$(nix build --no-link --print-out-paths .#emacs-config)
+emacs --batch -Q -L "$generated/my-emacs-modules" \
+  -L config/emacs/my-lisp -L config/emacs/tests \
   --load my-emacs-org-excali-tests --funcall ert-run-tests-batch-and-exit
 ```
 

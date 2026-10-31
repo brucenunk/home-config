@@ -222,7 +222,8 @@ Doric Light scene, not the original source palette.
 The local `my-emacs-org-excali` module owns Org links, preview caching/layout,
 and publication export. It requires `my-emacs-excali` for palette policy and
 disposable native scene rendering; the drawing module does not load Org
-integration. `config/emacs/init.el` loads both explicitly. Existing commands,
+integration. `config/emacs/my-emacs.org` generates both configuration modules
+and loads them explicitly; their handwritten implementations live in `my-lisp/`. Existing commands,
 options and link syntax are unchanged; this is not a standalone package API.
 
 Insert an authoritative scene with **`C-c C-l`**, choose **`excali`**, and
