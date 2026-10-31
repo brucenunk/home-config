@@ -190,7 +190,7 @@ Subsequent automatic appearance changes use the selected themes."
   ;; The renderer's base faces also cover source labels, syntax-highlighted
   ;; bodies, and table headers/borders through inheritance.  Remap them only
   ;; in mixed-pitch buffers; ordinary shell buffers keep their own font.
-  ;; The composer reuses Markdown faces while keeping all markup editable.
+  ;; The composer reuses Org or Markdown faces, keeping all markup editable.
   ;; Include pre-face for untyped/unknown-language code bodies too.
   (dolist (face '(markdown-table-face
                   markdown-pre-face

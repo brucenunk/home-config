@@ -446,11 +446,12 @@
 
 (ert-deftest my/ui-compose-keeps-raw-markdown-and-native-editing-setup ()
   (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
-    (let ((draft "Prose with `identifier`.\n\n```elisp\n(let ((x 1)) x)\n```\n\n| Name | Value |\n| --- | --- |\n| one | 1 |\n")
+    (let ((agent-shell-compose-markup 'markdown)
+          (draft "Prose with `identifier`.\n\n```elisp\n(let ((x 1)) x)\n```\n\n| Name | Value |\n| --- | --- |\n| one | 1 |\n")
           baseline)
       ;; Compare with native editing, without our fontification/typography hooks.
       (let ((agent-shell-viewport-edit-mode-hook
-             (remove #'my/agent-shell-compose-markdown
+             (remove #'agent-shell-compose-setup
                      (remq #'mixed-pitch-mode agent-shell-viewport-edit-mode-hook))))
         (with-temp-buffer
           (agent-shell-viewport-edit-mode)
@@ -476,6 +477,26 @@
                          (face-attribute 'default :family))))
         (should (equal (my/ui-test--remapped-family 'default)
                        (face-attribute 'variable-pitch :family)))))))
+
+(ert-deftest my/ui-compose-org-prose-and-code-typography ()
+  (let ((agent-shell-compose-markup 'org))
+    (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
+      (with-temp-buffer
+        (agent-shell-viewport-edit-mode)
+        (insert "* Heading\nProse ~code~ =verbatim=.\n#+begin_src emacs-lisp\n(message \"hello\")\n#+end_src\n")
+        (font-lock-ensure)
+        (should mixed-pitch-mode)
+        (should (eq major-mode 'agent-shell-viewport-edit-mode))
+        (should (equal (my/ui-test--remapped-family 'default)
+                       (face-attribute 'variable-pitch :family)))
+        (should-not (assq 'org-level-1 face-remapping-alist))
+        (dolist (sample '(("Heading" . org-level-1) ("code" . org-code)
+                          ("verbatim" . org-verbatim) ("message" . org-block)
+                          ("hello" . font-lock-string-face)))
+          (should (memq (cdr sample) (my/ui-test--faces-at (car sample)))))
+        (dolist (face '(org-code org-verbatim org-block org-block-begin-line org-block-end-line))
+          (should (equal (my/ui-test--remapped-family face)
+                         (face-attribute 'default :family))))))))
 
 (ert-deftest my/ui-echoed-prompt-remaps-only-viewport-family ()
   (let ((inherit (face-attribute 'agent-shell-viewport-prompt :inherit))

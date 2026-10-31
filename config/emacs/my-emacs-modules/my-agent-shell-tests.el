@@ -9,6 +9,8 @@
 (require 'cl-lib)
 (require 'markdown-mode)
 (require 'rainbow-delimiters)
+(require 'agent-shell-compose-tests)
+(require 'agent-shell-compose-block-edit-tests)
 ;; Match configured language hooks before native Markdown creates its cached
 ;; language buffers.  No other programming-mode services run in this suite.
 (add-hook 'prog-mode-hook #'rainbow-delimiters-mode)
@@ -23,7 +25,8 @@
 (defmacro my/agent-shell-test--isolated (&rest body)
   "Run BODY with isolated GC state and a disposable filesystem root."
   (declare (indent 0))
-  `(let* ((root (make-temp-file "agent-gc-policy-" t))
+  `(let* ((agent-shell-compose-markup 'markdown)
+          (root (make-temp-file "agent-gc-policy-" t))
           (default-directory (file-name-as-directory root))
           (user-emacs-directory default-directory)
           (my/agent-shell-directory (expand-file-name "artifacts/" root))
@@ -120,6 +123,11 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
      (push-mark (point-max) t t)
      (let ((transient-mark-mode t)) ,@body)))
 
+(defun my/agent-shell-test--markdown-compose ()
+  "Enter a native composer with the existing Markdown policy under test."
+  (let ((agent-shell-compose-markup 'markdown))
+    (agent-shell-viewport-edit-mode)))
+
 (defun my/agent-shell-test--faces-at (text)
   "Return faces at the beginning of TEXT, leaving point after it."
   (goto-char (point-min))
@@ -131,7 +139,7 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
   (let ((markdown-hide-markup t))
     (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
       (with-temp-buffer
-        (agent-shell-viewport-edit-mode)
+        (my/agent-shell-test--markdown-compose)
         (let ((draft (concat "# Heading\n\nProse with `identifier` and **bold**.\n\n"
                              "```elisp\n(let ((x \"hello\")) x)\n```\n\n"
                              "```diff\n@@ -1 +1 @@\n-old\n+new\n```\n\n"
@@ -161,7 +169,7 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
 (ert-deftest my/agent-shell-compose-markdown-incremental-fences ()
   (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))
     (with-temp-buffer
-      (agent-shell-viewport-edit-mode)
+      (my/agent-shell-test--markdown-compose)
       ;; Batch Emacs leaves font-lock-mode disabled.  Install the interactive
       ;; change tracking so these edits exercise actual JIT invalidation.
       (setq font-lock-mode t)
@@ -304,7 +312,7 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
       (dolist (busy '(nil t))
         (let (sent queued)
           (with-current-buffer viewport
-            (agent-shell-viewport-edit-mode)
+            (my/agent-shell-test--markdown-compose)
             (insert draft)
             (font-lock-ensure)
             (cl-letf (((symbol-function 'agent-shell-viewport--busy-p) (lambda (&rest _) busy))
@@ -329,7 +337,7 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
         (dolist (text '("-  old\n+  new" "  partial  " "a\n\nb\n" "\tλ\n> nested"
                         "```\n````"))
           (with-current-buffer viewport
-            (agent-shell-viewport-edit-mode)
+            (my/agent-shell-test--markdown-compose)
             (erase-buffer)
             (insert "Existing draft"))
           (save-window-excursion
@@ -497,7 +505,7 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
                 ((symbol-function 'agent-shell--send-request)
                  (lambda (&rest _) (ert-fail "Attachment submitted a prompt"))))
         (with-current-buffer viewport
-          (agent-shell-viewport-edit-mode)
+          (my/agent-shell-test--markdown-compose)
           (erase-buffer)
           (insert "Existing draft")
           (agent-shell-send-clipboard-image)
@@ -526,7 +534,7 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
                 ((symbol-function 'agent-shell--send-request)
                  (lambda (&rest _) (ert-fail "Failure submitted a prompt"))))
         (with-current-buffer viewport
-          (agent-shell-viewport-edit-mode)
+          (my/agent-shell-test--markdown-compose)
           (erase-buffer)
           (insert "Keep this draft")
           ;; Nonzero capture, cancellation with no output, and empty output.
@@ -672,7 +680,7 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
       (should (my/agent-shell-gc-protect-viewport-draft-p shell))
       (with-current-buffer viewport
         (setq agent-shell-viewport--compose-snapshot nil)
-        (agent-shell-viewport-edit-mode)
+        (my/agent-shell-test--markdown-compose)
         (insert "  \n"))
       (should-not (my/agent-shell-gc-protect-viewport-draft-p shell))
       (with-current-buffer shell
@@ -815,6 +823,158 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
       (cl-letf (((symbol-function 'file-directory-p) (lambda (_) nil)))
         (agent-shell-gc--prune))
       (should-not (gethash remote agent-shell-gc--worktrees)))))
+
+(ert-deftest my/agent-shell-compose-org-send-queue-and-echo ()
+  (my/agent-shell-test--isolated
+    (let* ((agent-shell-compose-markup 'org)
+           (shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+           (draft "Explain ~code~.\n\n#+begin_src emacs-lisp\n(message \"hello\")\n#+end_src"))
+      (dolist (busy '(nil t))
+        (let (sent queued)
+          (with-current-buffer viewport
+            (agent-shell-viewport-edit-mode)
+            (insert draft) (font-lock-ensure)
+            (cl-letf (((symbol-function 'agent-shell-viewport--busy-p) (lambda (&rest _) busy))
+                      ((symbol-function 'agent-shell--insert-to-shell-buffer)
+                       (lambda (&rest args) (setq sent args)))
+                      ((symbol-function 'agent-shell--busy-submit)
+                       (lambda (&rest args) (setq queued args))))
+              (agent-shell-viewport-compose-send t))
+            (let ((text (plist-get (if busy queued sent) (if busy :prompt :text))))
+              (should (equal text draft))
+              (dotimes (n (length text))
+                (should-not (get-text-property n 'invisible text))
+                (should-not (get-text-property n 'org-src-invisible text))))
+            (should-not (if busy sent queued))
+            (should (eq major-mode 'agent-shell-viewport-edit-mode))
+            (should (string-empty-p (string-trim (buffer-string)))))))
+      (with-current-buffer viewport
+        (insert draft) (font-lock-ensure)
+        (cl-letf (((symbol-function 'agent-shell-viewport--busy-p) (lambda (&rest _) nil))
+                  ((symbol-function 'agent-shell--insert-to-shell-buffer) #'ignore))
+          (let ((agent-shell-viewport-dismiss-on-send nil))
+            (agent-shell-viewport-compose-send)))
+        (should (eq major-mode 'agent-shell-viewport-view-mode))
+        (goto-char (point-min)) (search-forward "#+begin_src")
+        (should-not (invisible-p (1- (point))))))))
+
+(ert-deftest my/agent-shell-compose-org-draft-view-round-trip ()
+  (my/agent-shell-test--isolated
+    (let* ((agent-shell-compose-markup 'org)
+           (shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+           (draft "Keep ~code~.\n#+begin_src diff\n-old\n+new\n#+end_src\n"))
+      (with-current-buffer viewport
+        (insert draft) (goto-char 8) (font-lock-ensure)
+        (let ((scratch agent-shell-compose--org-buffer)
+              (agent-shell-compose-markup 'markdown))
+          (cl-letf (((symbol-function 'shell-maker-history-position)
+                     (lambda () '((:current . 1) (:total . 1))))
+                    ((symbol-function 'agent-shell-goto-last-interaction) #'ignore)
+                    ((symbol-function 'agent-shell-interaction-at-point)
+                     (lambda () '((:prompt . "Question") (:response . "Response")))))
+            (agent-shell-viewport-compose-peek-last))
+          (should (eq major-mode 'agent-shell-viewport-view-mode))
+          (should-not (buffer-live-p scratch))
+          (save-window-excursion
+            (agent-shell-viewport--show-buffer :shell-buffer shell :edit t))
+          (should (eq (agent-shell-compose-selected-markup) 'org))
+          (should (equal (string-trim-left (buffer-substring-no-properties
+                                           (point-min) (point-max)) "\n") draft))
+          (should (= (point) 8))
+          (font-lock-ensure)
+          (should (memq 'org-code (my/agent-shell-test--faces-at "code")))
+          (should-not agent-shell-viewport--compose-snapshot))))))
+
+(ert-deftest my/agent-shell-compose-org-preserves-native-attachments-and-layout ()
+  (my/agent-shell-test--isolated
+    (let* ((agent-shell-compose-markup 'org)
+           (agent-shell-header-style 'text)
+           (shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+      (with-current-buffer viewport
+        (agent-shell-viewport--initialize)
+        (goto-char (point-max))
+        (insert "#+begin_src emacs-lisp\n(message \"hello\")\n#+end_src\n\n")
+        (cl-letf (((symbol-function 'agent-shell--load-image)
+                   (lambda (&rest _) '(image :type png :data "fixture"))))
+          (insert (agent-shell--get-files-context :files '("/fixture/image.png"))))
+        (let ((original (buffer-string)))
+          (dotimes (_ 2)
+            (font-lock-flush) (font-lock-ensure)
+            (dotimes (n (length original))
+              (dolist (prop '(composition display invisible rear-nonsticky keymap
+                             help-echo mouse-face pointer modification-hooks
+                             cursor-intangible agent-shell-context-image))
+                (should (equal (get-text-property (1+ n) prop)
+                               (get-text-property n prop original)))))))
+        (goto-char (point-max)) (insert "Editable draft")
+        (should-not (get-text-property (1- (point)) 'cursor-intangible))
+        ;; Native image modification hooks delete the entire attachment when
+        ;; any character is removed.  The private parser must mirror that too.
+        (goto-char (text-property-any (point-min) (point-max) 'agent-shell-context-image t))
+        (delete-char 1)
+        (font-lock-ensure)
+        (let ((draft (buffer-substring-no-properties (point-min) (point-max))))
+          (with-current-buffer agent-shell-compose--org-buffer
+            (should (equal (buffer-substring-no-properties (point-min) (point-max)) draft))))))))
+
+(ert-deftest my/agent-shell-quote-uses-org-destination-even-when-default-changes ()
+  (my/agent-shell-test--isolated
+    (let* ((agent-shell-compose-markup 'org)
+           (shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+      (with-current-buffer viewport
+        (agent-shell-viewport-view-mode)
+        (setq agent-shell-viewport--compose-snapshot
+              '((:content . "Saved draft") (:location . 3))))
+      (let ((agent-shell-compose-markup 'markdown))
+        (cl-letf (((symbol-function 'agent-shell-project-buffers) (lambda () (list shell)))
+                  ((symbol-function 'agent-shell-viewport--busy-p) (lambda () t))
+                  ((symbol-function 'agent-shell--send-request)
+                   (lambda (&rest _) (ert-fail "Quote submitted a prompt"))))
+          (save-window-excursion
+            (my/agent-shell-test--region "@@ -1 +1 @@\n-old\n+new"
+              (my/agent-shell-quote-region)))
+          (with-current-buffer viewport
+            (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                           "\nSaved draft\n\n#+begin_src diff\n@@ -1 +1 @@\n-old\n+new\n#+end_src\n\n"))
+            (should (= (point) (point-max)))
+            (font-lock-ensure)
+            (should (memq 'diff-removed (my/agent-shell-test--faces-at "old")))
+            (should (memq 'diff-added (my/agent-shell-test--faces-at "new")))))))))
+
+(ert-deftest my/agent-shell-quote-org-collision-does-not-touch-draft ()
+  (my/agent-shell-test--isolated
+    (let* ((agent-shell-compose-markup 'org)
+           (shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+      (with-current-buffer viewport (insert "Keep draft"))
+      (cl-letf (((symbol-function 'agent-shell-project-buffers) (lambda () (list shell))))
+        (my/agent-shell-test--region "#+end_src"
+          (should-error (my/agent-shell-quote-region) :type 'user-error)))
+      (with-current-buffer viewport (should (equal (buffer-string) "Keep draft"))))))
+
+(ert-deftest my/agent-shell-compose-block-edit-binding ()
+  (should (eq (lookup-key agent-shell-viewport-edit-mode-map (kbd "C-c '"))
+              #'agent-shell-compose-block-edit))
+  (should (eq (lookup-key agent-shell-viewport-edit-mode-map (kbd "C-c C-,"))
+              #'agent-shell-compose-insert-source-block)))
+
+(ert-deftest my/agent-shell-compose-language-mode-policy ()
+  (should (eq (alist-get "go" agent-shell-compose-language-modes nil nil #'equal)
+              'go-ts-mode))
+  (should (eq (alist-get "yaml" agent-shell-compose-language-modes nil nil #'equal)
+              'yaml-mode))
+  (let ((auto-mode-alist (cons '("\\.go\\'" . go-ts-mode) auto-mode-alist)))
+    (dolist (markup '(org markdown))
+      (agent-shell-compose-test--with-composer markup
+        (should (eq (agent-shell-compose-block-mode (list :markup markup :language "go"))
+                    'go-ts-mode))
+        (when (fboundp 'yaml-mode)
+          (should (eq (agent-shell-compose-block-mode (list :markup markup :language "yaml"))
+                      'yaml-mode)))))))
 
 (provide 'my-agent-shell-tests)
 ;;; my-agent-shell-tests.el ends here
