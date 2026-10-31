@@ -119,7 +119,15 @@
   (eglot-confirm-server-initiated-edits nil "Don't ask for confirmation")
   (eglot-autoshutdown t "Shutdown server when last managed buffer is killed")
   (eglot-sync-connect nil "Never block LSP connection attempts")
-  (eglot-send-changes-idle-time 0.2 "Send data to the server faster"))
+  (eglot-send-changes-idle-time 0.2 "Send data to the server faster")
+  :config
+  (add-to-list 'eglot-server-programs
+               '(nix-ts-mode . ("nixd" :initializationOptions
+                                (:formatting (:command ["nixfmt"]))))))
+
+(use-package go-ts-mode
+  :ensure nil
+  :mode "\\.go\\'")
 
 (use-package jsonnet-mode
   :ensure nil
@@ -136,11 +144,6 @@
 (use-package nix-ts-mode
   :ensure nil
   :mode "\\.nix\\'")
-
-(with-eval-after-load 'eglot
-  (add-to-list 'eglot-server-programs
-               '(nix-ts-mode . ("nixd" :initializationOptions
-                                (:formatting (:command ["nixfmt"]))))))
 
 (use-package python
   :ensure nil
@@ -175,12 +178,6 @@
   (unless (assq 'yaml-mode eglot-server-programs)
     (add-to-list 'eglot-server-programs
                  '(yaml-mode . ("yaml-language-server" "--stdio")))))
-
-(use-package emacs
-  :ensure nil
-  :config
-  (add-to-list 'auto-mode-alist
-               '("\\.go\\'" . go-ts-mode)))
 
 ;; ============================================================================
 ;; Remote Access & Shell
@@ -236,6 +233,13 @@
   (setq forge-add-default-sections nil
         forge-add-pullreq-refspec nil))
 
+(use-package magit-diff
+  :ensure nil
+  :defer t
+  :config
+  ;; This subfeature can load without `magit'; do not tie its map to magit load.
+  (define-key magit-diff-mode-map (kbd "C-c r") #'my/agent-shell-quote-region))
+
 (use-package forge
   :ensure nil
   :after magit)
@@ -265,6 +269,8 @@
   (ghostel-enable-osc52 t)
   (ghostel-shell-integration t)
   :config
+  ;; Genuine two-package gate: register only after both Ghostel and Project,
+  ;; without making either package load the other.
   (with-eval-after-load 'project
     (add-to-list 'project-switch-commands '(ghostel-project "Ghostel") t)))
 

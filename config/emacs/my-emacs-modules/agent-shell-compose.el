@@ -88,6 +88,8 @@ Response presentation properties must not enter the editable draft."
             (apply setup args)))
       (apply setup args))))
 
+;; Library integration, not user configuration: avoid a use-package dependency
+;; and support either viewport/library load order without loading the viewport.
 (with-eval-after-load 'agent-shell-viewport
   (advice-add 'agent-shell-viewport--setup-reply :around
               #'agent-shell-compose--setup-reply))

@@ -530,6 +530,9 @@ refresh removes overlays that cannot be regenerated without a palette."
                      (expand-file-name (concat name ".json") my/excali-palette-directory)))
       (my/excali--org-refresh))))
 
+;; This integration owns the combined Org/exporter/editor behavior.  Keep the
+;; two-way gates here instead of duplicating the Org and Excali declarations or
+;; forcing optional exporters/the graphical editor to load with this module.
 (with-eval-after-load 'org
   (org-link-set-parameters "excali"
                            :follow #'my/excali--org-follow

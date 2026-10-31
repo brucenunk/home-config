@@ -231,6 +231,18 @@ in
               --funcall ert-run-tests-batch-and-exit
             touch "$out"
           '';
+        emacs-deferred =
+          let
+            emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;
+          in
+          pkgs.runCommand "emacs-deferred-check" { nativeBuildInputs = [ emacs ]; } ''
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME"
+            export MY_EMACS_INIT_FILE=${../../config/emacs/init.el}
+            emacs --batch -Q -L ${../../config/emacs/my-emacs-modules} \
+              --load my-emacs-deferred-tests --funcall ert-run-tests-batch-and-exit
+            touch "$out"
+          '';
         emacs-mode-selection =
           let
             emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;

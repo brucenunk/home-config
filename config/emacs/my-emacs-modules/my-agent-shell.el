@@ -77,10 +77,9 @@ Grep locations are whole-file mentions followed by a line hint."
         (unless (or (eobp) (memq (char-after) '(?\s ?\t ?\n)))
           (insert " "))))))
 
-(use-package embark-consult
-  :ensure nil
-  :after (embark consult)
-  :config
+(defun my/agent-shell-register-reference-actions ()
+  "Register composer reference actions after Embark and Consult load.
+Called by the single `embark-consult' declaration in completion configuration."
   (defvar my/agent-shell-reference-map
     (let ((map (make-sparse-keymap)))
       (set-keymap-parent map embark-general-map)
@@ -155,9 +154,6 @@ always offer the chooser.  Never start a shell or submit."
       (when insertion
         (with-current-buffer (map-elt insertion :buffer)
           (goto-char (map-elt insertion :end)))))))
-
-(with-eval-after-load 'magit-diff
-  (define-key magit-diff-mode-map (kbd "C-c r") #'my/agent-shell-quote-region))
 
 (use-package agent-shell
   :ensure nil

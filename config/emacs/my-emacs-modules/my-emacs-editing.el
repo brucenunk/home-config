@@ -31,6 +31,7 @@ When LOADED-FILE is non-nil, only re-apply on userlock loads."
       #'my/ask-user-about-supersession-threat-accept)))
 
 (my/install-supersession-policy nil)
+;; Unlike one-time package configuration, this must survive userlock reloads.
 (add-hook 'after-load-functions #'my/install-supersession-policy)
 
 (use-package emacs

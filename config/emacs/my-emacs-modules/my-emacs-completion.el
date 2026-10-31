@@ -227,8 +227,15 @@ Modes which omit the global CAPF fallback marker `t' keep their own policy."
 (use-package embark-consult
   :ensure nil
   :after (embark consult)
+  :demand t
   :hook
-  (embark-collect-mode . consult-preview-at-point-mode))
+  (embark-collect-mode . consult-preview-at-point-mode)
+  :config
+  ;; Cross-module integration: completion also loads independently of agent
+  ;; configuration.  Wait for its implementation without loading it eagerly;
+  ;; this runs immediately if the agent module is already available.
+  (with-eval-after-load 'my-agent-shell
+    (my/agent-shell-register-reference-actions)))
 
 ;; https://github.com/abo-abo/avy
 (use-package avy

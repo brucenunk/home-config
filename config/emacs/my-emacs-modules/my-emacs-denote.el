@@ -141,6 +141,8 @@ Resolves relative task links against the shared Denote document root."
 
 (add-hook 'find-file-hook #'my/denote-task-auto-revert-enable-maybe)
 
+;; Task-specific integration belongs here, not in the general editing module's
+;; autorevert declaration.  Support either load order without loading autorevert.
 (with-eval-after-load 'autorevert
   (defun my/denote-task-auto-revert--cancel-debounce ()
     "Cancel pending debounce timer in current buffer."

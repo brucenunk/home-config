@@ -11,6 +11,26 @@
 - Prefer native Home Manager options and typed custom options for real module
   interfaces.
 
+## Emacs Lisp configuration
+
+- Keep one `use-package` declaration per package across repository-maintained
+  configuration. Inspect existing declarations before adding configuration.
+- Extend the owning declaration's `:init`, `:config`, `:hook`, or `:bind` rather
+  than adding scattered deferred blocks or duplicate declarations.
+- Put mode-specific configuration, including file and interpreter associations,
+  in that mode's declaration (`:mode` / `:interpreter`), not a generic `emacs`
+  declaration or unrelated module. Add a single declaration for the mode if
+  needed. Consolidation must preserve ownership, not just remove duplicates.
+- Keep feature-specific implementation functions in their owning module; call a
+  registration function from the package declaration when appropriate.
+- Preserve lazy loading, bindings, and behavior whether dependencies load before
+  or after the configuration module. Add focused load-order tests when changing
+  deferred registration.
+- Deferred forms remain appropriate for genuine cross-package integration,
+  reload-sensitive behavior, and reusable libraries. Explain retained exceptions
+  beside the code; do not add `use-package` dependencies to reusable libraries
+  merely for consistency.
+
 ## Verification
 
 After changing this repository:

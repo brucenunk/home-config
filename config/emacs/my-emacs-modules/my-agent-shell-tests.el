@@ -563,16 +563,6 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
             (should (use-region-p))))
         (with-current-buffer viewport (should (equal (buffer-string) "Keep draft")))))))
 
-(ert-deftest my/agent-shell-quote-diff-only-binding ()
-  ;; The minimal Nix agent-shell check does not include Magit; exercise the
-  ;; real maps when running with the full configured Emacs package set.
-  (skip-unless (require 'magit-diff nil t))
-  (should (eq (lookup-key magit-diff-mode-map (kbd "C-c r"))
-              #'my/agent-shell-quote-region))
-  (should (eq (lookup-key magit-diff-mode-map (kbd "r")) #'magit-rebase))
-  (should-not (eq (lookup-key magit-mode-map (kbd "C-c r"))
-                  #'my/agent-shell-quote-region)))
-
 (ert-deftest my/agent-shell-artifact-paths-and-bindings ()
   (my/agent-shell-test--isolated
     (should (eq agent-shell-dot-subdir-function #'my/agent-shell--dot-subdir))
@@ -1088,6 +1078,8 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
           (should (eq (agent-shell-compose-block-mode (list :markup markup :language "yaml"))
                       'yaml-mode)))))))
 
+;; Completion owns the single embark-consult declaration and action registration.
+(require 'my-emacs-completion)
 (require 'embark-consult)
 
 (defun my/agent-shell-test--grep-candidate (file line)
