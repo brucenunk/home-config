@@ -72,10 +72,11 @@
 
 ;;;###autoload
 (defun my/refresh-mixed-pitch-mode ()
-  "Refresh mixed-pitch-mode in all buffers where it's active."
+  "Refresh mixed-pitch-mode in all buffers where it's active.
+Do nothing before mixed-pitch has loaded."
   (dolist (buf (buffer-list))
     (with-current-buffer buf
-      (when mixed-pitch-mode
+      (when (bound-and-true-p mixed-pitch-mode)
         (mixed-pitch-mode -1)
         (mixed-pitch-mode 1)))))
 

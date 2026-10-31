@@ -48,6 +48,16 @@
                          (expand-file-name "my-lisp" my/literate-test--source))))
     (ert-info (file) (my/literate-test--forms file))))
 
+(ert-deftest my/literate-generated-files-have-lisp-headers ()
+  (dolist (file (my/literate-test--files my/literate-test--generated))
+    (ert-info (file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (should (looking-at ";;+ .*lexical-binding: t"))
+        (forward-line 1)
+        (should (looking-at ";;+ .*\\(?:Generated from\\|Do not edit\\)"))))))
+
 (ert-deftest my/literate-capability-imports-are-alphabetical ()
   (let ((imports
          (cl-loop for form in (my/literate-test--forms
@@ -133,8 +143,12 @@
                 (should-not (featurep 'excali))
                 (should (equal (alist-get 'nix-ts-mode my/eglot-mode-server-executables)
                                "nixd"))
-                (should (eq (key-binding (kbd "C-c a f"))
-                            #'my/agent-session-start-from-file))
+                (dolist (command '(my/agent-session-start-from-file
+                                   my/agent-session-start-new-worktree
+                                   my/agent-session-start-in-directory))
+                  (should (commandp command)))
+                (should-not (boundp 'my/agent-session-map))
+                (should-not (key-binding (kbd "C-c a")))
                 (should (eq denote-file-type 'org)))))))
       (ert-info ((buffer-string)) (should (equal status 0))))))
 

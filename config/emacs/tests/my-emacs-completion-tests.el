@@ -315,6 +315,12 @@
     (should (equal default-directory "/buffer/base/"))))
 
 (ert-deftest my/cape-file-replaces-the-upstream-prefix-map-binding ()
+  ;; :bind-keymap resolves the prefix map on its first invocation.
+  (let (invoked)
+    (cl-letf (((symbol-function 'my/cape-file)
+               (lambda () (interactive) (setq invoked t))))
+      (execute-kbd-macro (kbd "C-c p f")))
+    (should invoked))
   (should (eq (keymap-lookup global-map "C-c p") cape-prefix-map))
   (should (eq (keymap-lookup cape-prefix-map "f") #'my/cape-file)))
 

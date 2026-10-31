@@ -161,6 +161,83 @@
      '(should (advice-member-p #'my/denote-task-auto-revert-debounce-notify
                               'auto-revert-notify-handler)))))
 
+(ert-deftest my/deferred-agent-header-hooks-load-orders ()
+  (let ((declaration (my/deferred-test--declaration
+                      (locate-library "my-emacs-agents") 'agent-shell)))
+    (dolist (loaded '(nil t))
+      (my/deferred-test--fresh
+       `(when ,loaded (require 'agent-shell))
+       declaration
+       `(should (eq (featurep 'agent-shell) ,loaded))
+       '(should (fboundp 'my/agent-shell-header-no-underline))
+       '(dolist (hook '(agent-shell-mode-hook
+                       agent-shell-viewport-view-mode-hook
+                       agent-shell-viewport-edit-mode-hook))
+          (should (memq #'my/agent-shell-header-no-underline
+                        (symbol-value hook))))))))
+
+(ert-deftest my/deferred-mixed-pitch-hooks-load-orders ()
+  (let ((declaration (my/deferred-test--declaration
+                      (locate-library "my-emacs-ui") 'mixed-pitch)))
+    (dolist (loaded '(nil t))
+      (my/deferred-test--fresh
+       '(require 'my-ui)
+       `(when ,loaded (require 'mixed-pitch))
+       declaration
+       `(should (eq (featurep 'mixed-pitch) ,loaded))
+       '(dolist (hook '(markdown-mode-hook org-mode-hook
+                       agent-shell-viewport-view-mode-hook
+                       agent-shell-viewport-edit-mode-hook))
+          (should (memq #'mixed-pitch-mode (symbol-value hook))))
+       '(should (memq #'my/viewport-prompt-variable-pitch mixed-pitch-mode-hook))
+       '(should (memq #'my/refresh-mixed-pitch-mode fontaine-set-preset-hook))
+       ;; Fontaine can change fonts before mixed-pitch has ever loaded.
+       '(run-hooks 'fontaine-set-preset-hook)
+       `(should (eq (featurep 'mixed-pitch) ,loaded))
+       '(require 'mixed-pitch)
+       '(should (memq #'my/viewport-prompt-variable-pitch mixed-pitch-mode-hook))))))
+
+(ert-deftest my/deferred-fontaine-registers-real-frame-hook ()
+  (my/deferred-test--fresh
+   '(require 'my-ui)
+   (my/deferred-test--declaration (locate-library "my-emacs-ui") 'fontaine)
+   '(should (memq #'my/fontaine-setup-frame after-init-hook))
+   '(should (memq #'my/fontaine-setup-frame after-make-frame-functions))
+   '(should-not (memq #'my/fontaine-setup-frame
+                      (and (boundp 'after-make-frame-functions-hook)
+                           after-make-frame-functions-hook)))))
+
+(ert-deftest my/deferred-forge-options-load-orders ()
+  (let ((declaration (my/deferred-test--declaration
+                      (locate-library "my-emacs-git") 'forge)))
+    (dolist (loaded '(nil t))
+      (my/deferred-test--fresh
+       `(when ,loaded (require 'magit))
+       declaration
+       `(should (eq (featurep 'magit) ,loaded))
+       '(require 'magit)
+       '(require 'forge)
+       '(should-not forge-add-default-sections)
+       '(should-not forge-add-pullreq-refspec)))))
+
+(ert-deftest my/deferred-denote-configuration-load-orders ()
+  (dolist (loaded '(nil t))
+    (my/deferred-test--fresh
+     `(when ,loaded (require 'denote))
+     '(require 'my-emacs-denote)
+     '(should (eq denote-file-type 'org))
+     '(should (equal denote-directory (expand-file-name "~/work/docs/")))
+     '(should (equal denote-dired-directories (list denote-directory)))
+     '(should (assq 'task-workflow denote-templates))
+     '(should (memq #'my/denote-startup emacs-startup-hook))
+     '(should (memq #'my/denote-rename-new-buffer-maybe find-file-hook))
+     '(should (memq #'my/denote-task-auto-revert-enable-maybe find-file-hook))
+     '(should (memq #'my/denote-rename-new-buffer-maybe denote-after-new-note-hook))
+     '(should-not (memq #'denote-rename-buffer-rename-function-or-fallback
+                        denote-after-new-note-hook))
+     '(should-not (memq #'denote-rename-buffer-rename-function-or-fallback
+                        find-file-hook)))))
+
 (ert-deftest my/deferred-package-declarations-are-unique ()
   (let ((seen (make-hash-table :test #'eq)))
     (dolist (file (append (list (expand-file-name "../init.el" my/deferred-test--directory))

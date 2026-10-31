@@ -23,6 +23,31 @@ Follow the existing public function names and lazy-loading contracts when moving
 code. Keep behaviour changes separate from the structural migration. Link to
 handwritten libraries rather than embedding substantial function bodies in Org.
 
+## Declaration and prose conventions
+
+- Keep a single `use-package` declaration for each package. Shared behaviour
+  such as mixed-pitch activation belongs with the package being enabled;
+  agent-only registrations belong in the Agents section.
+- Put ordinary registrations together in `:hook`. Use bare hook names when
+  enabling the package’s own inferred `PACKAGE-mode`, and explicit
+  `(HOOK . FUNCTION)` pairs for other callbacks. Use `:custom` for user options.
+  Keep mode activation, advice, list updates and upstream hook removal in
+  `:config`. Use `:init` only when setup must precede package loading.
+- Retain explicit `add-hook` calls for abnormal hook names such as
+  `after-make-frame-functions`, required ordering, or registrations that must
+  wait for the owning package to load. Explain the exception beside the code.
+- Use `:bind` for command bindings and `:bind-keymap` for prefix maps. Keep
+  package links beneath their owning heading, never above it.
+- Describe custom helpers and integration hooks in the surrounding prose,
+  including what they change and why their load timing matters.
+- Write prose as single-line paragraphs for soft wrapping. Source blocks with
+  the same tangle destination are concatenated in document order; split
+  complete Lisp forms into separate blocks when that helps annotation, but
+  keep each package declaration together.
+- Subtree `header-args:emacs-lisp+` properties override only the destination,
+  inheriting common arguments from the file header. Generated-file comments
+  and lexical-binding headers belong inside Lisp blocks, not in prose.
+
 ## Generate and inspect locally
 
 From the worktree root:

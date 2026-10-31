@@ -53,8 +53,9 @@ my-agent-session.el ── starts fresh conversations through ──► agent-sh
   `my/agent-session-start-from-file` creates a worktree and submits a saved task;
   `my/agent-session-start-new-worktree` creates an ad hoc worktree; and
   `my/agent-session-start-in-directory` starts ad hoc in an exact chosen directory.
-  They share Git/startup internals, with no dispatcher. The generated agent module binds the global
-  `C-c a f` to the file launcher's normal task picker. Saved-snapshot validation and all launch choices,
+  They share Git/startup internals, with no dispatcher. The generated agent module
+  autoloads these commands for `M-x`, without a global agent prefix map.
+  Saved-snapshot validation and all launch choices,
   operations and failure handling remain with the launcher; capture remains file-only.
   Session/worktree cleanup remains a separate human-coordinated action, not
   agent orchestration. See `../../../docs/agent-session.md` for launch/failure policy.

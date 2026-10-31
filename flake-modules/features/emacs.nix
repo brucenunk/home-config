@@ -277,13 +277,20 @@ in
           let
             emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;
           in
-          pkgs.runCommand "emacs-deferred-check" { nativeBuildInputs = [ emacs ]; } ''
-            export HOME="$TMPDIR/home"
-            mkdir -p "$HOME"
-            emacs --batch -Q ${emacsTestPaths} \
-              --load my-emacs-deferred-tests --funcall ert-run-tests-batch-and-exit
-            touch "$out"
-          '';
+          pkgs.runCommand "emacs-deferred-check"
+            {
+              nativeBuildInputs = [
+                emacs
+                pkgs.git
+              ];
+            }
+            ''
+              export HOME="$TMPDIR/home"
+              mkdir -p "$HOME"
+              emacs --batch -Q ${emacsTestPaths} \
+                --load my-emacs-deferred-tests --funcall ert-run-tests-batch-and-exit
+              touch "$out"
+            '';
         emacs-mode-selection =
           let
             emacs = (mkManagedHome [ ]).config.programs.emacs.finalPackage;

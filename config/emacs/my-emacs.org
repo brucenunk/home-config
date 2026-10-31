@@ -1,31 +1,20 @@
 #+title: Emacs configuration
-#+startup: overview
 #+property: header-args:emacs-lisp :tangle no :mkdirp yes :comments no :results silent
 
-This is the authoring entry point for our Emacs configuration, inspired by
-[[https://protesilaos.com/emacs/dotemacs][Prot's literate configuration]]. It records what is enabled and why. The
-implementation lives in [[file:my-lisp/][my-lisp/]]; tests live in [[file:tests/][tests/]].
+This is the authoring entry point for our Emacs configuration, inspired by [[https://protesilaos.com/emacs/dotemacs][Prot's literate configuration]]. It records what is enabled and why. The implementation lives in [[file:my-lisp/][my-lisp/]]; tests live in [[file:tests/][tests/]].
 
-Nix tangles this document during the build and deploys ordinary Lisp. Emacs
-never parses this document at startup. Do not edit the generated files.
-Use =scripts/tangle-emacs-config OUTPUT-DIRECTORY= for a disposable local
-render; see [[file:../../docs/emacs-literate.md][the maintenance guide]] for verification and deployment boundaries.
+Nix tangles this document during the build and deploys ordinary Lisp. Emacs never parses this document at startup. Do not edit the generated files. Use =scripts/tangle-emacs-config OUTPUT-DIRECTORY= for a disposable local render; see [[file:../../docs/emacs-literate.md][the maintenance guide]] for verification and deployment boundaries.
 
-Nix owns package and tree-sitter grammar installation. =use-package= only
-configures those packages. Each package has one owning declaration. Hooks,
-key bindings, settings and integration calls stay here; function bodies stay
-in handwritten libraries. Unknown rationale is marked with a =# TODO:= comment.
+Nix owns package and tree-sitter grammar installation. =use-package= only configures those packages. Each package has one owning declaration. Hooks, key bindings, settings and integration calls stay here; function bodies stay in handwritten libraries. The prose describes the current behaviour and trade-offs without assuming undocumented historical reasons.
 
 * Early startup
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle early-init.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle early-init.el
 :END:
 
-Avoid startup chrome and keep package provisioning in Nix. Package activation
-remains enabled so Nix-provided autoloads are available. The Custom file is a
-local override, not a second repository-maintained configuration source.
+Avoid startup chrome and keep package provisioning in Nix. Package activation remains enabled so Nix-provided autoloads are available. The Custom file is a local override, not a second repository-maintained configuration source.
 
-# TODO: Revisit the historical backup, lockfile and warning policies.
+Disable backup copies and lockfiles, keeping those extra files out of working directories. This gives up Emacs’s backup-copy recovery and file-lock coordination between editing processes; it does not disable auto-save. Silence native-compilation warning reports to reduce noise, at the cost of making compilation problems less visible. These are existing policies, not recommendations imported from the reference configuration.
 
 #+begin_src emacs-lisp
 ;; -*- lexical-binding: t -*-
@@ -56,16 +45,12 @@ local override, not a second repository-maintained configuration source.
 
 * Load order and local overrides
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle init.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle init.el
 :END:
 
-Load handwritten libraries and generated configuration through separate paths.
-The agent catalogue is trusted generated configuration; reload it explicitly
-with =M-x my/agent-catalogue-reload= after inventory activation.
+Load handwritten libraries and generated configuration through separate paths. The agent catalogue is trusted generated configuration; reload it explicitly with =M-x my/agent-catalogue-reload= after inventory activation.
 
-Capability modules are loaded alphabetically. Dependencies belong in the owning
-module through explicit requirements or deferred registration, not in this list's
-ordering. Org and Markdown have named modules rather than being part of editing.
+Capability modules are loaded alphabetically. Dependencies belong in the owning module through explicit requirements or deferred registration, not in this list's ordering. Org and Markdown have named modules rather than being part of editing.
 
 #+begin_src emacs-lisp
 ;; -*- lexical-binding: t -*-
@@ -112,7 +97,7 @@ Keep the existing server if one is running. Load local Custom overrides last.
 
 * Basic editing
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-editing.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-editing.el
 :END:
 
 Implementation: [[file:my-lisp/my-editing.el][my-editing.el]].
@@ -125,8 +110,7 @@ Implementation: [[file:my-lisp/my-editing.el][my-editing.el]].
 
 ** Editing defaults
 
-Use short, quiet interactions and spaces for indentation. The stale-file policy
-refreshes unmodified buffers, but preserves edits already made in memory.
+Use short, quiet interactions and spaces for indentation. The stale-file policy refreshes unmodified buffers, but preserves edits already made in memory.
 
 #+begin_src emacs-lisp
 (use-package emacs
@@ -148,7 +132,7 @@ refreshes unmodified buffers, but preserves edits already made in memory.
 
 ** editorconfig
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Respect each project’s =.editorconfig= for indentation and other supported file settings instead of imposing one global style. Global EditorConfig mode allows project rules to override the editing defaults above.
 
 #+begin_src emacs-lisp
 (use-package editorconfig
@@ -159,15 +143,12 @@ refreshes unmodified buffers, but preserves edits already made in memory.
 
 ** Spelling
 
-Use Australian English by default, with US English also installed for explicit
-switching. Check prose, comments and docstrings without treating ordinary
-programming strings as prose. Keep both correction bindings visible below.
+Use Australian English by default, with US English also installed for explicit switching. Check prose, comments and docstrings without treating ordinary programming strings as prose. Keep both correction bindings visible below.
 
 #+begin_src emacs-lisp
 (use-package jinx
   :ensure nil
-  :hook ((text-mode . jinx-mode)
-         (prog-mode . jinx-mode))
+  :hook (text-mode prog-mode)
   :bind (("M-$" . jinx-correct)
          ("C-M-$" . jinx-languages))
   :custom
@@ -182,7 +163,7 @@ programming strings as prose. Keep both correction bindings visible below.
 
 ** rainbow-delimiters
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Colour nested delimiters by depth in programming buffers to make matching structure easier to follow, especially in Lisp. This is a visual aid, not a change to delimiter insertion or parsing.
 
 #+begin_src emacs-lisp
 (use-package rainbow-delimiters
@@ -192,7 +173,7 @@ programming strings as prose. Keep both correction bindings visible below.
 
 ** ws-butler
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Remove trailing whitespace from lines touched while editing programming buffers. Leave untouched lines alone to avoid unrelated whitespace changes in diffs.
 
 #+begin_src emacs-lisp
 (use-package ws-butler
@@ -202,8 +183,7 @@ programming strings as prose. Keep both correction bindings visible below.
 
 ** Refresh changed files
 
-Refresh files and non-file buffers using native notifications where available.
-This controls revert prompts; the stale-file editing policy above is separate.
+Refresh files and non-file buffers using native notifications where available. This controls revert prompts; the stale-file editing policy above is separate.
 
 #+begin_src emacs-lisp
 (use-package autorevert
@@ -223,7 +203,7 @@ This controls revert prompts; the stale-file editing policy above is separate.
 
 * Appearance and windows
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-ui.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-ui.el
 :END:
 
 Implementation: [[file:my-lisp/my-ui.el][my-ui.el]].
@@ -234,19 +214,11 @@ Implementation: [[file:my-lisp/my-ui.el][my-ui.el]].
 (require 'my-ui)
 #+end_src
 
-#+begin_src emacs-lisp
-(add-hook 'agent-shell-mode-hook #'my/agent-shell-header-no-underline)
-(add-hook 'agent-shell-viewport-view-mode-hook #'my/agent-shell-header-no-underline)
-(add-hook 'agent-shell-viewport-edit-mode-hook #'my/agent-shell-header-no-underline)
-
-;; https://github.com/protesilaos/doric-themes
-#+end_src
-
 ** Doric themes
 
-Preload the light and dark theme definitions before auto-dark selects one.
-The helper handles Doric definitions that are not registered by requiring the
-package library alone.
+Upstream: [[https://github.com/protesilaos/doric-themes][package homepage]].
+
+Preload the light and dark theme definitions before auto-dark selects one. The helper handles Doric definitions that are not registered by requiring the package library alone.
 
 #+begin_src emacs-lisp
 (use-package doric-themes
@@ -256,12 +228,11 @@ package library alone.
   (mapc #'my/doric-theme-preload '(doric-obsidian doric-earth)))
 #+end_src
 
-https://github.com/LionyxML/auto-dark-emacs
-
 ** Follow system appearance
 
-Use Doric Obsidian in dark mode and Doric Earth in light mode. Demand this
-once rather than tying it to Doric reloads, which can repeat configuration.
+Upstream: [[https://github.com/LionyxML/auto-dark-emacs][package homepage]].
+
+Use Doric Obsidian in dark mode and Doric Earth in light mode. Demand this once rather than tying it to Doric reloads, which can repeat configuration.
 
 #+begin_src emacs-lisp
 (use-package auto-dark
@@ -276,16 +247,16 @@ once rather than tying it to Doric reloads, which can repeat configuration.
   (auto-dark-mode 1))
 #+end_src
 
-https://github.com/protesilaos/spacious-padding
-
 ** spacious-padding
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Upstream: [[https://github.com/protesilaos/spacious-padding][package homepage]].
+
+Give windows and UI elements more breathing room. Use subtle mode-line and header-line separators rather than prominent boxes; the configured faces follow the active theme.
 
 #+begin_src emacs-lisp
 (use-package spacious-padding
   :ensure nil
-  :hook (after-init . spacious-padding-mode)
+  :hook after-init
   :custom
   (spacious-padding-subtle-frame-lines
       '( :mode-line-active spacious-padding-line-active
@@ -294,22 +265,22 @@ https://github.com/protesilaos/spacious-padding
          :header-line-inactive spacious-padding-line-inactive)))
 #+end_src
 
-https://github.com/protesilaos/fontaine
-
 ** Font presets
 
-Use Aporetic Serif Mono for code and Bricolage Grotesque for prose. Restore a
-known preset when graphical frames appear; terminal frames are left alone.
+Upstream: [[https://github.com/protesilaos/fontaine][package homepage]].
+
+Use Aporetic Serif Mono for code and Bricolage Grotesque for prose. =my/fontaine-setup-frame= restores a known preset after startup and when a frame is created, leaving terminal frames alone. Register =after-make-frame-functions= explicitly because it is an abnormal hook that receives the new frame, not a conventional =-hook= variable.
 
 #+begin_src emacs-lisp
 (use-package fontaine
   :ensure nil
-  :hook
-  ((after-init . my/fontaine-setup-frame)
-   (after-make-frame-functions . my/fontaine-setup-frame))
+  :hook (after-init . my/fontaine-setup-frame)
   :bind ("C-c F" . fontaine-set-preset)
-  :config
-  (setq fontaine-presets
+  :init
+  ;; This abnormal hook takes a frame and has no conventional -hook suffix.
+  (add-hook 'after-make-frame-functions #'my/fontaine-setup-frame)
+  :custom
+  (fontaine-presets
         '((t
            :default-family "Aporetic Serif Mono"
            :default-height 130
@@ -327,16 +298,19 @@ known preset when graphical frames appear; terminal frames are left alone.
 
 ** Prose with fixed-width code
 
-Org, Markdown and agent viewports use mixed-pitch text. Keep code and tables
-fixed-width, including renderer-specific faces. Refresh remaps after font changes.
+Org, Markdown and agent viewports use mixed-pitch text. Keep these shared mode hooks in the single =mixed-pitch= declaration: the package being enabled owns the registration, even when several features use it. Keep code and tables fixed-width, including renderer-specific faces.
+
+=my/viewport-prompt-variable-pitch= lets echoed viewport prompts use the prose font without changing documentation faces. =my/refresh-mixed-pitch-mode= reapplies active remaps after Fontaine changes fonts. Keep all six registrations together in =:hook=. Bare mode names enable =mixed-pitch-mode= by convention; explicit pairs name our custom callbacks. The font-refresh helper ignores buffers where mixed-pitch is not active, including before the package loads. Agent-specific header styling is configured in [[*Pi and the viewport interface][Agents]].
 
 #+begin_src emacs-lisp
 (use-package mixed-pitch
   :ensure nil
-  :hook ((markdown-mode . mixed-pitch-mode)
-         (org-mode . mixed-pitch-mode)
-         (agent-shell-viewport-view-mode . mixed-pitch-mode)
-         (agent-shell-viewport-edit-mode . mixed-pitch-mode))
+  :hook (markdown-mode
+         org-mode
+         agent-shell-viewport-view-mode
+         agent-shell-viewport-edit-mode
+         (mixed-pitch-mode . my/viewport-prompt-variable-pitch)
+         (fontaine-set-preset . my/refresh-mixed-pitch-mode))
   :config
   ;; mixed-pitch already keeps Org blocks, code/verbatim, tables, metadata,
   ;; checkboxes, and indentation fixed-pitch; retain its native face list.
@@ -350,17 +324,12 @@ fixed-width, including renderer-specific faces. Refresh remaps after font change
                   agent-shell-markdown-inline-code
                   agent-shell-markdown-source-block
                   agent-shell-markdown-table))
-    (add-to-list 'mixed-pitch-fixed-pitch-faces face))
-  (add-hook 'mixed-pitch-mode-hook #'my/viewport-prompt-variable-pitch)
-  (add-hook 'fontaine-set-preset-hook #'my/refresh-mixed-pitch-mode))
+    (add-to-list 'mixed-pitch-fixed-pitch-faces face)))
 #+end_src
-
-On-demand writing view; Nix supplies the package and its dependencies.
 
 ** An optional writing view
 
-Writeroom is explicit and buffer-local: wrap and enlarge text while active,
-then restore the previous wrapping and scale without restoring a window layout.
+Writeroom is explicit and buffer-local: wrap and enlarge text while active, then restore the previous wrapping and scale without restoring a window layout.
 
 #+begin_src emacs-lisp
 (use-package writeroom-mode
@@ -375,7 +344,7 @@ then restore the previous wrapping and scale without restoring a window layout.
 
 ** pulsar
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Briefly highlight the current line after supported navigation commands so it is easier to find point after a jump. Use the package’s generic highlight face and enable the behaviour globally.
 
 #+begin_src emacs-lisp
 (use-package pulsar
@@ -388,15 +357,14 @@ then restore the previous wrapping and scale without restoring a window layout.
 
 ** Selection highlighting
 
-Retain Doric’s native selection colour rather than substituting a separate
-palette. Spacious Padding supplies the subtle frame lines.
+Retain Doric’s native selection colour rather than substituting a separate palette. Spacious Padding supplies the subtle frame lines.
 
 #+begin_src emacs-lisp
 (use-package lin
   :ensure nil
+  :custom
+  (lin-face 'hl-line)
   :config
-  ;; Keep Doric's bg-accent selection colour.
-  (setq lin-face 'hl-line)
   (lin-global-mode))
 #+end_src
 
@@ -421,8 +389,7 @@ palette. Spacious Padding supplies the subtle frame lines.
 
 ** Native clock
 
-Use Emacs’s minute-aligned clock. The custom mode line consumes native VC,
-process and Flymake constructs without redisplay-time subprocesses.
+Use Emacs’s minute-aligned clock. The custom mode line consumes native VC, process and Flymake constructs without redisplay-time subprocesses.
 
 #+begin_src emacs-lisp
 (use-package time
@@ -444,7 +411,7 @@ process and Flymake constructs without redisplay-time subprocesses.
 
 * Completion and search
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-completion.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-completion.el
 :END:
 
 Implementation: [[file:my-lisp/my-completion.el][my-completion.el]].
@@ -457,41 +424,40 @@ Implementation: [[file:my-lisp/my-completion.el][my-completion.el]].
 
 ** savehist
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Keep minibuffer history across Emacs sessions so repeated commands and inputs remain easy to recall. Save it in the Emacs configuration directory, remove duplicates and limit history to 100 entries. Saved inputs persist on disk, so this history is not suitable for secrets.
 
 #+begin_src emacs-lisp
 (use-package savehist
   :ensure nil
-  :hook (after-init . savehist-mode)
-  :config
-  (setq savehist-file (locate-user-emacs-file "savehist"))
-  (setq history-length 100)
-  (setq history-delete-duplicates t)
-  (setq savehist-save-minibuffer-history t))
+  :hook after-init
+  :custom
+  (savehist-file (locate-user-emacs-file "savehist"))
+  (history-length 100)
+  (history-delete-duplicates t)
+  (savehist-save-minibuffer-history t))
 #+end_src
 
 ** which-key
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Show available key continuations after a 1.5-second pause on an unfinished prefix. This makes less familiar bindings discoverable without interrupting quick key sequences; the remaining settings keep the popup compact.
 
 #+begin_src emacs-lisp
 (use-package which-key
   :ensure nil
-  :hook (after-init . which-key-mode)
-  :config
-  (setq which-key-add-column-padding 1)
-  (setq which-key-idle-delay 1.5)
-  (setq which-key-max-description-length 40)
-  (setq which-key-prefix-prefix "... ")
-  (setq which-key-separator "  "))
+  :hook after-init
+  :custom
+  (which-key-add-column-padding 1)
+  (which-key-idle-delay 1.5)
+  (which-key-max-description-length 40)
+  (which-key-prefix-prefix "... ")
+  (which-key-separator "  "))
 #+end_src
-
-Pimp the minibuffer.
-https://github.com/minad/vertico
 
 ** vertico
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Upstream: [[https://github.com/minad/vertico][package homepage]].
+
+Present minibuffer completion candidates in a vertical list. When navigating directories, tidy shadowed path components through =vertico-directory-tidy= so the active path stays readable.
 
 #+begin_src emacs-lisp
 (use-package vertico
@@ -501,11 +467,11 @@ https://github.com/minad/vertico
   (vertico-mode))
 #+end_src
 
-https://github.com/oantolin/orderless
-
 ** orderless
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Upstream: [[https://github.com/oantolin/orderless][package homepage]].
+
+Match completion candidates using space-separated components in any order, with basic completion as a fallback. File completion instead uses basic and partial completion to retain ordinary path navigation.
 
 #+begin_src emacs-lisp
 (use-package orderless
@@ -515,12 +481,11 @@ https://github.com/oantolin/orderless
   (completion-category-overrides '((file (styles basic partial-completion)))))
 #+end_src
 
-https://github.com/minad/marginalia
-
 ** Candidate annotations
 
-Annotate local project directories with their Git branch by reading HEAD,
-including worktree gitdir pointers. Other candidates keep native annotations.
+Upstream: [[https://github.com/minad/marginalia][package homepage]].
+
+Annotate local project directories with their Git branch by reading HEAD, including worktree gitdir pointers. Other candidates keep native annotations.
 
 #+begin_src emacs-lisp
 (use-package marginalia
@@ -535,13 +500,11 @@ including worktree gitdir pointers. Other candidates keep native annotations.
                       (alist-get 'project-file marginalia-annotators)))))
 #+end_src
 
-Completion.
-https://github.com/minad/corfu
-
 ** In-buffer completion
 
-Enable automatic completion in programming, Eshell and agent composers,
-not ordinary prose. Set the defaults before enabling the global mode.
+Upstream: [[https://github.com/minad/corfu][package homepage]].
+
+Enable automatic completion in programming, Eshell and agent composers, not ordinary prose. Set the defaults before enabling the global mode.
 
 #+begin_src emacs-lisp
 (use-package corfu
@@ -568,42 +531,38 @@ not ordinary prose. Set the defaults before enabling the global mode.
   (global-corfu-mode))
 #+end_src
 
-https://github.com/minad/cape
-
 ** Explicit file and word completion
 
-Automatic file completion only handles explicit paths, leaving prose, URLs,
-mentions and slash commands alone. =C-c p f= offers manual file completion;
-a prefix argument chooses a temporary base directory. Dabbrev starts at three
-characters and follows file completion in the fallback chain.
+Upstream: [[https://github.com/minad/cape][package homepage]].
+
+Automatic file completion only handles explicit paths, leaving prose, URLs, mentions and slash commands alone. =C-c p f= offers manual file completion; a prefix argument chooses a temporary base directory. Dabbrev starts at three characters and follows file completion in the fallback chain. Use =:bind-keymap= for the global prefix and =:bind= for the command within Cape’s existing map. The explicit CAPF hooks retain depths 80 and 90 so file completion runs before Dabbrev.
 
 #+begin_src emacs-lisp
 (use-package cape
   :ensure nil
   :demand t
+  :bind-keymap ("C-c p" . cape-prefix-map)
+  :bind (:map cape-prefix-map
+              ("f" . my/cape-file))
   :config
-
-  (keymap-set cape-prefix-map "f" #'my/cape-file)
-  (keymap-global-set "C-c p" cape-prefix-map)
   (add-hook 'completion-at-point-functions #'my/cape-explicit-file-capf 80)
   (add-hook 'completion-at-point-functions #'my/cape-dabbrev-capf 90))
 #+end_src
 
 ** corfu-popupinfo
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Show documentation for the selected Corfu candidate alongside the completion popup. Wait 0.2 seconds initially and 0.1 seconds when moving between candidates, favouring quick reference at the cost of an additional popup.
 
 #+begin_src emacs-lisp
 (use-package corfu-popupinfo
   :ensure nil
-  :hook (corfu-mode . corfu-popupinfo-mode)
+  :hook corfu-mode
   :custom (corfu-popupinfo-delay '(0.2 . 0.1)))
 #+end_src
 
 ** Search and navigation
 
-Use Consult previews for buffers, search, diagnostics and xref locations.
-Keep the ordinary line search and the symbol-seeded variant as separate commands.
+Use Consult previews for buffers, search, diagnostics and xref locations. Keep the ordinary line search and the symbol-seeded variant as separate commands.
 
 #+begin_src emacs-lisp
 (use-package consult
@@ -639,7 +598,7 @@ Keep the ordinary line search and the symbol-seeded variant as separate commands
 
 ** embark
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Use =C-.= to act on the target at point or the current minibuffer candidate. Embark offers context-specific actions without first copying the target into a separate command.
 
 #+begin_src emacs-lisp
 (use-package embark
@@ -650,9 +609,7 @@ Keep the ordinary line search and the symbol-seeded variant as separate commands
 
 ** Search actions and previews
 
-Register agent reference actions only when the agent implementation and
-Embark/Consult are available. Completion must not force agent-shell to load.
-The retained deferred form is a genuine cross-module integration gate.
+Register agent reference actions only when the agent implementation and Embark/Consult are available. Completion must not force agent-shell to load. The retained deferred form is a genuine cross-module integration gate.
 
 #+begin_src emacs-lisp
 (use-package embark-consult
@@ -669,11 +626,11 @@ The retained deferred form is a genuine cross-module integration gate.
     (my/agent-shell-register-reference-actions)))
 #+end_src
 
-https://github.com/abo-abo/avy
-
 ** avy
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Upstream: [[https://github.com/abo-abo/avy][package homepage]].
+
+Use =M-s c= to jump to visible text with character-based target selection across all windows. The configured label keys and De Bruijn style control target labels; dispatch actions can copy, move, kill or yank at a target instead of just visiting it.
 
 #+begin_src emacs-lisp
 (use-package avy
@@ -696,7 +653,7 @@ https://github.com/abo-abo/avy
 
 ** wgrep
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Keep editable grep results available on demand for changes spanning search matches. Edits in a results buffer must be applied back to the source buffers; this declaration adds no automatic activation or custom binding.
 
 #+begin_src emacs-lisp
 (use-package wgrep
@@ -711,29 +668,30 @@ https://github.com/abo-abo/avy
 
 * Files and Dired
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-dired.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-dired.el
 :END:
 
-my-emacs-dired.el --- Generated from my-emacs.org -*- lexical-binding: t -*-
-Do not edit this file; edit my-emacs.org instead.
+#+begin_src emacs-lisp
+;;; my-emacs-dired.el --- Generated from my-emacs.org -*- lexical-binding: t -*-
+;; Do not edit this file; edit my-emacs.org instead.
+#+end_src
 
 ** Dired
 
-Hide details by default, refresh directory listings, and use another Dired
-window as the likely copy/move target.
+Hide details by default, refresh directory listings, and use another Dired window as the likely copy/move target.
 
-# TODO: Confirm the rationale for recursive operations and trash defaults.
+Allow recursive directory copies and deletions without a separate recursion prompt. Prefer moving deleted files to the trash where supported, but do not treat trash as a guaranteed recovery mechanism. These convenience settings reduce confirmation steps and warrant care with directory selections; the remote configuration below disables trash for remote files.
 
 #+begin_src emacs-lisp
 (use-package dired
   :ensure nil
   :hook ((dired-mode . dired-hide-details-mode)
          (dired-mode . auto-revert-mode))
-  :config
-  (setq delete-by-moving-to-trash t)
-  (setq dired-dwim-target t)
-  (setq dired-recursive-copies 'always)
-  (setq dired-recursive-deletes 'always))
+  :custom
+  (delete-by-moving-to-trash t)
+  (dired-dwim-target t)
+  (dired-recursive-copies 'always)
+  (dired-recursive-deletes 'always))
 #+end_src
 
 #+begin_src emacs-lisp
@@ -743,7 +701,7 @@ window as the likely copy/move target.
 
 * Org
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-org.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-org.el
 :END:
 
 Implementation: [[file:my-lisp/my-editing.el][my-editing.el]].
@@ -756,9 +714,9 @@ Implementation: [[file:my-lisp/my-editing.el][my-editing.el]].
 
 ** Org editing and presentation
 
-Soft-wrap prose without inserting physical newlines or showing continuation
-indicators. Distinguish comment blocks with theme-derived shadow styling and
-restore heading scale after a theme changes the underlying faces.
+The =org-mode= hook calls =my/prose-wrap= to enable soft wrapping and hide continuation indicators without inserting physical newlines. Advice around Org’s block fontifier calls =my/org-fontify-comment-block= to give comment blocks theme-derived shadow styling.
+
+=my/org-refresh-heading-scaling= restores heading sizes immediately and after a theme changes the underlying faces. Keep =enable-theme-functions= registration in =:config=: it receives a theme argument and should not run this Org-specific helper before Org has loaded.
 
 #+begin_src emacs-lisp
 (use-package org
@@ -779,7 +737,7 @@ restore heading scale after a theme changes the underlying faces.
 
 * Writing and Markdown
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-writing.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-writing.el
 :END:
 
 Implementation: [[file:my-lisp/my-editing.el][my-editing.el]].
@@ -792,10 +750,9 @@ Implementation: [[file:my-lisp/my-editing.el][my-editing.el]].
 
 ** Markdown
 
-Keep existing Markdown files first-class even though new notes default to Org.
-Use soft wrapping, native code fontification and scaled headings. Local file
-links open in another window; URLs and externally opened images retain native
-behaviour.
+Keep existing Markdown files first-class even though new notes default to Org. The mode hook calls =my/prose-wrap= for soft wrapping without inserting physical newlines. Use native code fontification and scaled headings.
+
+=my/markdown-refresh-heading-scaling= restores heading sizes after a theme changes them; register that theme callback only after Markdown loads. =my/markdown-follow-file-link-other-window= opens local file links in another window, leaving URLs and externally opened images to native handling. The explicit =add-hook= forms stay in =:config= for these package-loaded integrations.
 
 #+begin_src emacs-lisp
 (use-package markdown-mode
@@ -820,7 +777,7 @@ behaviour.
 
 * Denote and tasks
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-denote.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-denote.el
 :END:
 
 Implementation: [[file:my-lisp/my-denote.el][my-denote.el]].
@@ -833,38 +790,39 @@ Implementation: [[file:my-lisp/my-denote.el][my-denote.el]].
 
 ** Notes and task capture
 
-New notes use Org under =~/work/docs/=; task capture remains scoped to its
-=tasks/= subtree. Show notes on empty startup without replacing explicitly
-requested buffers. Defer new-note refresh and renaming until the file exists.
-Task-specific debounce and redisplay advice is installed through the helper
-registration call below, without forcing autorevert to load. Its library option
-=my/denote-task-auto-revert-debounce-interval= defaults to 0.3 seconds.
+New notes use Org under =~/work/docs/=; task capture remains scoped to its =tasks/= subtree. Show notes on empty startup without replacing explicitly requested buffers. Defer new-note refresh and renaming until the file exists. Task-specific debounce and redisplay advice is installed through the helper registration call below, without forcing autorevert to load. Its library option =my/denote-task-auto-revert-debounce-interval= defaults to 0.3 seconds.
+
+The Dired hook identifies notes in the configured collection, and the Markdown hook highlights Denote links in existing Markdown notes. =my/denote-startup= opens the notes view only on an otherwise empty startup. =my/denote-rename-new-buffer-maybe= defers buffer naming until a new note exists, replacing Denote’s immediate rename hooks. =my/denote-task-auto-revert-enable-maybe= enables refresh only for task files.
+
+The link advice =my/denote-link-normalize-file-arg= normalizes file arguments before inserting links. The collection-specific revert rule permits unattended refresh of unmodified notes. =my/denote-register-auto-revert= installs the task debounce and redisplay integration regardless of whether autorevert loads before or after Denote, without loading it eagerly. Settings belong in =:custom=; enabling modes, removing upstream hooks, adding advice and registering that integration belong in =:config=.
 
 #+begin_src emacs-lisp
 (use-package denote
   :ensure nil
-  :init
-  (add-hook 'emacs-startup-hook #'my/denote-startup)
   :demand t
-  :hook ((dired-mode    . denote-dired-mode-in-directories)
-         (markdown-mode . denote-fontify-links-mode-maybe))
+  :hook ((emacs-startup . my/denote-startup)
+         (dired-mode . denote-dired-mode-in-directories)
+         (markdown-mode . denote-fontify-links-mode-maybe)
+         (denote-after-new-note . my/denote-rename-new-buffer-maybe)
+         (find-file . my/denote-rename-new-buffer-maybe)
+         (find-file . my/denote-task-auto-revert-enable-maybe))
   :bind (("C-c n T" . my/denote-task)
          ("C-c n n" . denote)
          ("C-c n t" . denote-template)
          ("C-c n r" . denote-rename-file)
          ("C-c n l" . denote-link)
          ("C-c n b" . denote-backlinks))
+  :custom
+  (denote-directory (expand-file-name "~/work/docs/"))
+  (denote-dired-directories (list denote-directory))
+  (denote-dired-directories-include-subdirectories t)
+  (denote-known-keywords nil)
+  (denote-file-type 'org)
+  (denote-rename-confirmations nil)
+  (denote-templates
+   '((task-workflow . (lambda () (my/denote-template "task-workflow.org")))))
   :config
   (require 'my-denote-task)
-  (setq denote-templates
-        '((task-workflow . (lambda () (my/denote-template "task-workflow.org")))))
-  (setq denote-directory (expand-file-name "~/work/docs/"))
-  (setq denote-dired-directories (list denote-directory))
-  (setq denote-dired-directories-include-subdirectories t)
-  (setq denote-known-keywords nil)
-  (setq denote-file-type 'org)
-  (setq denote-rename-confirmations nil)
-
   (advice-add #'denote-link :around #'my/denote-link-normalize-file-arg)
   (add-to-list 'revert-without-query
                (concat "^" (regexp-quote (file-name-as-directory denote-directory))))
@@ -872,14 +830,13 @@ registration call below, without forcing autorevert to load. Its library option
   (remove-hook 'denote-after-new-note-hook
                #'denote-rename-buffer-rename-function-or-fallback)
   (remove-hook 'find-file-hook #'denote-rename-buffer-rename-function-or-fallback)
-  (add-hook 'denote-after-new-note-hook #'my/denote-rename-new-buffer-maybe)
-  (add-hook 'find-file-hook #'my/denote-rename-new-buffer-maybe))
+  ;; Genuine Denote/autorevert integration; support either package load order.
+  (my/denote-register-auto-revert))
 #+end_src
 
 ** Find and search notes
 
-Use Consult’s fd-based finder and grep integration over the Denote collection.
-The bindings below complement native Denote links and backlinks.
+Use Consult’s fd-based finder and grep integration over the Denote collection. The bindings below complement native Denote links and backlinks.
 
 #+begin_src emacs-lisp
 (use-package consult-denote
@@ -887,17 +844,10 @@ The bindings below complement native Denote links and backlinks.
   :after denote
   :bind (("C-c n f" . consult-denote-find)
          ("C-c n g" . consult-denote-grep))
+  :custom
+  (consult-denote-find-command #'consult-fd)
   :config
-  (setq consult-denote-find-command #'consult-fd)
   (consult-denote-mode 1))
-#+end_src
-
-#+begin_src emacs-lisp
-(add-hook 'find-file-hook #'my/denote-task-auto-revert-enable-maybe)
-
-;; Task-specific integration belongs here, not in the general editing module's
-;; autorevert declaration.  Support either load order without loading autorevert.
-(my/denote-register-auto-revert)
 #+end_src
 
 #+begin_src emacs-lisp
@@ -907,21 +857,17 @@ The bindings below complement native Denote links and backlinks.
 
 * Projects and version control
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-git.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-git.el
 :END:
 
-my-emacs-git.el --- Generated from my-emacs.org -*- lexical-binding: t -*-
-Do not edit this file; edit my-emacs.org instead.
-
 #+begin_src emacs-lisp
-(defvar forge-add-default-sections)
-(defvar forge-add-pullreq-refspec)
+;;; my-emacs-git.el --- Generated from my-emacs.org -*- lexical-binding: t -*-
+;; Do not edit this file; edit my-emacs.org instead.
 #+end_src
 
 ** Change indicators
 
-Show unsaved local changes with Flydiff; remote buffers remain save-driven.
-=M-x diff-hl-flydiff-mode= returns to save-driven updates.
+Show unsaved local changes with Flydiff; remote buffers remain save-driven. =M-x diff-hl-flydiff-mode= returns to save-driven updates.
 
 #+begin_src emacs-lisp
 (use-package diff-hl
@@ -937,7 +883,7 @@ Show unsaved local changes with Flydiff; remote buffers remain save-driven.
 
 ** magit
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Use =C-c g= for Magit’s repository dispatch and =C-c f= for file-specific Git actions. The =magit-mode= hook enables soft wrapping for long messages and descriptions. Forge’s options belong in its own declaration below.
 
 #+begin_src emacs-lisp
 (use-package magit
@@ -945,17 +891,12 @@ Show unsaved local changes with Flydiff; remote buffers remain save-driven.
   :bind
   (("C-c f" . magit-file-dispatch)
    ("C-c g" . magit-dispatch))
-  :hook (magit-mode . visual-line-mode)
-  :init
-  (setq forge-add-default-sections nil
-        forge-add-pullreq-refspec nil))
+  :hook (magit-mode . visual-line-mode))
 #+end_src
 
 ** Quote a diff to an agent
 
-=C-c r= quotes the active diff region into an existing agent composer. The
-Magit diff subfeature can load independently, so its map is configured here
-rather than waiting for the parent Magit feature.
+=C-c r= quotes the active diff region into an existing agent composer. The Magit diff subfeature can load independently, so its map is configured here rather than waiting for the parent Magit feature.
 
 #+begin_src emacs-lisp
 (use-package magit-diff
@@ -968,17 +909,22 @@ rather than waiting for the parent Magit feature.
 
 ** forge
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Make forge-host issue and pull-request workflows available alongside Magit. Keep its declaration ordered after Magit, leaving default status sections and pull-request refspec additions disabled. =forge-add-pullreq-refspec= is a Custom option; =forge-add-default-sections= is a plain variable that Forge reads while loading, so set its default explicitly in =:init=. Neither needs a standalone forward =defvar= here.
 
 #+begin_src emacs-lisp
 (use-package forge
   :ensure nil
-  :after magit)
+  :after magit
+  :init
+  ;; Plain variable, not a Custom option; Forge reads it during loading.
+  (set-default 'forge-add-default-sections nil)
+  :custom
+  (forge-add-pullreq-refspec nil))
 #+end_src
 
 ** project
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Use Emacs’s built-in project support without additional package-specific settings here. This declaration is ordered after Magit; the Ghostel integration below owns the extra project-switch action.
 
 #+begin_src emacs-lisp
 (use-package project
@@ -988,7 +934,7 @@ rather than waiting for the parent Magit feature.
 
 ** ediff
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Keep Ediff’s control panel in the existing frame rather than creating a separate control frame. Load the comparison interface only when needed.
 
 #+begin_src emacs-lisp
 (use-package ediff
@@ -1005,7 +951,7 @@ rather than waiting for the parent Magit feature.
 
 * Languages and diagnostics
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-languages.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-languages.el
 :END:
 
 Implementation: [[file:my-lisp/my-languages.el][my-languages.el]].
@@ -1018,9 +964,7 @@ Implementation: [[file:my-lisp/my-languages.el][my-languages.el]].
 
 ** Tree-sitter mode selection
 
-Nix installs a curated grammar set. Use the Custom setter to register Bash,
-JSON and Python remaps; Go and Nix have explicit associations below. Keep
-this policy aligned with the grammar list in the Emacs Nix feature.
+Nix installs a curated grammar set. Use the Custom setter to register Bash, JSON and Python remaps; Go and Nix have explicit associations below. Keep this policy aligned with the grammar list in the Emacs Nix feature.
 
 #+begin_src emacs-lisp
 (use-package treesit
@@ -1033,8 +977,7 @@ this policy aligned with the grammar list in the Emacs Nix feature.
 
 ** Drawings are text unless explicitly opened
 
-Visit =.excalidraw= files as JSON. Graphical editing is an explicit
-=my/excali-open= operation, never an automatic file association.
+Visit =.excalidraw= files as JSON. Graphical editing is an explicit =my/excali-open= operation, never an automatic file association.
 
 #+begin_src emacs-lisp
 (use-package json-ts-mode
@@ -1042,12 +985,13 @@ Visit =.excalidraw= files as JSON. Graphical editing is an explicit
   :mode "\\.excalidraw\\'")
 #+end_src
 
-** Language servers
+** Language support
 
-Only start Eglot for allowlisted modes when their configured executable is
-available; a broad prog-mode hook would be noisy. Format managed buffers
-before saving, allow slower remote server startup, and keep connections
-asynchronous. Keep the allowlist aligned with the language-server Nix feature.
+Configure language servers and individual editing modes together. The shared Eglot policy applies across languages; the subsections below own mode selection and language-specific settings.
+
+*** Language servers
+
+Only start Eglot for allowlisted modes when their configured executable is available; a broad prog-mode hook would be noisy. Format managed buffers before saving, allow slower remote server startup, and keep connections asynchronous. Keep the allowlist aligned with the language-server Nix feature.
 
 #+begin_src emacs-lisp
 (use-package eglot
@@ -1083,9 +1027,9 @@ asynchronous. Keep the allowlist aligned with the language-server Nix feature.
                                 (:formatting (:command ["nixfmt"]))))))
 #+end_src
 
-** go-ts-mode
+*** go-ts-mode
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Open =.go= files in the built-in tree-sitter Go mode. Nix supplies the grammar; the shared Eglot policy above controls whether a language server starts.
 
 #+begin_src emacs-lisp
 (use-package go-ts-mode
@@ -1093,9 +1037,9 @@ asynchronous. Keep the allowlist aligned with the language-server Nix feature.
   :mode "\\.go\\'")
 #+end_src
 
-** jsonnet-mode
+*** jsonnet-mode
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Register =jsonnet-language-server= with Eglot, enabling lint diagnostics and docstrings in completion. Request double-quoted strings in formatting. The =setq-default= below replaces the default Eglot workspace configuration rather than limiting that assignment to Jsonnet buffers.
 
 #+begin_src emacs-lisp
 (use-package jsonnet-mode
@@ -1111,9 +1055,9 @@ asynchronous. Keep the allowlist aligned with the language-server Nix feature.
                                   :show_docstring_in_completion t)))))
 #+end_src
 
-** nix-ts-mode
+*** nix-ts-mode
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Open =.nix= files in tree-sitter Nix mode, using the grammar supplied by Nix. Language-server selection and formatting are configured in the shared Eglot setup above.
 
 #+begin_src emacs-lisp
 (use-package nix-ts-mode
@@ -1121,9 +1065,9 @@ asynchronous. Keep the allowlist aligned with the language-server Nix feature.
   :mode "\\.nix\\'")
 #+end_src
 
-** python
+*** python
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Enable the Ruff plugin and its formatting support in the Python language server’s workspace settings. Add the =:pylsp= entry to the existing default Eglot workspace configuration rather than replacing unrelated entries; the server environment must provide the plugin.
 
 #+begin_src emacs-lisp
 (use-package python
@@ -1135,9 +1079,9 @@ asynchronous. Keep the allowlist aligned with the language-server Nix feature.
                    ':pylsp '(:plugins (:ruff (:enabled t :formatEnabled t))))))
 #+end_src
 
-** rego-mode
+*** rego-mode
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Use Regal’s language-server command for Rego buffers managed by Eglot. Register the command after Eglot loads; the shared server policy decides whether to start it.
 
 #+begin_src emacs-lisp
 (use-package rego-mode
@@ -1148,9 +1092,9 @@ asynchronous. Keep the allowlist aligned with the language-server Nix feature.
                '(rego-mode . ("regal" "language-server"))))
 #+end_src
 
-** terraform-mode
+*** terraform-mode
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Register =terraform-ls serve= for Terraform buffers and enable terraform-mode’s format-on-save support. Managed buffers also use the shared Eglot formatting hook, so this configuration can request formatting through both paths.
 
 #+begin_src emacs-lisp
 (use-package terraform-mode
@@ -1162,10 +1106,9 @@ asynchronous. Keep the allowlist aligned with the language-server Nix feature.
   (add-to-list 'eglot-server-programs `(terraform-mode . ("terraform-ls" "serve"))))
 #+end_src
 
-** YAML indentation
+*** YAML indentation
 
-Retain the external YAML mode: the pinned built-in yaml-ts-mode has no
-indentation rules. Register the language server only if no entry already exists.
+Retain the external YAML mode: the pinned built-in yaml-ts-mode has no indentation rules. Register the language server only if no entry already exists.
 
 #+begin_src emacs-lisp
 (use-package yaml-mode
@@ -1182,7 +1125,7 @@ indentation rules. Register the language server only if no entry already exists.
 
 ** flymake
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Enable Flymake in Emacs Lisp buffers for in-editor diagnostics. Eglot manages diagnostics in its own supported buffers; this hook does not enable Flymake indiscriminately in every programming mode.
 
 #+begin_src emacs-lisp
 (use-package flymake
@@ -1192,7 +1135,7 @@ indentation rules. Register the language server only if no entry already exists.
 
 ** bazel
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Run Buildifier before saving supported Bazel files to keep their formatting consistent. The trusted local-variable value below permits the specific Bazelisk manifest-render command rooted at the nearest =.dir-locals.el=; it does not grant blanket trust to arbitrary compile commands.
 
 #+begin_src emacs-lisp
 (use-package bazel
@@ -1216,7 +1159,7 @@ indentation rules. Register the language server only if no entry already exists.
 
 * Shells
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-shells.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-shells.el
 :END:
 
 Implementation: [[file:my-lisp/my-shells.el][my-shells.el]].
@@ -1227,14 +1170,9 @@ Implementation: [[file:my-lisp/my-shells.el][my-shells.el]].
 (require 'my-shells)
 #+end_src
 
-#+begin_src emacs-lisp
-(defvar eshell-scroll-to-bottom-on-input)
-#+end_src
-
 ** GUI and daemon PATH
 
-Import the shell environment after startup and an idle delay, only for GUI
-or daemon sessions. Avoid blocking the initial startup path.
+Import the shell environment after startup and an idle delay, only for GUI or daemon sessions. Avoid blocking the initial startup path.
 
 #+begin_src emacs-lisp
 (use-package exec-path-from-shell
@@ -1244,23 +1182,21 @@ or daemon sessions. Avoid blocking the initial startup path.
 
 ** eshell
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Include TRAMP support in Eshell and scroll to the bottom when entering input so the active prompt remains visible. Keep Eshell deferred until it is used.
 
 #+begin_src emacs-lisp
 (use-package eshell
   :defer t
   :ensure nil
+  :custom
+  (eshell-scroll-to-bottom-on-input t)
   :config
-  (add-to-list 'eshell-modules-list 'eshell-tramp)
-  (setq eshell-scroll-to-bottom-on-input t))
+  (add-to-list 'eshell-modules-list 'eshell-tramp))
 #+end_src
 
 ** Terminal buffers
 
-Prefer the Nix-profile Fish executable when available, preserve buffers after
-exit, and enable shell integration and clipboard support. Add the project
-switch action only once both Ghostel and Project have loaded; neither should
-force the other to load.
+Prefer the Nix-profile Fish executable when available, preserve buffers after exit, and enable shell integration and clipboard support. Add the project switch action only once both Ghostel and Project have loaded; neither should force the other to load.
 
 #+begin_src emacs-lisp
 (use-package ghostel
@@ -1285,7 +1221,7 @@ force the other to load.
 
 ** ghostel-eshell
 
-# TODO: Document the rationale and trade-offs for this configuration.
+Enable Ghostel’s visual-command integration when Eshell loads, allowing terminal-oriented commands to use a terminal interface instead of Eshell’s ordinary text output.
 
 #+begin_src emacs-lisp
 (use-package ghostel-eshell
@@ -1300,7 +1236,7 @@ force the other to load.
 
 * Remote access
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-remote.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-remote.el
 :END:
 
 Implementation: [[file:my-lisp/my-remote.el][my-remote.el]].
@@ -1313,9 +1249,7 @@ Implementation: [[file:my-lisp/my-remote.el][my-remote.el]].
 
 ** TRAMP defaults
 
-Use RPC by default, with SSH connection sharing available to SSH methods.
-Respect host-supplied connection properties and remote paths; inhibit remote
-locks and remote trash operations.
+Use RPC by default, with SSH connection sharing available to SSH methods. Respect host-supplied connection properties and remote paths; inhibit remote locks and remote trash operations.
 
 #+begin_src emacs-lisp
 (use-package tramp
@@ -1341,12 +1275,9 @@ locks and remote trash operations.
   (setq tramp-verbose 2))
 #+end_src
 
-** Release-only RPC deployment
+** TRAMP over RPC
 
-Nix bundles release servers. Disable source/Cargo fallbacks and independent
-direnv import. Read Home Manager’s managed-server inventory: exact host/user
-profiles use their preinstalled binary and must never deploy another one.
-Disable RPC’s Magit optimisation explicitly, not just through its option.
+RPC is an alternative TRAMP transport backed by a server binary on the remote machine. Nix supplies release binaries; managed host/user profiles use their preinstalled binary, while other connections may deploy one automatically. Disable source/Cargo build fallbacks and independent direnv import. =my/tramp-rpc-load-managed-servers= reads Home Manager’s inventory, and =my/tramp-rpc-configure-managed-servers= prevents deployment to those managed profiles. Disable RPC’s Magit optimisation explicitly, not just through its option.
 
 #+begin_src emacs-lisp
 (use-package tramp-rpc
@@ -1373,9 +1304,7 @@ Disable RPC’s Magit optimisation explicitly, not just through its option.
 
 ** Directory environments
 
-Keep local envrc support. Remote export is temporarily disabled because the
-pinned exporter starts a local process without remote file handling. Preserve
-the effective temporary directory when envrc enables an environment.
+Keep local envrc support. Remote export is temporarily disabled because the pinned exporter starts a local process without remote file handling. Preserve the effective temporary directory when envrc enables an environment.
 
 #+begin_src emacs-lisp
 (use-package envrc
@@ -1398,7 +1327,7 @@ the effective temporary directory when envrc enables an environment.
 
 * Agents
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-agents.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-agents.el
 :END:
 
 Implementation: [[file:my-lisp/my-agent-shell.el][my-agent-shell.el]].
@@ -1409,20 +1338,47 @@ Implementation: [[file:my-lisp/my-agent-shell.el][my-agent-shell.el]].
 (require 'my-agent-shell)
 #+end_src
 
+** Human-operated session commands
+
+Use =M-x my/agent-session-start-from-file= to launch from a task note, =M-x my/agent-session-start-new-worktree= for an ad hoc worktree, or =M-x my/agent-session-start-in-directory= for an existing directory. Autoload these commands without loading their implementation at startup; no global agent prefix map is installed.
+
 #+begin_src emacs-lisp
 (autoload 'my/agent-session-start-from-file "my-agent-session" nil t)
 (autoload 'my/agent-session-start-new-worktree "my-agent-session" nil t)
 (autoload 'my/agent-session-start-in-directory "my-agent-session" nil t)
-(defvar-keymap my/agent-session-map
-  :doc "Human-operated agent session commands."
-  "f" #'my/agent-session-start-from-file)
-(keymap-global-set "C-c a" my/agent-session-map)
 #+end_src
 
-** Editable Org prompts
+** Pi and the viewport interface
 
-Use Org for new composers and explicit Go/YAML source modes. Keep block
-insertion on =C-c C-,= and preserve the selected markup for replies and quotes.
+Prefer Pi and editable viewports. Keep artifacts and transcripts outside project worktrees, on the Emacs host even for remote sessions. The helper's artifact root defaults to =~/work/agent-shell/=, with flat transcripts under =transcripts/=. Linux stays clipboard-first; macOS also gets the direct screenshot binding.
+
+The agent mode and both viewport mode hooks call =my/agent-shell-header-no-underline= to remove header underlines locally. The shared presentation helper lives in =my-ui=, but these agent-only registrations belong here. Mixed-pitch activation remains with its owning package in [[*Prose with fixed-width code][Appearance and windows]].
+
+#+begin_src emacs-lisp
+(use-package agent-shell
+  :ensure nil
+  :init
+  (require 'my-ui)
+  :hook ((agent-shell-mode . my/agent-shell-header-no-underline)
+         (agent-shell-viewport-view-mode . my/agent-shell-header-no-underline)
+         (agent-shell-viewport-edit-mode . my/agent-shell-header-no-underline))
+  :bind (:map agent-shell-viewport-edit-mode-map
+              ("C-c C-y" . agent-shell-send-clipboard-image))
+  :custom
+  (agent-shell-dot-subdir-function #'my/agent-shell--dot-subdir)
+  (agent-shell-transcript-file-path-function #'my/agent-shell--transcript-file-path)
+  (agent-shell-preferred-agent-config 'pi)
+  (agent-shell-prefer-viewport-interaction t)
+  :config
+  ;; Keep Linux clipboard-first: the upstream direct default uses X11 import.
+  (when (eq system-type 'darwin)
+    (define-key agent-shell-viewport-edit-mode-map (kbd "C-c C-s")
+                #'agent-shell-send-screenshot)))
+#+end_src
+
+** Editable Org and Markdown prompts
+
+Compose viewports support both Org and Markdown with the same editing features; Org is the default for new drafts, not the only supported format. =agent-shell-compose-setup= follows the draft’s markup, preserving it for replies and quotes. Use explicit Go/YAML source modes and keep block insertion on =C-c C-,= in either format.
 
 #+begin_src emacs-lisp
 (use-package agent-shell-compose
@@ -1438,35 +1394,9 @@ insertion on =C-c C-,= and preserve the selected markup for replies and quotes.
   :hook (agent-shell-viewport-edit-mode . agent-shell-compose-setup))
 #+end_src
 
-** Pi and the viewport interface
-
-Prefer Pi and editable viewports. Keep artifacts and transcripts outside
-project worktrees, on the Emacs host even for remote sessions. The helper's
-artifact root defaults to =~/work/agent-shell/=, with flat transcripts under
-=transcripts/=. Linux stays clipboard-first; macOS also gets the direct screenshot
-binding.
-
-#+begin_src emacs-lisp
-(use-package agent-shell
-  :ensure nil
-  :bind (:map agent-shell-viewport-edit-mode-map
-              ("C-c C-y" . agent-shell-send-clipboard-image))
-  :custom
-  (agent-shell-dot-subdir-function #'my/agent-shell--dot-subdir)
-  (agent-shell-transcript-file-path-function #'my/agent-shell--transcript-file-path)
-  (agent-shell-preferred-agent-config 'pi)
-  (agent-shell-prefer-viewport-interaction t)
-  :config
-  ;; Keep Linux clipboard-first: the upstream direct default uses X11 import.
-  (when (eq system-type 'darwin)
-    (define-key agent-shell-viewport-edit-mode-map (kbd "C-c C-s")
-                #'agent-shell-send-screenshot)))
-#+end_src
-
 ** Edit source blocks separately
 
-Use =C-c ’= (the ordinary apostrophe key) to edit a composer source block in
-its language mode, returning to the original draft rather than submitting it.
+Use =C-c ’= (the ordinary apostrophe key) to edit a composer source block in its language mode, returning to the original draft rather than submitting it.
 
 #+begin_src emacs-lisp
 (use-package agent-shell-compose-block-edit
@@ -1479,8 +1409,7 @@ its language mode, returning to the original draft rather than submitting it.
 
 ** Remote agent paths, local transcripts
 
-Let TRAMP resolve remote project paths, but restore the local transcript
-policy after enabling the mode and on later toggles.
+Let TRAMP resolve remote project paths, but restore the local transcript policy after enabling the mode and on later toggles.
 
 #+begin_src emacs-lisp
 (use-package agent-shell-tramp
@@ -1497,9 +1426,7 @@ policy after enabling the mode and on later toggles.
 
 ** Idle session cleanup only
 
-Expire idle sessions after four days, but never remove worktrees or branches.
-Protect busy/blocked sessions, queued prompts, shell input, viewport drafts and
-explicitly kept sessions. Visibility alone does not protect an abandoned session.
+Expire idle sessions after four days, but never remove worktrees or branches. Protect busy/blocked sessions, queued prompts, shell input, viewport drafts and explicitly kept sessions. Visibility alone does not protect an abandoned session.
 
 #+begin_src emacs-lisp
 (use-package agent-shell-gc
@@ -1527,12 +1454,7 @@ explicitly kept sessions. Visibility alone does not protect an abandoned session
 
 ** Local audio attention cues
 
-Use local sound, not a desktop notification provider. Upstream owns event
-delivery and dismissal; our adapter tracks waiting sessions and treats focused,
-recent viewport interaction as activity. Avoid unused icon fetching and hide
-the upstream provider-specific lighter. Library options default to a 10-second
-activity window and =sounds/agent-attention.wav= under the Emacs directory;
-setting the sound file option to nil disables audio.
+Use local sound, not a desktop notification provider. Upstream owns event delivery and dismissal; our adapter tracks waiting sessions and treats focused, recent viewport interaction as activity. Avoid unused icon fetching and hide the upstream provider-specific lighter. Library options default to a 10-second activity window and =sounds/agent-attention.wav= under the Emacs directory; setting the sound file option to nil disables audio.
 
 #+begin_src emacs-lisp
 (use-package agent-shell-notifications
@@ -1565,7 +1487,7 @@ setting the sound file option to nil disables audio.
 
 * Diagrams and Excalidraw
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-excali.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-excali.el
 :END:
 
 Implementation: [[file:my-lisp/my-excali.el][my-excali.el]].
@@ -1578,13 +1500,9 @@ Implementation: [[file:my-lisp/my-excali.el][my-excali.el]].
 
 ** Explicit graphical editing
 
-Keep the editor lazy. The helper library owns palette conversion, undo
-metadata and native rendering; these advice and hook registrations connect
-it to the editor. Extend font aliases for the embedded native families.
+Keep the editor lazy. The helper library owns palette conversion, undo metadata and native rendering; these advice and hook registrations connect it to the editor. Extend font aliases for the embedded native families.
 
-Library defaults keep drawings under =~/work/docs/diagrams/= and palette JSON
-under =excali/palettes/= in the XDG configuration directory (or =~/.config/=).
-These are customization defaults, not forced overrides of an existing choice.
+Library defaults keep drawings under =~/work/docs/diagrams/= and palette JSON under =excali/palettes/= in the XDG configuration directory (or =~/.config/=). These are customization defaults, not forced overrides of an existing choice.
 
 #+begin_src emacs-lisp
 (use-package excali
@@ -1624,7 +1542,7 @@ Visit =.excalidsl= files in their text mode without opening a canvas.
 
 * Org drawing integration
 :PROPERTIES:
-:header-args:emacs-lisp: :tangle my-emacs-modules/my-emacs-org-excali.el :mkdirp yes :comments no
+:header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-org-excali.el
 :END:
 
 Implementation: [[file:my-lisp/my-org-excali.el][my-org-excali.el]].
@@ -1646,8 +1564,4 @@ Implementation: [[file:my-lisp/my-org-excali.el][my-org-excali.el]].
 ;;; my-emacs-org-excali.el ends here
 #+end_src
 
-The registration above connects =excali:= links, previews and publication
-exports. Its library retains genuine Org/exporter/editor load-order gates;
-it does not eagerly load the graphical editor or optional exporters. The
-library defaults to a 120-character preview cap and disposable SVGs under
-=excali/= in the XDG cache directory (or =~/.cache/=).
+The registration above connects =excali:= links, previews and publication exports. Its library retains genuine Org/exporter/editor load-order gates; it does not eagerly load the graphical editor or optional exporters. The library defaults to a 120-character preview cap and disposable SVGs under =excali/= in the XDG cache directory (or =~/.cache/=).

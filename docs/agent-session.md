@@ -9,8 +9,7 @@ pinned agent-shell/ACP packages, and `pi-acp` on the selected machine.
 
 ### `M-x my/agent-session-start-from-file`
 
-Globally, **`C-c a f`** invokes this command with its normal task picker. The
-`C-c a` agent prefix leaves `d`, `w` and `r` unbound for future commands.
+Invoke this command through `M-x`; no global agent prefix map is installed.
 
 Select a Denote Org task note recursively under `~/work/docs/tasks/`,
 including epic subdirectories. Both unsigned and legacy signed filenames
@@ -612,7 +611,8 @@ disposable smoke-test worktrees/conversations and any cleanup:
    failure and uncertain delivery without deleting work or automatically resending.
 8. With an unsaved visiting Org task buffer, confirm the save/revert diagnostic
    leaves edits intact. Try an explicit Markdown `FILE` and confirm rejection
-   before worktree/session creation. `C-c a f` always uses the normal task picker.
+   before worktree/session creation. Interactive invocation without a `FILE`
+   argument always uses the normal task picker.
 
 Record build, activation and actual runtime-pickup evidence separately. Live
 checks above are not marked passed by the isolated suite.
