@@ -712,7 +712,7 @@ Org, Markdown and agent viewports use mixed-pitch text. Keep these shared mode h
 :header-args:emacs-lisp+: :tangle my-emacs-modules/my-emacs-ui.el
 :END:
 
-Writeroom provides a buffer-local writing view: wrap and enlarge text while active, then restore the previous wrapping and scale without restoring a window layout.
+Writeroom provides a buffer-local writing view: wrap text while active and enlarge it only when the selected frame has one ordinary window (excluding the minibuffer). Splitting the frame removes the extra scaling; returning to one window reapplies it, including when a split shows the same buffer twice. This targets a single-frame workflow, without coordinating scaling across frames. Leaving the view restores the previous wrapping and scale without restoring a window layout.
 
 #+begin_src emacs-lisp
 (use-package writeroom-mode

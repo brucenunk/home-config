@@ -157,18 +157,48 @@ Subsequent automatic appearance changes use the selected themes."
   "Text scaling state to restore when leaving Writeroom.
 Stored as (MODE AMOUNT), or nil outside the writing view.")
 
+(defvar-local my/ui--writeroom-scaled-p nil
+  "Whether Writeroom's extra text scaling is currently applied.")
+
+(defun my/ui--writeroom-scale-restore ()
+  "Restore the saved text scale without discarding the writing baseline."
+  (setq text-scale-mode-amount (cadr my/writeroom-saved-text-scale))
+  (text-scale-mode (if (car my/writeroom-saved-text-scale) 1 -1)))
+
+(defun my/ui--writeroom-scale-update ()
+  "Update writing scale for ordinary windows in the selected frame.
+This buffer-local window hook runs with a displaying window selected.
+Text scaling is buffer-local; two windows showing this buffer still
+count as a split.  Cross-frame coordination is intentionally unsupported."
+  (when my/writeroom-saved-text-scale
+    (let ((enlarge (= (length (window-list nil 'nomini)) 1)))
+      (unless (eq enlarge my/ui--writeroom-scaled-p)
+        (setq my/ui--writeroom-scaled-p enlarge)
+        (if enlarge
+            (text-scale-set
+             (1+ (if (car my/writeroom-saved-text-scale)
+                     (cadr my/writeroom-saved-text-scale)
+                   0)))
+          (my/ui--writeroom-scale-restore))))))
+
 ;;;###autoload
 (defun my/writeroom-text-scale (arg)
-  "Enlarge writing text locally for positive ARG; otherwise restore it."
+  "For positive ARG, enlarge writing text only in a single-window layout.
+Otherwise restore the original buffer-local scale and stop tracking layouts."
   (if (> arg 0)
-      (unless my/writeroom-saved-text-scale
-        (setq my/writeroom-saved-text-scale
-              (list text-scale-mode text-scale-mode-amount))
-        (text-scale-set (1+ (if text-scale-mode text-scale-mode-amount 0))))
+      (progn
+        (unless my/writeroom-saved-text-scale
+          (setq my/writeroom-saved-text-scale
+                (list text-scale-mode text-scale-mode-amount)))
+        (add-hook 'window-configuration-change-hook
+                  #'my/ui--writeroom-scale-update nil t)
+        (my/ui--writeroom-scale-update))
+    (remove-hook 'window-configuration-change-hook
+                 #'my/ui--writeroom-scale-update t)
     (when my/writeroom-saved-text-scale
-      (setq text-scale-mode-amount (cadr my/writeroom-saved-text-scale))
-      (text-scale-mode (if (car my/writeroom-saved-text-scale) 1 -1))
-      (setq my/writeroom-saved-text-scale nil))))
+      (my/ui--writeroom-scale-restore)
+      (setq my/writeroom-saved-text-scale nil
+            my/ui--writeroom-scaled-p nil))))
 
 (defvar-local my/writeroom-saved-visual-line nil
   "Visual-line state on entering Writeroom, wrapped in a list.")

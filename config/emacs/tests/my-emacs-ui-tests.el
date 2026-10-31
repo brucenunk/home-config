@@ -174,8 +174,8 @@
                   (writeroom-mode 1)
                   (should (= (length (window-list)) 2))
                   (should visual-line-mode)
-                  (should text-scale-mode)
-                  (should (= text-scale-mode-amount 1))
+                  (should-not text-scale-mode)
+                  (should (= text-scale-mode-amount 0))
                   (should visual-fill-column-mode)
                   (should (= visual-fill-column-width 80))
                   (should visual-fill-column-center-text)
@@ -279,6 +279,7 @@
             (with-temp-buffer
               (text-mode)
               (switch-to-buffer (current-buffer))
+              (delete-other-windows)
               ;; Set the baseline directly: batch frames clamp negative
               ;; amounts in `text-scale-set' because of their font metrics.
               (setq text-scale-mode-amount (cadr state))
@@ -307,6 +308,78 @@
                 (should-not my/writeroom-saved-text-scale)
                 (writeroom-mode -1)
                 (should (= text-scale-mode-amount (cadr state)))))))))))
+
+(ert-deftest my/ui-writeroom-scale-follows-layout-and-buffer-display ()
+  (require 'writeroom-mode)
+  (let ((writeroom-global-effects nil))
+    (dolist (state '((nil 0) (t 2) (t -1) (nil 3)))
+      (dolist (start-split '(nil t))
+        (save-window-excursion
+          (with-temp-buffer
+            (let ((reference (current-buffer)))
+              (with-temp-buffer
+                (text-mode)
+                (switch-to-buffer (current-buffer))
+                (delete-other-windows)
+                (when start-split
+                  (set-window-buffer (split-window-below) reference))
+                (setq text-scale-mode-amount (cadr state))
+                (text-scale-mode (if (car state) 1 -1))
+                (let ((writing (current-buffer))
+                      (baseline (lambda ()
+                                  (should (eq (not (null text-scale-mode))
+                                              (car state)))
+                                  (should (= text-scale-mode-amount (cadr state)))))
+                      (enlarged (lambda ()
+                                  (should (= text-scale-mode-amount
+                                             (1+ (if (car state) (cadr state) 0)))))))
+                  (unwind-protect
+                      (progn
+                        (writeroom-mode 1)
+                        (should (memq #'my/ui--writeroom-scale-update
+                                      window-configuration-change-hook))
+                        (funcall (if start-split baseline enlarged))
+                        (dotimes (_ 2)
+                          (delete-other-windows)
+                          ;; Batch redisplay does not dispatch window hooks.
+                          ;; Use Emacs's dispatcher, not the helper directly.
+                          (run-window-configuration-change-hook)
+                          (funcall enlarged)
+                          (let ((second (split-window-below)))
+                            ;; Splits count even when showing the same buffer.
+                            (should (eq (window-buffer second) writing))
+                            (run-window-configuration-change-hook)
+                            (funcall baseline)
+                            (should (equal my/writeroom-saved-text-scale state))
+                            (writeroom-mode 1)
+                            (funcall baseline)
+                            (set-window-buffer second reference)
+                            (select-window second)
+                            (run-window-configuration-change-hook)
+                            (with-current-buffer writing (funcall baseline))
+                            ;; Hide then redisplay the writing buffer after
+                            ;; returning to a single-window frame.
+                            (delete-other-windows)
+                            (run-window-configuration-change-hook)
+                            (switch-to-buffer writing)
+                            (run-window-configuration-change-hook)
+                            (funcall enlarged)))
+                        ;; Manual adjustments survive unrelated notifications,
+                        ;; but are discarded at a layout eligibility change.
+                        (text-scale-set 4)
+                        (run-window-configuration-change-hook)
+                        (should (= text-scale-mode-amount 4))
+                        (split-window-below)
+                        (run-window-configuration-change-hook)
+                        (funcall baseline))
+                    (with-current-buffer writing (writeroom-mode -1)))
+                  (funcall baseline)
+                  (should-not my/writeroom-saved-text-scale)
+                  (should-not (memq #'my/ui--writeroom-scale-update
+                                    window-configuration-change-hook))
+                  (delete-other-windows)
+                  (run-window-configuration-change-hook)
+                  (funcall baseline))))))))))
 
 (defun my/ui-test--remapped-family (face)
   "Return the family installed by mixed-pitch for FACE."
