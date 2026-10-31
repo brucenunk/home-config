@@ -714,6 +714,8 @@ Implementation: [[file:my-lisp/my-editing.el][my-editing.el]].
 
 ** Org editing and presentation
 
+Enable Shift-arrow text selection outside Org’s special editing contexts, preserving shortcuts for headings, timestamps, tables, and list bullets. In list items, bullet cycling requires point to be directly on the bullet.
+
 The =org-mode= hook calls =my/prose-wrap= to enable soft wrapping and hide continuation indicators without inserting physical newlines. Advice around Org’s block fontifier calls =my/org-fontify-comment-block= to give comment blocks theme-derived shadow styling.
 
 =my/org-refresh-heading-scaling= restores heading sizes immediately and after a theme changes the underlying faces. Keep =enable-theme-functions= registration in =:config=: it receives a theme argument and should not run this Org-specific helper before Org has loaded.
@@ -723,6 +725,8 @@ The =org-mode= hook calls =my/prose-wrap= to enable soft wrapping and hide conti
   :ensure nil
   :defer t
   :hook (org-mode . my/prose-wrap)
+  :custom
+  (org-support-shift-select t)
   :config
   (advice-add 'org-fontify-meta-lines-and-blocks :around
               #'my/org-fontify-comment-block)
