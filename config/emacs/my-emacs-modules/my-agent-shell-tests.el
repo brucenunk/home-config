@@ -1088,5 +1088,198 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
           (should (eq (agent-shell-compose-block-mode (list :markup markup :language "yaml"))
                       'yaml-mode)))))))
 
+(require 'embark-consult)
+
+(defun my/agent-shell-test--grep-candidate (file line)
+  "Construct a candidate with Consult's real formatter for FILE at LINE."
+  (let* ((sink (consult--async-sink))
+         (formatter (funcall (consult--grep-format (lambda (_) '(nil))) sink)))
+    (funcall formatter 'setup)
+    (funcall formatter "query")
+    (funcall formatter (list (format "%s\0%d:match" file line)))
+    (prog1 (car (funcall formatter nil))
+      (funcall formatter 'destroy))))
+
+(ert-deftest my/agent-shell-reference-file-grep-and-undo ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+           (search-directory (expand-file-name "elsewhere/" root))
+           (embark--command 'consult-fd)
+           (original "Before  after")
+           (windows (window-list)))
+      (make-directory search-directory)
+      (with-current-buffer shell
+        (setq-local agent-shell-cwd-function (lambda () default-directory)))
+      (save-window-excursion
+        (switch-to-buffer viewport)
+        (buffer-enable-undo)
+        (dolist (case '((file "src/my example.go" nil)
+                        (file "../shared.go" nil)
+                        (file "../~/notes.md" nil)
+                        (file "~/notes.md" nil)
+                        (file "$HOME/literal.go" nil)
+                        (consult-grep "~/notes.md" 6)
+                        (consult-grep "src/a:b.go" 42)
+                        (consult-grep "src/my example.go" 7)))
+          (erase-buffer)
+          (insert original)
+          (goto-char 8)
+          (setq buffer-undo-list nil)
+          (let* ((type (nth 0 case))
+                 (file (nth 1 case))
+                 (line (nth 2 case))
+                 (target (if line (my/agent-shell-test--grep-candidate file line) file))
+                 (embark--command (if line 'consult-ripgrep 'consult-fd))
+                 (default-directory search-directory)
+                 (absolute (expand-file-name (concat "./" file) search-directory))
+                 (path (file-relative-name absolute root))
+                 (path (if (string-prefix-p "~" path) (concat "./" path) path))
+                 (reference (concat (agent-shell--file-mention path)
+                                    (if line (format " (line %d)" line) ""))))
+            (cl-letf (((symbol-function 'agent-shell-viewport-compose-send)
+                       (lambda (&rest _) (ert-fail "Action submitted")))
+                      ((symbol-function 'agent-shell--send-request)
+                       (lambda (&rest _) (ert-fail "Action sent an ACP request"))))
+              (let ((embark-target-finders (list (lambda () (cons type target)))))
+                (embark--act #'my/agent-shell-insert-reference
+                             (car (embark--targets)) t)))
+            (should (equal (buffer-string) (concat "Before " reference " after")))
+            (should (equal (mapcar (lambda (mention) (map-elt mention :path))
+                                   (agent-shell--parse-file-mentions (buffer-string)))
+                           (list path)))
+            (should (equal (expand-file-name
+                            (map-elt (car (agent-shell--parse-file-mentions (buffer-string)))
+                                     :path)
+                            root)
+                           absolute))
+            (should-not (file-exists-p absolute))
+            (undo-boundary)
+            (undo 1)
+            (should (equal (buffer-string) original)))))
+      (should (equal windows (window-list))))))
+
+(ert-deftest my/agent-shell-reference-rejects-unsupported-targets ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+      (with-current-buffer shell
+        (setq-local agent-shell-cwd-function (lambda () root)))
+      (save-window-excursion
+        (switch-to-buffer viewport)
+        (insert "Keep draft")
+        (dolist (case '((consult-fd file "a.go" nil)
+                        (find-file file "a.go" t)
+                        (consult-fd file "/ssh:other:/a.go" t)
+                        (consult-fd file "a\"b.go" t)
+                        (consult-fd file "a\nb.go" t)
+                        (consult-ripgrep consult-grep "a.go:42:no properties" t)
+                        (consult-fd buffer "a.go" t)))
+          (let ((embark--command (nth 0 case)))
+            (should-error
+             (embark--act #'my/agent-shell-insert-reference
+                          (list :type (nth 1 case) :target (nth 2 case))
+                          (nth 3 case))
+             :type 'user-error))
+          (should (equal (buffer-string) "Keep draft")))
+        (let ((embark--command 'consult-fd)
+              (default-directory "/ssh:other:/project/"))
+          (should-error
+           (embark--act #'my/agent-shell-insert-reference
+                        '(:type file :target "a.go") t)
+           :type 'user-error))
+        (with-current-buffer shell
+          (setq-local agent-shell-cwd-function (lambda () "/ssh:other:/project/")))
+        (let ((embark--command 'consult-fd))
+          (should-error
+           (embark--act #'my/agent-shell-insert-reference
+                        '(:type file :target "a.go") t)
+           :type 'user-error))
+        (should (equal (buffer-string) "Keep draft"))
+        (with-temp-buffer
+          (let ((embark--command 'consult-fd))
+            (should-error
+             (my/agent-shell--reference-action :type 'file :target "a.go" :quit t)
+             :type 'user-error)))))))
+
+(ert-deftest my/agent-shell-reference-action-maps ()
+  (dolist (type '(file consult-grep))
+    (should (eq (lookup-key (embark--action-keymap type nil) (kbd "@"))
+                #'my/agent-shell-insert-reference)))
+  (should-not (memq #'my/agent-shell-insert-reference embark-multitarget-actions)))
+
+(ert-deftest my/agent-shell-reference-preserves-existing-attachments ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+           (embark--command 'consult-fd))
+      (save-window-excursion
+        (switch-to-buffer viewport)
+        (insert "Draft\n")
+        (cl-letf (((symbol-function 'agent-shell--load-image)
+                   (lambda (&rest _) '(image :type png :data "fixture"))))
+          (insert (agent-shell--get-files-context :files '("/fixture/image.png"))))
+        (let ((original (buffer-string)))
+          (goto-char (point-min))
+          (embark--act #'my/agent-shell-insert-reference
+                       '(:type file :target "example.go") t)
+          (should (equal-including-properties
+                   (buffer-substring (+ (point-min) (length "@example.go ")) (point-max))
+                   original)))))))
+
+(ert-deftest my/agent-shell-reference-consult-exit-restores-origin ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+           (other-shell (my/agent-shell-test--shell))
+           (other (agent-shell-viewport--buffer :shell-buffer other-shell))
+           (file (expand-file-name "example.go" root))
+           (previewed nil)
+           pending-action
+           (map (make-sparse-keymap)))
+      (write-region "example" nil file nil 'silent)
+      (with-current-buffer shell
+        (setq-local agent-shell-cwd-function (lambda () root)))
+      (with-current-buffer other (insert "Other draft"))
+      (define-key map (kbd "<f7>")
+        (lambda ()
+          (interactive)
+          (let ((embark--command 'consult-fd)
+                (consult--completion-candidate-hook (list (lambda () file))))
+            (consult--read (list file) :category 'file
+                           :state (consult--file-state)
+                           :preview-key '(:debounce 0 any)))))
+      (define-key map (kbd "<f8>")
+        (lambda ()
+          (interactive)
+          ;; Force a real Consult preview before Embark exits the search.
+          ;; The test search is launched by a lambda rather than consult-fd.
+          (setq-local embark--command 'consult-fd)
+          (funcall consult--preview-function)
+          (with-selected-window (minibuffer-selected-window)
+            (setq previewed (and (not (eq (current-buffer) viewport))
+                                 (equal (buffer-string) "example"))))
+          (embark--act #'my/agent-shell-insert-reference
+                       (car (embark--targets)) t)))
+      (save-window-excursion
+        (switch-to-buffer viewport)
+        (insert "BeforeAfter")
+        (goto-char 7)
+        ;; Batch keyboard macros propagate quit through Embark's deferred
+        ;; command execution.  Capture only the scheduling boundary, then run
+        ;; its real closure after Consult has unwound and restored the window.
+        (cl-letf (((symbol-function 'embark--quit-and-run)
+                   (lambda (fn &rest args)
+                     (setq pending-action (lambda () (apply fn args)))
+                     (minibuffer-quit-recursive-edit))))
+          (let ((overriding-terminal-local-map map)
+                (noninteractive nil))
+            (execute-kbd-macro (vconcat (kbd "<f7>") file (kbd "<f8>")))))
+        (let ((quit-flag nil)) (funcall pending-action))
+        (should previewed)
+        (should (eq (window-buffer) viewport))
+        (should (equal (buffer-string) "Before @example.go After"))
+        (with-current-buffer other (should (equal (buffer-string) "Other draft")))))))
+
 (provide 'my-agent-shell-tests)
 ;;; my-agent-shell-tests.el ends here

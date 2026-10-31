@@ -507,6 +507,42 @@ word completion, and proportional echoed replies alongside monospaced rendered
 code/tables. Batch success is not evidence of popup appearance, actual font
 selection, or shared-daemon pickup.
 
+### Insert file references through Consult and Embark
+
+From an editable agent-shell composer:
+
+1. Place point where the reference belongs in the draft.
+2. Use `M-s d` (`consult-fd`) for a file, or `M-s g` (`consult-ripgrep`) for
+   a matching line. Ripgrep is no longer bound to `M-s r`.
+3. Highlight one candidate, then press `C-. @` (`my/agent-shell-insert-reference`).
+   Leave Embark's exit-on-action behavior enabled; this action rejects staying
+   in the search so Consult can restore the originating composer and point.
+
+The action inserts without submitting. File candidates produce `@src/example.go`;
+grep candidates produce `@src/example.go (line 42)`. Paths containing whitespace
+use agent-shell's native quoting, for example `@"src/my example.go" (line 42)`.
+The hint remains outside the mention: context is the **whole file**, not only
+the selected line. Whitespace is added at the insertion boundaries when needed.
+Normal undo removes the insertion without discarding the existing draft.
+
+Candidate paths resolve against the search directory, then become relative to
+the originating agent's working directory (including `../` where necessary).
+The action never chooses another session, starts one, or writes a referenced
+file. Remote searches, remote agent directories, and remote candidates are
+explicitly unsupported in this initial version. Filenames containing quotes
+or newlines are also rejected because native mention quoting cannot safely
+represent them. There is no multi-candidate or line-range action.
+Embark's existing file-target transformation is unchanged: an `fd` result
+containing an unset environment-variable name, such as `routes/$slug.tsx`,
+can error before actions are offered. Those filenames are outside this task's
+supported scope.
+
+Manual acceptance, after separately loading the configuration: try both searches
+from a draft with existing text and an attachment, including a filename with
+spaces and a search in a different directory. Confirm the reference returns to
+the original point, the draft and attachment remain intact, no prompt is sent,
+and one undo removes only the insertion. Batch tests do not prove live pickup.
+
 ## Verification, activation and smoke tests
 
 `emacs-agent-shell` runs ERT with the pinned packages: temporary real repositories

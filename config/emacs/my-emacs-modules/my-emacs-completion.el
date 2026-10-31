@@ -200,7 +200,7 @@ Modes which omit the global CAPF fallback marker `t' keep their own policy."
    ("M-g f" . consult-flymake)
    ;; M-s bindings in `search-map'
    ("M-s d" . consult-fd)
-   ("M-s r" . consult-ripgrep)
+   ("M-s g" . consult-ripgrep)
    ("M-s l" . consult-line)
    ("M-s L" . consult-line-thing-at-point))
   :demand t

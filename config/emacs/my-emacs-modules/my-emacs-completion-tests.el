@@ -14,6 +14,10 @@
 (require 'agent-shell)
 (require 'my-emacs-completion)
 
+(ert-deftest my/consult-ripgrep-uses-g-binding ()
+  (should (eq (key-binding (kbd "M-s g")) #'consult-ripgrep))
+  (should-not (eq (key-binding (kbd "M-s r")) #'consult-ripgrep)))
+
 (ert-deftest my/project-annotation-shows-the-current-git-branch ()
   (let ((directory (make-temp-file "project-branch-test-" t)))
     (unwind-protect
