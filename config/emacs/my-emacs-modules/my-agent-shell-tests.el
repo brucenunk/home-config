@@ -327,6 +327,118 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
             (should (eq major-mode 'agent-shell-viewport-edit-mode))
             (should (string-empty-p (string-trim (buffer-string))))))))))
 
+(defun my/agent-shell-test--reply-view (response snapshot)
+  "Show RESPONSE in the current native viewport with parked SNAPSHOT."
+  (agent-shell-viewport-view-mode)
+  (agent-shell-viewport--initialize
+   :prompt "Fixture prompt\n\n"
+   :response (propertize response 'display "rendered" 'invisible t
+                         'wrap-prefix "response indent" 'face 'bold))
+  (setq agent-shell-viewport--compose-snapshot snapshot)
+  (goto-char (or (agent-shell-viewport--response-start) (point-max))))
+
+(ert-deftest my/agent-shell-viewport-replies-respect-destination-markup ()
+  (dolist (markup '(org markdown))
+    (dolist (command '(agent-shell-viewport-reply agent-shell-viewport-quote-reply))
+      (dolist (with-draft '(nil t))
+        (my/agent-shell-test--isolated
+          (let* ((agent-shell-compose-markup markup)
+                 (shell (my/agent-shell-test--shell))
+                 (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+                 (draft (propertize "Saved draft [image]" 'display "draft preview"
+                                    'agent-shell-context-image 'fixture))
+                 (snapshot (when with-draft `((:content . ,draft) (:location . 3)))))
+            (dolist (body '("  **bold** /italic/ `code` [[file:test][link]]  "
+                            "λ\n\n> nested\n```text\nbody\n```\n" ""))
+              (save-window-excursion
+                (switch-to-buffer viewport)
+                (my/agent-shell-test--reply-view
+                 (if (eq command 'agent-shell-viewport-reply)
+                     (concat "BEFORE" body "AFTER") body)
+                 snapshot)
+                (when (eq command 'agent-shell-viewport-reply)
+                  (forward-char (length "BEFORE"))
+                  (push-mark (+ (point) (length body)) t t)
+                  (when (string-empty-p body) (deactivate-mark t)))
+                ;; Changing the default must not change this viewport's choice.
+                (let ((agent-shell-compose-markup (if (eq markup 'org) 'markdown 'org))
+                      (transient-mark-mode t))
+                  (cl-letf (((symbol-function 'agent-shell--send-request)
+                             (lambda (&rest _) (ert-fail "Reply submitted a prompt")))
+                            ((symbol-function 'agent-shell-viewport-compose-send)
+                             (lambda (&rest _) (ert-fail "Reply invoked send"))))
+                    (call-interactively command)))
+                (let* ((text (string-trim body))
+                       ;; An empty region is no selection, unlike a whole empty
+                       ;; response, which upstream deliberately quotes.
+                       (quoted (or (eq command 'agent-shell-viewport-quote-reply)
+                                   (not (string-empty-p body))))
+                       (quote (when quoted
+                                (if (eq markup 'org)
+                                    (concat "#+begin_quote\n" text "\n#+end_quote")
+                                  (agent-shell--block-quote text))))
+                       (expected (concat "\n" draft)))
+                  (unless with-draft (setq expected "\n"))
+                  (when quoted
+                    (setq expected (concat expected (when with-draft "\n\n") quote "\n\n")))
+                  (should (eq major-mode 'agent-shell-viewport-edit-mode))
+                  (should (eq (agent-shell-compose-selected-markup) markup))
+                  (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                                 (substring-no-properties expected)))
+                  (should-not agent-shell-viewport--compose-snapshot)
+                  (should (= (point) (point-max)))
+                  (should agent-shell-viewport--peek-location)
+                  (when with-draft
+                    (should (equal-including-properties
+                             (buffer-substring 2 (+ 2 (length draft))) draft)))
+                  (when quoted
+                    (let* ((beg (- (point-max) (length quote) 2))
+                           (inserted (buffer-substring beg (+ beg (length quote)))))
+                      (should (equal-including-properties inserted quote)))))))))))))
+
+(ert-deftest my/agent-shell-viewport-org-unsafe-reply-preserves-view-and-draft ()
+  (dolist (command '(agent-shell-viewport-reply agent-shell-viewport-quote-reply))
+    (dolist (body '("before\n#+END_QUOTE\nafter" "* Heading"
+                    "#+begin_src org\n#+end_quote\n#+end_src"))
+      (my/agent-shell-test--isolated
+        (let* ((agent-shell-compose-markup 'org)
+               (shell (my/agent-shell-test--shell))
+               (viewport (agent-shell-viewport--buffer :shell-buffer shell)))
+          (save-window-excursion
+            (switch-to-buffer viewport)
+            (my/agent-shell-test--reply-view body
+             `((:content . ,(propertize "Saved image draft" 'display "image"
+                                       'agent-shell-context-image 'fixture))
+               (:location . 3)))
+            (push-mark (point-max) t t)
+            (let ((before (buffer-string)) (pos (point))
+                  (snapshot agent-shell-viewport--compose-snapshot)
+                  (peek agent-shell-viewport--peek-location)
+                  (shell-pos (with-current-buffer shell (point)))
+                  (formatter (symbol-function 'agent-shell--block-quote))
+                  (transient-mark-mode t))
+              (should-error (call-interactively command) :type 'user-error)
+              (should (eq major-mode 'agent-shell-viewport-view-mode))
+              (should (equal-including-properties (buffer-string) before))
+              (should (= (point) pos))
+              (should (eq agent-shell-viewport--compose-snapshot snapshot))
+              (should (eq agent-shell-viewport--peek-location peek))
+              (should (= (with-current-buffer shell (point)) shell-pos))
+              (should (eq (symbol-function 'agent-shell--block-quote) formatter)))))))))
+
+(ert-deftest my/agent-shell-viewport-markdown-quotes-org-delimiters-unchanged ()
+  (my/agent-shell-test--isolated
+    (let* ((shell (my/agent-shell-test--shell))
+           (viewport (agent-shell-viewport--buffer :shell-buffer shell))
+           (body "* Heading\n#+end_quote"))
+      (save-window-excursion
+        (switch-to-buffer viewport)
+        (my/agent-shell-test--reply-view body nil)
+        (agent-shell-viewport-quote-reply)
+        (should (equal-including-properties
+                 (buffer-substring 2 (point-max))
+                 (concat (agent-shell--block-quote body) "\n\n")))))))
+
 (ert-deftest my/agent-shell-quote-exact-text-and-editable-draft ()
   (my/agent-shell-test--isolated
     (let* ((shell (my/agent-shell-test--shell))

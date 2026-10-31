@@ -209,6 +209,27 @@
 (ert-deftest agent-shell-compose-unknown-markup-is-an-error ()
   (should-error (agent-shell-compose-diff-block "code" 'unknown) :type 'user-error))
 
+(ert-deftest agent-shell-compose-org-quote-keeps-raw-body-without-properties ()
+  (dolist (text '("" "text" "  partial  " "a\n\nb\n" "\tλ\n> nested"
+                  "**bold** /italic/ `code` [[file:test][link]]"
+                  "```org\n#+begin_src text\nbody\n#+end_src\n```"
+                  ",* Escaped heading\n,#+end_quote"
+                  " #+end_quote not-a-delimiter"))
+    (let ((quote (agent-shell-compose--org-quote
+                  (propertize text 'display "hidden" 'invisible t
+                              'agent-shell-block-quote t 'wrap-prefix "bar"))))
+      (should (equal-including-properties
+               quote (concat "#+begin_quote\n" text
+                             (unless (string-suffix-p "\n" text) "\n")
+                             "#+end_quote"))))))
+
+(ert-deftest agent-shell-compose-org-quote-refuses-structural-breakout ()
+  (dolist (text '("#+end_quote" "before\n  #+END_QUOTE\nafter"
+                  "#+begin_quote\nnested\n#+end_quote" "* Heading"
+                  "before\n** Heading\nafter"
+                  "#+begin_src org\n#+end_quote\n#+end_src"))
+    (should-error (agent-shell-compose--org-quote text) :type 'user-error)))
+
 (ert-deftest agent-shell-compose-insert-source-block-prompts-and-leaves-point-in-body ()
   (dolist (markup '(org markdown))
     (agent-shell-compose-test--with-composer markup

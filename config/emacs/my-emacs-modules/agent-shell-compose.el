@@ -49,6 +49,49 @@ unaffected.  This option does not configure or attach language servers."
   (with-current-buffer (or buffer (current-buffer))
     (or agent-shell-compose--markup agent-shell-compose-markup)))
 
+(defun agent-shell-compose--org-quote (text)
+  "Wrap plain TEXT in an Org quote, without converting its inline markup.
+Refuse text that would break the outer quote rather than silently escaping it.
+Response presentation properties must not enter the editable draft."
+  (let ((quote (concat "#+begin_quote\n" (substring-no-properties text)
+                       (unless (string-suffix-p "\n" text) "\n")
+                       "#+end_quote")))
+    (with-temp-buffer
+      (let ((org-mode-hook nil) (text-mode-hook nil)
+            (after-change-major-mode-hook nil)
+            (org-inhibit-startup t) (org-element-cache-persistent nil))
+        (org-mode))
+      (insert quote)
+      (goto-char (point-min))
+      (let ((node (org-element-at-point)))
+        (unless (and (eq (org-element-type node) 'quote-block)
+                     (= (org-element-property :end node) (point-max)))
+          (user-error "Response contains text that would break an Org quote block"))))
+    quote))
+
+(defun agent-shell-compose--setup-reply (setup &rest args)
+  "Call native reply SETUP with ARGS, adapting only its Org quote formatter."
+  (let ((text (plist-get args :quoted-text)))
+    (if (and text (eq (agent-shell-compose-selected-markup) 'org))
+        ;; Validate before native setup changes modes or consumes the snapshot.
+        ;; The pinned upstream has no quote-format hook.  Limit the temporary
+        ;; substitution to this reply's buffer and exact input, leaving native
+        ;; draft restoration, attachments, positioning and Markdown untouched.
+        (let ((quote (agent-shell-compose--org-quote text))
+              (viewport (current-buffer))
+              (block-quote (symbol-function 'agent-shell--block-quote)))
+          (cl-letf (((symbol-function 'agent-shell--block-quote)
+                     (lambda (input)
+                       (if (and (eq (current-buffer) viewport) (eq input text))
+                           quote
+                         (funcall block-quote input)))))
+            (apply setup args)))
+      (apply setup args))))
+
+(with-eval-after-load 'agent-shell-viewport
+  (advice-add 'agent-shell-viewport--setup-reply :around
+              #'agent-shell-compose--setup-reply))
+
 (defun agent-shell-compose--fontify-markdown (beg end loudly)
   "Apply Markdown faces between BEG and END without presentation changes.
 LOUDLY is passed to Font Lock.  Preserve native viewport/attachment
