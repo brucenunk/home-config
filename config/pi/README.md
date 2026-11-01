@@ -1,114 +1,43 @@
-# Personal Pi assets
+# Pi assets
 
-Themes and extensions in this directory are public-safe personal assets. The
-generic Home Manager deployment module is `flake-modules/features/pi.nix`; it
-does not define provider or transport policy.
-
-Extensions under `config/pi/extensions/` are deployed globally and
-auto-discovered by Pi. They are active by default unless extension or tool
-discovery is disabled or an explicit tool allowlist excludes them. Existing
-sessions need `/reload` after deployment; new Pi processes load them at startup.
+These public themes and extensions are deployed by
+`flake-modules/features/pi.nix`; provider and transport policy belong downstream.
+Extensions are auto-discovered unless disabled or excluded by tool selection.
+After deployment, use `/reload` for extensions; start a fresh process for changed
+settings/environment defaults.
 
 ## Apply Patch
 
-`apply-patch` registers an `apply_patch` tool that emulates [OpenAI's documented
-file-operation shape and headerless V4A diff
-behavior](https://developers.openai.com/api/docs/guides/tools-apply-patch) for
-`create_file`, `update_file`, and `delete_file`. Pi exposes it as a custom
-function tool rather than the Responses API's native `apply_patch` tool type,
-so equivalent model behavior is not guaranteed.
+`apply_patch` accepts `create_file`, `update_file` and `delete_file` operations
+with headerless V4A diffs. It is a custom function tool, not the Responses API's
+native tool type. Pi's `edit` and `write` remain available as fallbacks.
 
-The V4A diff implementation is adapted from OpenAI Agents JS under the bundled
-MIT license. The tool uses Pi's shared file-mutation queue, refuses to overwrite
-existing files during creation, and atomically publishes updates from a unique
-private staging directory created beside the target on the same filesystem.
-Updates preserve the target's permission bits,
-owner, and group, except that setuid and setgid bits are cleared after content
-modification. Temporary content remains inside the owner-only staging directory
-until publication, including after its final mode is applied.
-Updates through a symlink replace its referent while retaining the symlink.
-Files with multiple hard links are rejected rather than breaking
-their shared inode relationship. Inode-specific metadata that cannot be carried
-by Node's portable filesystem API, such as ACLs and extended attributes, is not
-retained after a successful replacement. Errors before the atomic rename leave
-target bytes, inode identity, ownership, mode, size, and modification time
-unchanged; reading and validating the target may update its access time. Normal
-success and failure paths attempt to remove temporary artifacts. Cleanup is
-best-effort: a cleanup error does not mask the publication result and can leave
-the private staging directory behind. Cancellation is honored before
-publication. An uncatchable interruption can also leave a temporary artifact,
-but the target is always wholly old or wholly new. Pi's built-in `edit` and
-`write` tools remain available as fallbacks.
+Updates publish atomically and preserve ownership/permissions except setuid and
+setgid bits. Symlinks update their referent; multi-hard-linked files are rejected.
+**ACLs and extended attributes are not retained.** Updates need target write
+access and parent-directory create/rename permission. Non-sticky group/world-
+writable parents are rejected. Coordinate external writers separately: concurrent
+change detection is best effort, not filesystem compare-and-swap.
 
-Tool rendering uses a compact operation/path header and a colorized submitted
-V4A patch preview, rather than dumping the operation JSON. Successful create
-and update results show up to 8 patch lines by default and 80 when expanded,
-with a 16,000-character preview limit. Long lines are clipped to the available
-terminal width; omitted content is marked. This is the submitted patch, not a
-computed filesystem diff. Failed calls show the error instead of a success
-preview. Renderers tolerate incomplete arguments and historical results without
-details, and are also used by Pi's HTML exports. Rendering does not change the
-model-facing result text or file-operation behavior.
+Failures before publication leave target content unchanged. Interruption or
+cleanup failure can leave a private staging directory beside the target. The
+rendered preview is the submitted patch, not a computed filesystem diff.
 
-Atomic update requires both write access to the target and permission to create
-and rename files in its parent directory. It does not use directory permissions
-to bypass a read-only target. The updater must also be able to reproduce the
-target owner and group; otherwise it fails before publication. Non-sticky
-group- or world-writable parent directories are rejected. The mutation queue is
-keyed by the resolved referent so Pi updates through aliases serialize, and a
-final identity, metadata, permission, symlink-target, and content check rejects
-concurrent changes observed before rename. That check is best effort rather than
-a filesystem compare-and-swap: external writers that do not use Pi's mutation
-queue must still be coordinated separately.
+## Settings and external editing
 
-## Settings defaults
+Shared defaults use regular terminal mode and add codemode with
+`defaultTools: ["+codemode"]`. A plain-name allowlist replaces tool selection;
+`+` preserves the usual tools. Host defaults can override shared values;
+`settingsDefaults = null` disables settings activation.
 
-Shared defaults select `tuiMode: "regular"`, leaving transcript scrolling and
-selection with the terminal instead of Pi's alternate-screen UI.
-They also set `defaultTools: ["+codemode"]` for normal Pi sessions across hosts
-and frontends, including pi-acp/agent-shell. The `+` adds codemode to the usual
-built-in tools without excluding auto-discovered extensions such as `apply_patch`;
-a plain-name allowlist would replace the default selection instead.
-Host `settingsDefaults` are layered over these defaults and may override them;
-setting the option to `null` disables settings activation altogether.
-Explicit CLI tool selection still takes precedence. Restricted review workers
-retain their read-only allowlist and disabled extensions; this does not enable
-codemode for them.
+Activation merges configured defaults **over conflicting mutable values** in
+`~/.pi/agent/settings.json`. Invalid JSON and symlinks are rejected unchanged.
+Existing owner/group/permissions are retained; new files use `0600`. Coordinate
+concurrent editors/Pi processes rather than relying on the best-effort race guard.
 
-The Emacs capability sets both `EDITOR` and `VISUAL` to `emacsclient -c`, and
-the Git capability uses the same command. Pi inherits `VISUAL` unless its
-`externalEditor` setting overrides it. `-c` explicitly requests a GUI frame on
-the selected Emacs server, not necessarily an independently launched GUI Emacs.
-The client waits: finish a Pi prompt with `C-x #` (`server-edit`) to return it
-to Pi. GUI access is required; use `emacsclient -t` explicitly for terminal
-editing over SSH or in a headless session. Existing processes need the updated
-environment, and Pi needs a restart to pick up the changed TUI default.
+`EDITOR` and `VISUAL` use `emacsclient -c`. Finish editing with **`C-x #`**
+(`server-edit`) to return to Pi. This opens a frame on the selected server, not
+an independent Emacs process. For headless/SSH editing, explicitly use
+`emacsclient -t`, or override Pi's `externalEditor` setting.
 
-Wampa inherits the shared regular-mode default, replacing any mutable
-`"fullscreen"` setting during activation, and inherits codemode from the same
-shared defaults. Codemode remains in its default `on` mode: tools are
-still directly available to the model, and scripts can orchestrate calls and
-filter their results. Availability does not force models to use it or guarantee
-that gateway output filtering is avoided. This does not configure MCP servers,
-image models, or additional provider credentials. Wampa retains its provider and
-model defaults; `terminal.showTerminalProgress: true` enables OSC 9;4 terminal
-progress reporting. Activation updates settings, not existing sessions; start a
-fresh session afterward to pick up the new defaults.
-
-When configured, settings defaults are merged into mutable
-`~/.pi/agent/settings.json` during Home Manager activation. Missing settings
-start from an empty object. Configured defaults retain the module's existing
-precedence over conflicting mutable values. If an existing settings file is
-invalid JSON, activation fails with a diagnostic and preserves the invalid file
-byte for byte rather than replacing it with an empty object. Settings and
-defaults must each contain exactly one JSON object; JSON streams and non-object
-values are rejected. For an initially missing settings path, publication uses
-an atomic no-clobber hard link and fails without modifying a file created
-concurrently. For an existing file, activation merges a validated snapshot and
-refuses publication when it observes that the mutable path changed while the
-merge was running.
-That existing-file check is a best-effort guard, not a portable filesystem
-compare-and-swap or coordination with a concurrently running Pi or editor.
-Settings symlinks, including dangling symlinks, are rejected unchanged.
-Existing settings retain their owner, group, and permission bits; a newly
-created settings file uses mode `0600`.
+See [web tools](extensions/web/README.md) for search/fetch limits and costs.

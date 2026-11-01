@@ -51,6 +51,7 @@ Use this skill when the user asks for a review, when a task workflow reaches a r
    - If the deployed helper path is unavailable but this skill exists in a worktree, run the equivalent worktree-relative script path from that repo. Do not fall back to a different review shape that weakens the safety contract.
 
 4. Interpret the result.
+   - Challenge documentation additions: what future operation or decision do they enable that code/tests do not already explain? Flag duplicated inventories, implementation narration and historical verification reports that add maintenance burden without that value, unless explicitly requested. Do not demand documentation merely because code changed.
    - Summarize actionable findings tersely for the implementing agent.
    - If there are no actionable findings, say so plainly.
    - If the review flagged invalid inputs, stale basis, rename-limit warnings, or oversized diffs, fix the review setup and rerun rather than treating the review as complete.

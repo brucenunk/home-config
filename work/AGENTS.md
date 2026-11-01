@@ -31,6 +31,10 @@ For Emacs debugging, live evaluation, UI inspection, or a wedged `emacsclient`, 
 - **Do not rewrite existing commits by default.** Do not amend, rebase, or squash task history unless explicitly requested or the applicable repo workflow prescribes a specific verification operation. Owner-prescribed squash merges are finish operations, not permission to rewrite feature history.
 - **Do not push unless explicitly requested or required by an approved finish workflow.** Never force-push without explicit instruction for that specific action.
 
+## Documentation
+
+Do not add documentation merely because code changed. Document only necessary operational instructions, safety constraints, or important non-obvious rationale; prefer rationale beside the code. Do not commit implementation summaries, architecture/helper inventories, test-coverage lists, verification results, migration histories, or audit reports unless explicitly requested. Keep task evidence in chat and remove obsolete prose rather than preserving history.
+
 ## Response Style
 
 Default to concise, high-signal responses that reduce human reading effort and fatigue. This is a reading preference, not token-count optimization: preserve accuracy, caveats, and useful context when they matter.

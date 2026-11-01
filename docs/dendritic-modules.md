@@ -89,42 +89,5 @@ any replacement service or session integration.
 `scripts/check-exported-home-manager-modules` evaluates each native-platform
 export with Home Manager and the repository's shared `llm-agents` package
 overlay, and rejects public custom options outside the prefixed namespace.
-External consumers must provide that overlay. Feature-specific interface and
-behavior checks are flake checks co-located with their owning feature. See
-[`home-manager-checks.md`](home-manager-checks.md) for the assertion inventory
-and platform boundaries.
-
-## Current composition boundaries
-
-- `ghostty` deploys the shared config and the selected `doric-earth` and
-  `doric-obsidian` theme pair. Consumers may select
-  `brucenunk.homeManager.ghostty.package`, append `extraConfig`, and control
-  `canonicalLinuxService.enable`. A consumer that disables the canonical
-  service owns its replacement service and session environment.
-- `machines` declares the shared, data-only inventory under
-  `brucenunk.homeManager.machines`. Host composition supplies repository/model
-  definitions, browsing directories, and one `isLocal` record. Git and
-  `agent-catalogue` import these option declarations, not each other's
-  behavior. See [`agent-catalogue.md`](agent-catalogue.md).
-- `agent-catalogue` generates trusted executable Elisp configuration for Emacs
-  from that inventory, setting `my/agent-machines` at startup with explicit reload.
-  It does not install Emacs. Hosts/downstream consumers opt in
-  explicitly; the human-operated Emacs session launcher consumes it. See [`agent-session.md`](agent-session.md).
-- `pi` exposes its deployment interface under
-  `brucenunk.homeManager.pi`. Its public theme and extension directories are
-  defaults, so provider or transport adapters can replace them without
-  `mkForce`.
-- `git` owns repository option types and derives paths from the shared inventory's
-  local record for native Home Manager maintenance on Linux and Darwin.
-  Its shared option declarations and Pi's model projection are exported through
-  `flake.lib`; combining machine data does not evaluate other complete hosts.
-- `doric-waybar-themes` deploys only the generated `doric-earth` and
-  `doric-obsidian` Waybar theme pair. Consumers with a different bar layout or
-  launcher can import it without the `waybar` module's Wampa policy. The full
-  `waybar` module imports these assets itself.
-- `agents` deploys shared agent instructions and skills; it needs no additional
-  interface.
-- `darkman` intentionally retains the ordinary-login Niri integration. A
-  nested or otherwise specialised session owns its service lifecycle, portal
-  policy, environment recovery, and live-reload mechanics rather than
-  parameterising the public implementation with private host behavior.
+External consumers must provide that overlay. Keep feature-specific checks beside
+their owning feature; use `nix flake check` to run native-platform checks.

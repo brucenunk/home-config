@@ -175,7 +175,7 @@ pi_args+=(
   @"$committed_file"
   @"$staged_file"
   @"$unstaged_file"
-  -p "Review the full task diff against ${basis} using the supplied status and patch files. Cover committed, staged, unstaged, and directly supplied untracked task files when present. ${untracked_note} Return only actionable findings for the implementing agent: correctness, regressions, security, performance, and risky design issues. If there are no actionable findings, say so plainly."
+  -p "Review the full task diff against ${basis} using the supplied status and patch files. Cover committed, staged, unstaged, and directly supplied untracked task files when present. ${untracked_note} Return only actionable findings for the implementing agent: correctness, regressions, security, performance, and risky design issues. Challenge documentation additions: what future operation or decision do they enable that code/tests do not already explain? Flag duplicated inventories, implementation narration and historical verification reports that add maintenance burden without that value, unless explicitly requested. Do not demand documentation merely because code changed. If there are no actionable findings, say so plainly."
 )
 
 pi "${pi_args[@]}"

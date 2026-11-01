@@ -3,8 +3,8 @@
 ## Required Architecture Context
 
 Before changing task packages, module boundaries, or task identity, read
-`ARCHITECTURE.md`. Update it when adding, removing, renaming, or materially
-repurposing a package or ownership boundary.
+`ARCHITECTURE.md`. Remove guidance made obsolete by a change; do not maintain a
+package inventory or add implementation narration merely because code changed.
 
 ## Checklist
 

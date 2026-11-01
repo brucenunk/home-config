@@ -19,6 +19,7 @@ Take agreed work through implementation, verification, independent review, and a
 - Prefer the smallest maintainable solution. Once authorized, continue through implementation, affected verification, and review without waiting for prompts between steps.
 - Stop for a material decision or blocker: changing an agreed API or boundary, entering an undisclosed subsystem, taking a different implementation direction, or substantially increasing complexity, maintenance burden, operational machinery, or verification requirements. Explain the trade-off before building the larger solution.
 - Keep discoveries and follow-up suggestions in chat. Create or update durable notes only when requested or required by repository guidance; capture useful context, not a running transcript.
+- A code change does not require a documentation change. Update docs only for changed operational instructions, safety constraints or important non-obvious rationale; prefer rationale beside the code. Do not add implementation narratives, architecture/helper inventories, coverage lists or verification transcripts. Delete obsolete documentation rather than preserving migration history.
 
 ## Verify and review
 

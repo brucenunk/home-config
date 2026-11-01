@@ -1,99 +1,28 @@
-# TRAMP-RPC trial
+# Remote files with TRAMP-RPC
 
-The exported `emacs` Home Manager module installs TRAMP-RPC and selects `rpc`
-as the default TRAMP method. The shared Lisp owns this policy; consumers do not
-need options or procedural `programs.emacs.extraConfig` overrides. Consumers
-updating from the earlier trial policy should remove overrides for the four
-settings described below.
+Use `C-x C-f` with `/rpc:user@host:/path/to/repository/`. Dired and Magit then
+use that connection. RPC is the shared default; `/-:host:/path/` selects it
+with TRAMP's default-method syntax. Plain `/host:/path/` is not valid in the
+configured syntax. Explicit `/sshx:user@host:/path/` is a manual alternative,
+not automatic fallback.
 
-Use `C-x C-f` with `/rpc:user@host:/path/to/repository/` to trial the RPC
-backend. With TRAMP 2.8.2's default syntax, `/-:host:/path/to/repository/`
-selects the configured default method; plain `/host:/path/` is not valid in that
-syntax. Dired's directory listings and file operations use RPC automatically;
-run `M-x magit-status` from that directory to exercise remote Git operations.
-Compare with `/sshx:user@host:/path/to/repository/` against the same repository.
-Explicit `/sshx:` is a manual alternative, not automatic fallback. This policy
-does not repair consumer-specific SSHX shell-path adapters.
+Remote envrc importing is disabled: the pinned envrc exporter does not use
+remote file handling. RPC's independent direnv loader is also disabled so it
+does not change remote Git/environment selection. RPC's optional Magit handlers
+are disabled; normal Magit remains available.
 
-## Shared client policy
+## Managed Linux hosts
 
-- `tramp-default-method` is `"rpc"`.
-- `envrc-remote` is nil, temporarily. The pinned envrc export starts a local
-  process without remote file handling; success does not prove that a remote
-  environment was imported. Revisit this opt-out when upstream supports remote
-  exporting. The envrc package and local envrc behavior remain configured, and
-  RPC remains in the remote-method allowlist for a future revisit.
-- `tramp-rpc-use-direnv` is nil. RPC's own direnv loader is independent of
-  Emacs envrc and Home Manager's shell direnv enablement. Turning it off avoids
-  independently loading repository environments and changing remote Git
-  selection; shell direnv ownership and whitelists are unchanged.
-- `tramp-rpc-magit-optimize` is nil, and the shared configuration calls the
-  supported `tramp-rpc-magit-disable` function to remove any installed handlers.
-  Assigning the option alone does not unregister them. Normal Magit remains
-  installed and usable over RPC.
-
-These settings apply both before and after package loading. The pinned optional
-Magit-handler installer respects the opt-out. The choice follows a bounded
-consumer trial, not a general performance claim; public checks do not establish
-private client pickup or performance.
-
-## Release-only servers
-
-`pkgs/tramp-rpc-server.nix` owns the shared release version and fixed hashes
-for x86_64 and aarch64 Linux GitHub release archives. `pkgs/tramp-rpc.nix`
-applies the pinned upstream overlay locally for Lisp packaging and compatible
-TRAMP/MessagePack dependencies. Its explicit `serverPackages` replaces
-upstream's default Rust builds with those releases. Both are bundled even
-when Emacs runs on macOS: the server runs on the remote Linux host. Consumers
-do not need the global upstream Emacs/TRAMP-RPC overlay.
-
-For unmanaged hosts, automatic deployment attempts to copy the matching bundled
-server over SSH into the upstream default remote cache
-(`~/.cache/emacs/tramp-rpc`). Emacs uses release
-identities, does not prefer builds, and has no source directory configured.
-That last setting disables source compilation even if a download fails and
-Cargo is installed. No remote Rust toolchain is needed either.
-
-**Known trial limitation:** the final Nix Emacs package exposes bundled servers
-through symlinks. TRAMP 2.8.2's copying can recreate the local store symlink on
-the remote instead of transferring executable bytes. A remote without that
-store path cannot run it. The managed-host route below avoids copying; it does
-not repair unmanaged-host deployment.
-
-When updating, change the upstream input release and the package's version and
-asset hashes together. The version assertion rejects mismatched Lisp and
-server releases. Fetch release metadata/assets through `gh`, not `curl`.
-
-## Nix-managed Linux servers
-
-The public overlay adds `pkgs.tramp-rpc-server` on `x86_64-linux` and
-`aarch64-linux` only. It adds no server on Darwin or other architectures and
-does not modify the Emacs package set. A consumer can include it in a shared
-package-set definition used by both Linux and Darwin:
-
-```nix
-overlays = [ inputs.home-config.overlays.tramp-rpc ];
-```
-
-On the managed Linux remote, either install the package directly:
-
-```nix
-home.packages = [ pkgs.tramp-rpc-server ];
-```
-
-or import the standalone Home Manager feature:
+Install the pinned server on the remote, either directly as
+`pkgs.tramp-rpc-server` using `inputs.home-config.overlays.tramp-rpc`, or with
+the standalone module:
 
 ```nix
 imports = [ inputs.home-config.modules.homeManager.tramp-rpc-server ];
 ```
 
-Importing this feature installs the native release server without enabling or
-installing Emacs. It prefers `pkgs.tramp-rpc-server` when available and otherwise
-uses the same pinned release expression locally; the overlay is not required.
-Unsupported platforms fail with a module assertion. These are alternative
-installation routes, not two required steps.
-
-On the Emacs client, import the existing `emacs` module and configure:
+The module supports x86_64 and aarch64 Linux and does not install Emacs.
+On the Emacs client:
 
 ```nix
 {
@@ -109,81 +38,33 @@ On the Emacs client, import the existing `emacs` module and configure:
 }
 ```
 
-This generates `emacs/tramp-rpc-managed-servers.json`, which the shared remote
-module reads during startup. Each entry registers connection-local
-`tramp-rpc-deploy-never-deploy = t` and the explicit binary path for RPC only.
-The host and optional user are exact matches, not regular expressions. Use
-the host spelling from the TRAMP path, including `#port` if present. Omit `user`
-(or set it to `null`) to match all users on that host. Duplicate selectors and
-mixing all-users with user-specific entries for the same host are rejected.
-The default list is empty: unrelated hosts retain automatic deployment and
-the global TRAMP method is `rpc`, independently of the managed-server list.
+Host and optional user are exact matches. Use the TRAMP host spelling, including
+`#port` if present. Omit `user` to match all users; do not mix that with specific
+users for the same host. The binary path must exist on the **remote**: do not
+interpolate the client's Nix store path. Prefer a stable profile path rather
+than relying on noninteractive SSH's PATH.
 
-Use an absolute path that exists on the **remote**, preferably its stable
-Home Manager profile path. Do not interpolate the Darwin client's
-`${pkgs.tramp-rpc-server}` or its local store path. An absolute path avoids
-reliance on noninteractive SSH's PATH. The module does not infer a remote
-username, home directory, or profile location.
+Upstream passes this path unquoted to a shell, so only ASCII letters, digits
+and `_ . / + @ = -` are allowed after the leading slash. Whitespace and shell
+metacharacters are rejected.
 
-Upstream v0.15.0 passes the path directly to the remote shell without quoting.
-The option therefore accepts only ASCII letters, digits and `_ . / + @ = -`
-after the leading slash. Paths containing whitespace, quotes or shell
-metacharacters are rejected; use a shell-safe installation/profile path.
+Managed connections never acquire or copy a replacement binary. Activate the
+remote generation before connecting; coordinate client/server input revisions
+when updating. Missing or incompatible executables are connection failures.
+Restart Emacs after client activation to load the generated connection settings.
 
-In managed mode, a missing or incompatible remote executable is a connection
-failure, not permission to download, build, or transfer a replacement. Activate
-the remote Home Manager generation before connecting and coordinate client
-and remote input revisions when changing releases. The shared version assertion
-guards packaging within one revision, not agreement between deployed machines.
+## Unmanaged hosts and updates
 
-## Verification boundaries
+For other hosts, Emacs attempts to copy a bundled Linux release server into
+`~/.cache/emacs/tramp-rpc`. No remote Rust toolchain is required; compilation
+is disabled even after a download failure.
 
-`nix build .#checks.aarch64-darwin.tramp-rpc-server` (or the x86_64 Linux check)
-unpacks both fixed-hash archives, evaluates native selection for both Linux
-architectures, checks the guarded overlay and standalone module fallback/package
-preference, and verifies that the module does not enable Emacs. Foreign-platform
-evaluation is not a native build or execution test.
+**Known limitation:** TRAMP can copy the bundled server's Nix store symlink
+rather than executable bytes. Hosts without that store path cannot run it.
+Use the managed-host route above; it avoids copying but does not fix automatic
+deployment to unmanaged hosts.
 
-`nix build .#checks.aarch64-darwin.emacs-tramp-rpc` (or the x86_64 Linux check)
-loads `my-emacs-remote-tests.el` alongside the real `my-emacs-remote.el` module
-in isolated batch Emacs with both early and already-loaded package orders,
-checks the shared client policy, default-method marker parsing, explicit SSHX
-selection, and the Magit opt-out after optional handler installation. It checks
-bundled Linux binary selection and verifies Cargo cannot run after a
-simulated download failure. It also loads the module-generated managed-server
-configuration, checks exact host/user/method scoping, and exercises upstream's
-connection branch with a mocked installed or missing executable. Binary
-acquisition, download, build, and copying are forbidden in those tests. It does
-not connect to a remote machine. A regression test resolves another target from
-a managed remote buffer to guard against buffer-local policy leakage, and Nix
-evaluation checks path validation.
-
-A public Wampa build establishes composition/build evidence without activation.
-The downstream consumer owns input updates, host composition, remote activation,
-and client activation under its own deployment procedure. A restarted client
-and a live connection using the installed remote executable are still needed to
-prove runtime pickup. A live consumer trial remains necessary to verify file,
-Dired, and Magit behavior and measure performance. Remote envrc importing is
-currently disabled, not verified by these checks. Home
-Manager build success is neither activation nor runtime-pickup evidence.
-
-After building the staged Wampa configuration on x86_64 Linux, the focused
-ERT suite can also be run with the actual Home Manager Emacs package:
-
-```sh
-scratch=$(mktemp -d)
-generated=$(nix build --no-link --print-out-paths .#emacs-config)
-emacs_package=$(nix eval --raw '.#homeConfigurations."james@wampa".config.programs.emacs.finalPackage')
-mkdir -p "$scratch/home" "$scratch/config"
-HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" \
-  "$emacs_package/bin/emacs" --batch -q \
-  -L "$generated/my-emacs-modules" \
-  -L "$PWD/config/emacs/my-lisp" -L "$PWD/config/emacs/tests" \
-  -l my-emacs-remote-tests -f ert-run-tests-batch-and-exit
-```
-
-Repeat with `MY_TRAMP_RPC_PRELOADED_TEST=1` in the environment to exercise
-already-loaded packages and previously installed Magit handlers.
-
-This loads only the remote-access module, not `init.el`, and neither contacts
-the user's Emacs server nor connects to the devbox.
+When updating, change the upstream input and release version/asset hashes in
+`pkgs/tramp-rpc-server.nix` together. The version assertion checks packaging
+within one revision, not agreement between deployed machines. Build success
+does not establish a live connection or remote performance.
