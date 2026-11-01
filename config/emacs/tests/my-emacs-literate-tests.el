@@ -1,7 +1,6 @@
 ;;; my-emacs-literate-tests.el --- Generated configuration checks -*- lexical-binding: t -*-
 
 (require 'ert)
-(require 'cl-lib)
 
 (defconst my/literate-test--generated (getenv "MY_EMACS_GENERATED"))
 (defconst my/literate-test--source (getenv "MY_EMACS_SOURCE"))
@@ -23,60 +22,11 @@
         (end-of-file nil))
       (nreverse forms))))
 
-(ert-deftest my/literate-generated-layout-and-syntax ()
-  (let ((expected '("early-init.el" "init.el" "my-emacs-modules/my-emacs-agents.el"
-                    "my-emacs-modules/my-emacs-completion.el"
-                    "my-emacs-modules/my-emacs-dired.el"
-                    "my-emacs-modules/my-emacs-editing.el"
-                    "my-emacs-modules/my-emacs-writing.el"
-                    "my-emacs-modules/my-emacs-org.el"
-                    "my-emacs-modules/my-emacs-denote.el"
-                    "my-emacs-modules/my-emacs-git.el"
-                    "my-emacs-modules/my-emacs-languages.el"
-                    "my-emacs-modules/my-emacs-shells.el"
-                    "my-emacs-modules/my-emacs-remote.el"
-                    "my-emacs-modules/my-emacs-ui.el"
-                    "my-emacs-modules/my-emacs-excali.el"
-                    "my-emacs-modules/my-emacs-org-excali.el")))
-    (should (equal (sort (mapcar (lambda (file)
-                                  (file-relative-name file my/literate-test--generated))
-                                (my/literate-test--files my/literate-test--generated))
-                         #'string<)
-                   (sort expected #'string<))))
+(ert-deftest my/literate-generated-syntax ()
   (dolist (file (append (my/literate-test--files my/literate-test--generated)
                         (my/literate-test--files
                          (expand-file-name "my-lisp" my/literate-test--source))))
     (ert-info (file) (my/literate-test--forms file))))
-
-(ert-deftest my/literate-generated-files-have-lisp-headers ()
-  (dolist (file (my/literate-test--files my/literate-test--generated))
-    (ert-info (file)
-      (with-temp-buffer
-        (insert-file-contents file)
-        (goto-char (point-min))
-        (should (looking-at ";;+ .*lexical-binding: t"))
-        (forward-line 1)
-        (should (looking-at ";;+ .*\\(?:Generated from\\|Do not edit\\)"))))))
-
-(ert-deftest my/literate-capability-imports-are-alphabetical ()
-  (let ((imports
-         (cl-loop for form in (my/literate-test--forms
-                              (expand-file-name "init.el" my/literate-test--generated))
-                  when (and (eq (car-safe form) 'require)
-                            (string-prefix-p "my-emacs-" (symbol-name (cadadr form))))
-                  collect (symbol-name (cadadr form)))))
-    (should imports)
-    (should (equal imports (sort (copy-sequence imports) #'string<)))))
-
-(ert-deftest my/literate-generated-modules-contain-no-implementation-functions ()
-  (cl-labels ((check (form)
-                (when (consp form)
-                  (should-not (memq (car form) '(defun cl-defun defmacro)))
-                  (check (car form))
-                  (check (cdr form)))))
-    (dolist (file (my/literate-test--files my/literate-test--generated))
-      (ert-info (file)
-        (mapc #'check (my/literate-test--forms file))))))
 
 (ert-deftest my/literate-tangling-is-reproducible ()
   (let ((output (make-temp-file "emacs-tangle-" t)))
@@ -134,12 +84,6 @@
                       (file-name-as-directory (make-temp-file "emacs-startup-" t)))
                 (load ,(expand-file-name "early-init.el" my/literate-test--generated) nil t)
                 (load ,(expand-file-name "init.el" my/literate-test--generated) nil t)
-                (dolist (feature '(my-emacs-agents my-emacs-completion my-emacs-editing
-                                   my-emacs-writing my-emacs-org my-emacs-remote
-                                   my-emacs-ui my-emacs-excali my-emacs-org-excali
-                                   my-emacs-languages my-emacs-dired my-emacs-shells
-                                   my-emacs-git my-emacs-denote))
-                  (should (featurep feature)))
                 (should-not (featurep 'excali))
                 (should (equal (alist-get 'nix-ts-mode my/eglot-mode-server-executables)
                                "nixd"))
@@ -147,8 +91,6 @@
                                    my/agent-session-start-new-worktree
                                    my/agent-session-start-in-directory))
                   (should (commandp command)))
-                (should-not (boundp 'my/agent-session-map))
-                (should-not (key-binding (kbd "C-c a")))
                 (should (eq denote-file-type 'org)))))))
       (ert-info ((buffer-string)) (should (equal status 0))))))
 

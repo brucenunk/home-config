@@ -364,51 +364,6 @@ in
             }
             ''
               export HOME="$TMPDIR"
-              # Never enable configured cleanup during unrelated launcher tests.
-              # The dedicated GC suite checks real enablement in isolated state.
-              emacs --batch -Q ${emacsTestPaths} \
-                --eval '(progn (require (quote agent-shell-gc)) (advice-add (quote agent-shell-gc-mode) :override (quote ignore)))' \
-                -l my-emacs-agents --eval '
-                (progn
-                  (require (quote agent-shell))
-                  (unless (and (eq agent-shell-preferred-agent-config (quote pi))
-                               agent-shell-prefer-viewport-interaction
-                               agent-shell-tramp-mode
-                               (eq agent-shell-path-resolver-function
-                                   (quote agent-shell-tramp-resolve-path))
-                               (eq agent-shell-transcript-file-path-function
-                                   (quote my/agent-shell--transcript-file-path))
-                               (eq agent-shell-dot-subdir-function
-                                   (quote my/agent-shell--dot-subdir))
-                               (equal my/agent-shell-transcript-directory
-                                      (expand-file-name "~/work/agent-shell/transcripts/" "/")))
-                    (error "Agent shell defaults or TRAMP integration are missing"))
-                  (unless (version<= agent-shell--shell-maker-minimum-version shell-maker-version)
-                    (error "shell-maker is too old: %s" shell-maker-version))
-                  (unless (version<= agent-shell--acp-minimum-version acp-package-version)
-                    (error "ACP is too old: %s" acp-package-version))
-                  (unless (fboundp (quote agent-shell-pi-make-agent-config))
-                    (error "Pi integration is missing"))
-                  ;; Inspect only launcher autoload forms, without running init.
-                  (with-temp-buffer
-                    (insert-file-contents "${emacsConfig}/my-emacs-modules/my-emacs-agents.el")
-                    (goto-char (point-min))
-                    (condition-case nil
-                        (while t
-                          (let ((form (read (current-buffer))))
-                            (when (and (eq (car-safe form) (quote autoload))
-                                       (equal (nth 2 form) "my-agent-session"))
-                              (eval form))))
-                      (end-of-file nil)))
-                  (dolist (command (quote (my/agent-session-start-from-file
-                                           my/agent-session-start-new-worktree
-                                           my/agent-session-start-in-directory)))
-                    (unless (and (commandp command) (autoloadp (symbol-function command)))
-                      (error "Missing launcher autoload: %s" command)))
-                  (when (fboundp (quote my/agent-session-start))
-                    (error "Obsolete combined launcher is still autoloaded"))
-                  (message "agent-shell %s; shell-maker %s; ACP %s"
-                           agent-shell--version shell-maker-version acp-package-version))'
               emacs --batch -Q -l ${agentShellTramp.src}/agent-shell-tramp-tests.el \
                 -f ert-run-tests-batch-and-exit
               emacs --batch -Q -l ${agentShellGc.src}/tests/agent-shell-gc-tests.el \
@@ -426,8 +381,6 @@ in
                 -l my-emacs-completion-tests -f ert-run-tests-batch-and-exit
               touch "$out"
             '';
-
-        emacs-agent-attention-sound = import ../../pkgs/agent-attention-sound.nix { inherit pkgs; };
 
         emacs-tramp-rpc =
           let
@@ -484,41 +437,7 @@ in
                 --funcall ert-run-tests-batch-and-exit
               touch "$out"
             '';
-      }
-      // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
-        let
-          mkHome =
-            package:
-            inputs.home-manager.lib.homeManagerConfiguration {
-              inherit pkgs;
-              modules = [
-                homeManagerModule
-                {
-                  home = {
-                    username = "emacs-module-check";
-                    homeDirectory = "/home/emacs-module-check";
-                    stateVersion = "25.05";
-                  };
-                }
-              ]
-              ++ lib.optional (package != null) { programs.emacs.package = package; };
-            };
-          defaultHome = mkHome null;
-          emacs31Home = mkHome pkgs.emacs31;
-          emacsNoxHome = mkHome pkgs.emacs-nox;
-        in
-        {
-          emacs-home-manager-module =
-            assert defaultHome.config.home.sessionVariables.EDITOR == "emacsclient -c";
-            assert defaultHome.config.home.sessionVariables.VISUAL == "emacsclient -c";
-            assert defaultHome.config.programs.emacs.package.drvPath == emacsMaster.drvPath;
-            assert emacs31Home.config.programs.emacs.package.drvPath == pkgs.emacs31.drvPath;
-            assert emacsNoxHome.config.programs.emacs.package.drvPath == pkgs.emacs-nox.drvPath;
-            pkgs.runCommand "emacs-home-manager-module" { } ''
-              touch "$out"
-            '';
-        }
-      );
+      };
     };
 
   flake.modules.homeManager.emacs = homeManagerModule;

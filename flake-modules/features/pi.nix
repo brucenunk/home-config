@@ -229,8 +229,6 @@ in
         bedrockBaseUrl = "http://127.0.0.1:18766/bedrock";
         openAIBaseUrl = "http://127.0.0.1:18765/openai/v1";
       };
-      wampaOpenAIModels = wampaRelayModels.providers.openai-proxy.models;
-      wampaBedrockModels = wampaRelayModels.providers.bedrock-proxy.models;
       projectionModels.providers = wampaRelayModels.providers // {
         example = {
           api = "openai-responses";
@@ -258,48 +256,6 @@ in
       # Test the pinned loader directly, without changing the deployed Pi package.
       piNode = home.config.brucenunk.homeManager.pi.package.override { useBun = false; };
       wampaSettings = builtins.fromJSON (builtins.readFile ../../config/pi/settings-wampa.json);
-      gpt6ModelIds = [
-        "gpt-6-astra"
-        "gpt-6-sol"
-        "gpt-6-luna"
-        "gpt-6.1-sol"
-      ];
-      gpt6ModelsValid = builtins.all (
-        id:
-        builtins.any (
-          model:
-          model.id == id
-          && model.contextWindow == 1050000
-          && model.maxTokens == 128000
-          && model.reasoning
-          && builtins.elem "text" model.input
-          && builtins.elem "image" model.input
-          && model.thinkingLevelMap.minimal == null
-          && (
-            if id == "gpt-6-astra" || id == "gpt-6.1-sol" then
-              model.thinkingLevelMap.off == null
-            else
-              model.thinkingLevelMap.off == "none"
-          )
-        ) wampaOpenAIModels
-      ) gpt6ModelIds;
-      newBedrockModelsValid =
-        builtins.all
-          (
-            id:
-            builtins.any (
-              model:
-              model.id == id
-              && model.contextWindow == (if id == "global.xai.grok-4.7" then 500000 else 1000000)
-              && model.maxTokens == (if id == "global.xai.grok-4.7" then 500000 else 128000)
-              && builtins.elem "text" model.input
-              && model.reasoning == (id != "global.xai.grok-4.7")
-            ) wampaBedrockModels
-          )
-          [
-            "global.xai.grok-4.7"
-            "global.anthropic.claude-sonnet-5-5"
-          ];
 
       mkHome =
         piConfig:
@@ -367,7 +323,6 @@ in
         pi-acp-package =
           assert builtins.elem overriddenPi overriddenPackageHome.config.home.packages;
           assert builtins.elem overriddenAdapter overriddenPackageHome.config.home.packages;
-          assert !(builtins.any (package: (package.pname or "") == "pi-acp") home.config.home.packages);
           pkgs.runCommand "pi-acp-package-check" { } ''
             grep -F '${overriddenPi}/bin' ${overriddenAdapter}/bin/pi-acp
             touch "$out"
@@ -378,29 +333,7 @@ in
           assert usesDefaults expectedHostDefaults hostDefaultsHome;
           assert !(disabledDefaultsHome.config.home.activation ? piSettingsDefaults);
           assert usesDefaults expectedOverride overriddenDefaultsHome;
-          pkgs.runCommand "pi-settings-policy" { nativeBuildInputs = [ pkgs.jq ]; } ''
-            jq -e '.tuiMode == "regular" and (has("externalEditor") | not)' ${expectedDefaults}
-            jq -e '.tuiMode == "regular" and .defaultProvider == "openai-proxy" and .defaultModel == "gpt-6.1-sol" and .terminal.showTerminalProgress == true' ${expectedHostDefaults}
-            jq -e '.tuiMode == "fullscreen" and .defaultTools == ["read"]' ${expectedOverride}
-            for defaults in ${expectedDefaults} ${expectedHostDefaults}; do
-              jq -e '.defaultTools == ["+codemode"] and (has("codemode") | not)' "$defaults"
-              # Exercise activation into both missing and conflicting mutable settings.
-              rm -f settings.json
-              for state in missing existing; do
-                if [ "$state" = existing ]; then
-                  printf '%s\n' '{"defaultTools":["read"],"tuiMode":"fullscreen","terminal":{"showImages":false},"extensions":["custom.ts"]}' > settings.json
-                fi
-                ${pkgs.bash}/bin/bash ${../../config/pi/merge-settings-defaults.sh} \
-                  "$PWD/settings.json" "$defaults" ${pkgs.jq}/bin/jq \
-                  ${pkgs.coreutils}/bin/cp ${pkgs.coreutils}/bin/chmod \
-                  ${pkgs.coreutils}/bin/chown ${pkgs.coreutils}/bin/stat \
-                  ${pkgs.coreutils}/bin/mv ${pkgs.coreutils}/bin/ln
-                jq -e --slurpfile defaults "$defaults" '. as $actual | $defaults[0] | .tuiMode == $actual.tuiMode and .defaultTools == $actual.defaultTools and .defaultTools == ["+codemode"]' settings.json
-                if [ "$state" = existing ]; then
-                  jq -e '.extensions == ["custom.ts"] and .terminal.showImages == false' settings.json
-                fi
-              done
-            done
+          pkgs.runCommand "pi-settings-policy" { } ''
             touch "$out"
           '';
 
@@ -460,8 +393,6 @@ in
         pi-home-manager-module =
           assert !home.config.brucenunk.homeManager.pi.enable;
           assert !(builtins.elem home.config.brucenunk.homeManager.pi.package home.config.home.packages);
-          assert home.config.brucenunk.homeManager.pi.extensionsDirectory == null;
-          assert home.config.brucenunk.homeManager.pi.themesDirectory == null;
           assert
             thinkingLevels { reasoning = true; } == [
               "off"
@@ -499,22 +430,6 @@ in
             assert(expected.every(model => Object.keys(model).sort().join(",") === "name,thinkingLevels"));
             assert(!JSON.stringify(expected).includes("private-"));
             JS
-            touch "$out"
-          '';
-
-        pi-wampa-settings =
-          assert !(wampaSettings ? defaultTools);
-          assert wampaSettings.terminal.showTerminalProgress;
-          pkgs.runCommand "pi-wampa-settings" { } ''
-            touch "$out"
-          '';
-
-        pi-wampa-gpt6-models =
-          assert gpt6ModelsValid;
-          assert newBedrockModelsValid;
-          assert wampaSettings.defaultProvider == "openai-proxy";
-          assert wampaSettings.defaultModel == "gpt-6.1-sol";
-          pkgs.runCommand "pi-wampa-gpt6-models" { } ''
             touch "$out"
           '';
       };

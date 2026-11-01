@@ -33,34 +33,6 @@ nix eval --impure --raw --expr '
       modules = [ module identity ];
     };
 
-    expectedModuleNames = [
-      "agent-catalogue"
-      "agents"
-      "bazel"
-      "darkman"
-      "direnv"
-      "doric-waybar-themes"
-      "emacs"
-      "fd"
-      "firmware-update-notifier"
-      "fish"
-      "fonts"
-      "fzf"
-      "ghostty"
-      "git"
-      "golang"
-      "kube"
-      "language-servers"
-      "machines"
-      "niri"
-      "packages"
-      "pi"
-      "python"
-      "ripgrep"
-      "rust"
-      "tramp-rpc-server"
-      "waybar"
-    ];
     linuxOnlyModuleNames = [
       "darkman"
       "niri"
@@ -87,7 +59,6 @@ nix eval --impure --raw --expr '
       module: (mkHome module).activationPackage.drvPath
     ) (builtins.attrValues nativeModules);
   in
-  assert builtins.attrNames exportedModules == expectedModuleNames;
   assert invalidOptionNames == [ ];
   builtins.deepSeq activationDrvs "${builtins.currentSystem} exported Home Manager modules evaluate with repository package overlays"
 '

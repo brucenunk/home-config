@@ -17,6 +17,18 @@ Before changing instruction routing or context composition, read
 `config/agents/GUIDANCE-VERIFICATION.md` for static checks and deployed routing
 probes.
 
+## Checks and tests
+
+Add checks only for a concrete failure mode: broken behaviour, unsafe mutation,
+consumer overrides or integration boundaries. Prefer exercising real generated
+output over inspecting configuration attributes.
+
+Do not add tests that merely repeat configuration constants, maintain file or
+export inventories, enforce cosmetic structure, or assert that removed features
+remain absent. Do not duplicate coverage already provided by package builds,
+existing suites or general module evaluation. Extend an existing suite where
+practical; a new feature does not automatically need a new flake check.
+
 ## Verification
 
 After changing this repository:

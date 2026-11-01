@@ -96,23 +96,15 @@ in
         ];
       };
       ghosttyConfig = home.config.xdg.configFile."ghostty/config".text;
-      ghosttyThemeNames = builtins.filter (name: lib.hasPrefix "ghostty/themes/" name) (
-        builtins.attrNames home.config.xdg.configFile
-      );
     in
     {
       checks.ghostty-home-manager-module =
         assert builtins.elem pkgs.hello home.config.home.packages;
         assert lib.hasSuffix "\n\nfont-size = 12" ghosttyConfig;
         assert
-          ghosttyThemeNames == [
-            "ghostty/themes/doric-earth"
-            "ghostty/themes/doric-obsidian"
-          ];
-        assert
           !(
             home.config.xdg.configFile
-            ? "systemd/user/graphical-session.target.wants/app-com.mitchellh.ghostty.service"
+              ? "systemd/user/graphical-session.target.wants/app-com.mitchellh.ghostty.service"
           );
         pkgs.runCommand "ghostty-home-manager-module" { } ''
           touch "$out"

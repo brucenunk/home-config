@@ -1,5 +1,3 @@
-{ inputs, ... }:
-
 let
   doricWaybarThemes = {
     xdg.configFile."waybar/themes" = {
@@ -9,36 +7,6 @@ let
   };
 in
 {
-  perSystem =
-    { pkgs, ... }:
-
-    let
-      home = inputs.home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
-        modules = [
-          doricWaybarThemes
-          {
-            home = {
-              username = "doric-waybar-themes-module-check";
-              homeDirectory =
-                if pkgs.stdenv.hostPlatform.isDarwin then
-                  "/Users/doric-waybar-themes-module-check"
-                else
-                  "/home/doric-waybar-themes-module-check";
-              stateVersion = "25.05";
-            };
-          }
-        ];
-      };
-    in
-    {
-      checks.doric-waybar-themes-home-manager-module =
-        assert home.config.xdg.configFile."waybar/themes".recursive;
-        pkgs.runCommand "doric-waybar-themes-home-manager-module" { } ''
-          touch "$out"
-        '';
-    };
-
   flake.modules.homeManager = {
     doric-waybar-themes = doricWaybarThemes;
 

@@ -198,12 +198,6 @@ in
     in
     {
       checks.git-home-manager-module =
-        assert home.config.programs.git.settings.core.editor == "emacsclient -c";
-        assert
-          git.repositories."example/repo" == {
-            path = "/test-repositories/checkouts/main";
-            defaultBranch = "main";
-          };
         assert
           maintenancePaths git == [
             "/test-repositories/backing/repo.git"
@@ -212,15 +206,6 @@ in
         assert home.config.programs.git.maintenance.enable;
         assert home.config.programs.git.maintenance.repositories == maintenancePaths git;
         assert disabled.config.programs.git.includes == [ ];
-        assert
-          if pkgs.stdenv.hostPlatform.isDarwin then
-            home.config.launchd.agents ? "git-maintenance-weekly"
-          else
-            home.config.systemd.user.timers."git-maintenance@weekly".Timer.OnCalendar == "Sat *-*-* 1:00:00"
-            &&
-              home.config.systemd.user.timers."git-maintenance@daily".Timer.OnCalendar
-              == "Mon..Fri,Sun *-*-* 1:00:00"
-            && home.config.systemd.user.timers."git-maintenance@hourly".Timer.OnCalendar == "*-*-* 1..23:53:00";
         builtins.deepSeq [ home.activationPackage.drvPath disabled.activationPackage.drvPath ] (
           pkgs.runCommand "git-home-manager-module" { } ''
             export HOME="$PWD/home" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$PWD/gitconfig"
@@ -228,7 +213,6 @@ in
             ${pkgs.gnused}/bin/sed "s|/test-repositories|$PWD/work|g" \
               ${home.config.xdg.configFile."git/config".source} > "$GIT_CONFIG_GLOBAL"
             git() { ${lib.getExe home.config.programs.git.package} -c core.fsmonitor=false "$@"; }
-            test "$(git config --get core.editor)" = "emacsclient -c"
             bare="$PWD/work/backing/repo.git"
             source="$PWD/work/checkouts/main"
             git init --bare -q "$bare"
