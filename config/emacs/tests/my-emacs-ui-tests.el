@@ -621,6 +621,42 @@
     (should (my/ui-test--inherits-p 'agent-shell-markdown-source-block-language
                                    'agent-shell-markdown-source-block))))
 
+(ert-deftest my/ui-rendered-tables-use-zebra-backgrounds ()
+  (should agent-shell-markdown-table-zebra-stripe)
+  (with-temp-buffer
+    (insert (agent-shell-markdown-convert
+             "| Variant | Description |\n| --- | --- |\n| First | Plain text |\n| Second | Also plain |\n| Third | Still plain |\n"))
+    (dolist (text '("First" "Third" "Plain text" "Still plain"))
+      (let ((faces (my/ui-test--faces-at text)))
+        (should (memq 'agent-shell-markdown-table faces))
+        (should-not (memq 'agent-shell-markdown-table-zebra faces))))
+    (dolist (text '("Second" "Also plain"))
+      (should (memq 'agent-shell-markdown-table-zebra (my/ui-test--faces-at text))))))
+
+(ert-deftest my/ui-table-shading-follows-doric-palettes ()
+  (let ((original-themes custom-enabled-themes))
+    (unwind-protect
+        (cl-letf (((symbol-function 'auto-dark-mode) #'ignore))
+          (dolist (theme (append doric-themes-light-themes doric-themes-dark-themes))
+            (mapc #'disable-theme custom-enabled-themes)
+            (my/doric-theme-preload theme)
+            (enable-theme theme)
+            (should (equal (face-background 'agent-shell-markdown-table-zebra nil t)
+                           (doric-themes-with-colors bg-shadow-subtle)))
+            (should-not (equal (face-background 'agent-shell-markdown-table-zebra nil t)
+                               (face-background 'default nil t)))
+            (should (eq (face-attribute 'agent-shell-markdown-table-zebra :foreground)
+                        'unspecified))
+            (should (eq (face-attribute 'agent-shell-markdown-table-zebra :inherit)
+                        'agent-shell-markdown-table))
+            (should (eq (face-attribute 'agent-shell-markdown-table-zebra :slant nil t)
+                        'normal))
+            (should-not (face-attribute 'agent-shell-markdown-table-zebra :underline nil t))
+            ;; Doric's search highlighting remains unchanged.
+            (should (face-attribute 'lazy-highlight :underline nil t))))
+      (mapc #'disable-theme custom-enabled-themes)
+      (mapc #'enable-theme (reverse original-themes)))))
+
 (ert-deftest my/ui-unfenced-tool-output-follows-viewport-default ()
   ;; Accepted limitation: plain tool results have no fixed-pitch body face.
   (cl-letf (((symbol-function 'agent-shell-viewport--update-header) #'ignore))

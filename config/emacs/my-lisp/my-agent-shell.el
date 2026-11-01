@@ -17,10 +17,12 @@
 ;;   - my/agent-shell-gc-protect-viewport-draft-p
 
 ;;   - my/agent-shell-restore-transcript-policy
+;;   - my/agent-shell-table-faces-refresh
 
 ;;; Code:
 
 (require 'cl-lib)
+(require 'doric-themes)
 
 ;;;###autoload
 (defun my/agent-shell-insert-reference ()
@@ -189,6 +191,21 @@ Include drafts saved while peeking at a response in view mode."
 (defun my/agent-shell-restore-transcript-policy ()
   "Restore local transcripts after enabling or toggling TRAMP integration."
   (setq agent-shell-transcript-file-path-function #'my/agent-shell--transcript-file-path))
+
+;;;###autoload
+(defun my/agent-shell-table-faces-refresh (&rest _)
+  "Shade alternate table rows with the active Doric `bg-shadow-subtle'.
+Keep normal text colour and fixed-pitch inheritance, without inheriting
+the search-highlight face's italics or underlining.  Accept theme hook
+arguments and do nothing before the table renderer loads."
+  (when (facep 'agent-shell-markdown-table-zebra)
+    (doric-themes-with-colors
+      (set-face-attribute 'agent-shell-markdown-table-zebra nil
+                          :inherit 'agent-shell-markdown-table
+                          :background bg-shadow-subtle
+                          :foreground 'unspecified
+                          :slant 'normal
+                          :underline nil))))
 
 (provide 'my-agent-shell)
 ;;; my-agent-shell.el ends here

@@ -166,6 +166,7 @@
                       (locate-library "my-emacs-agents") 'agent-shell)))
     (dolist (loaded '(nil t))
       (my/deferred-test--fresh
+       '(require 'my-agent-shell)
        `(when ,loaded (require 'agent-shell))
        declaration
        `(should (eq (featurep 'agent-shell) ,loaded))
@@ -175,6 +176,25 @@
                        agent-shell-viewport-edit-mode-hook))
           (should (memq #'my/agent-shell-header-no-underline
                         (symbol-value hook))))))))
+
+(ert-deftest my/deferred-agent-table-shading-load-orders ()
+  (let ((declaration (my/deferred-test--declaration
+                      (locate-library "my-emacs-agents") 'agent-shell)))
+    (dolist (loaded '(nil t))
+      (dolist (theme-first '(nil t))
+        (my/deferred-test--fresh
+         '(require 'my-agent-shell)
+         '(require 'my-ui)
+         `(when ,loaded (require 'agent-shell))
+         '(my/doric-theme-preload 'doric-earth)
+         `(when ,theme-first (enable-theme 'doric-earth))
+         declaration
+         `(should (eq (featurep 'agent-shell) ,loaded))
+         '(require 'agent-shell)
+         `(unless ,theme-first (enable-theme 'doric-earth))
+         '(should (memq #'my/agent-shell-table-faces-refresh enable-theme-functions))
+         '(should (equal (face-background 'agent-shell-markdown-table-zebra nil t)
+                         (doric-themes-with-colors bg-shadow-subtle))))))))
 
 (ert-deftest my/deferred-mixed-pitch-hooks-load-orders ()
   (let ((declaration (my/deferred-test--declaration
