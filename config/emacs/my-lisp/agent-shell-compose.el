@@ -227,7 +227,10 @@ display, mouse, attachment, or layout properties cross this boundary."
       ;; Respect JIT's visible range, extending only as Org requires for a
       ;; block delimiter edit (e.g. closing an earlier unfinished block).
       (let ((bounds (save-excursion (org-fontify-extend-region beg end 0))))
-        (font-lock-ensure (car bounds) (cdr bounds)))
+        ;; Org's change hook can return just the first block, shrinking END
+        ;; when a visible range contains several quotes.  Extend the request;
+        ;; never leave its later text unfontified but marked handled by JIT.
+        (font-lock-ensure (min beg (car bounds)) (max end (cdr bounds))))
       ;; Always copy the requested visible range, even if Org coloured it as
       ;; a side effect of an earlier request.  Also copy any newly refontified
       ;; context beyond it, but never traverse the entire draft just to scroll.

@@ -92,6 +92,44 @@
     (font-lock-ensure (point-min) (1+ (point-min)))
     (should-not (memq 'font-lock-string-face (agent-shell-compose-test--faces "hello")))))
 
+(ert-deftest agent-shell-compose-repeated-quotes-survive-fontification-and-edits ()
+  (dolist (markup '(org markdown))
+    (dolist (partial '(nil t))
+      (agent-shell-compose-test--with-composer markup
+        (let* ((orgp (eq markup 'org))
+               (begin (if orgp "#+begin_quote" "> "))
+               (face (if orgp 'org-block-begin-line 'markdown-blockquote-face)))
+          (dolist (body '("First quote" "Second quote" "Third quote"))
+            (insert (if orgp
+                        (agent-shell-compose--org-quote body)
+                      (substring-no-properties (agent-shell--block-quote body)))
+                    "\n\nReply.\n\n\n\n"))
+          (let ((draft (buffer-string)))
+            (if partial
+                (progn
+                  ;; Simulate redisplay stopping inside the second quote.
+                  (goto-char (point-min)) (search-forward "Second")
+                  (font-lock-ensure (point-min) (point))
+                  (font-lock-ensure (point) (point-max)))
+              (font-lock-ensure))
+            (dotimes (pass 2)
+              (save-excursion
+                (goto-char (point-min))
+                (dotimes (_ 3)
+                  (search-forward begin)
+                  (let ((faces (get-text-property (- (point) (length begin)) 'face)))
+                    (should (memq face (if (listp faces) faces (list faces)))))
+                  (when orgp
+                    (search-forward "#+end_quote")
+                    (should (eq (get-text-property (- (point) 11) 'face)
+                                'org-block-end-line)))))
+              ;; The user's workaround: remove blank lines before quote two.
+              (goto-char (point-min)) (search-forward "Reply.")
+              (if (zerop pass) (delete-char 2) (insert "\n\n"))
+              (font-lock-ensure))
+            (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                           draft))))))))
+
 (ert-deftest agent-shell-compose-org-only-faces-cross-the-boundary ()
   (agent-shell-compose-test--with-composer 'org
     (insert agent-shell-compose-test--org-draft)
