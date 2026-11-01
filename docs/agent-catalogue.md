@@ -87,13 +87,13 @@ empty string requiring explicit selection. No mutable Pi settings are read.
 
 `init.el` loads the generated file from `user-emacs-directory` through
 `locate-user-emacs-file` once during startup. A missing file is allowed at
-startup so unrelated Emacs features and existing notes remain usable; capture
+startup so unrelated Emacs features and existing notes remain usable; launching
 reports missing configuration. Syntax/evaluation errors in this trusted config
 are ordinary Emacs load errors, not errors hidden by a data importer.
 
 **Refresh is explicit:** after rebuilding and activating changed inventory,
-run `M-x my/agent-catalogue-reload` or restart Emacs. Capture uses the loaded
-variable; it no longer rereads disk for every note. Reload clears the old
+run `M-x my/agent-catalogue-reload` or restart Emacs. Launchers use the loaded
+variable rather than rereading disk for each launch. Reload clears the old
 inventory before loading, so a missing file cannot silently retain old choices.
 There are no watchers, timers, or automatic runtime reload hooks.
 
@@ -103,17 +103,13 @@ unusable model/thinking selections, not a second schema implementation. Nix
 rejects oversized model hints, whitespace/control characters, case-insensitive
 duplicate references, and inconsistent provider spelling before generation.
 
-Capture always asks for a repository. It selects a sole eligible machine
-automatically; multiple eligible machines require an explicit choice with no
-default, regardless of which machine runs Emacs. Ordinary capture retains model
-and thinking defaults; prefix capture exposes those choices. The machine prompt
-also disables Vertico candidate preselection, so Return alone cannot accept the
-first machine. Other prompts retain their normal completion behavior. Missing
-configuration or unusable required choices prevent note creation. Listing and existing
-notes remain independent of the catalogue.
+There is no catalogue-backed note capture UI. Ordinary Denote notes and
+follow-up briefs do not require an inventory or select a skill by default.
+The launcher selects a sole eligible machine automatically; multiple machines
+require explicit selection without a default/preselection, regardless of locality.
 
-This is configured inventory, not readiness evidence: configuration/capture does not
-probe hosts, query Git, create worktrees, or launch sessions. The separate
+This is configured inventory, not readiness evidence: loading configuration does
+not probe hosts, query Git, create worktrees, or launch sessions. The separate
 [human-operated session launcher](agent-session.md) consumes machine connections,
 repository sources and default base refs from this catalogue. It does not apply
 catalogue model/thinking defaults: Pi keeps its own defaults unless a task
@@ -125,16 +121,16 @@ Keep machine inventory under `brucenunk.homeManager.machines`, with one
 `isLocal = true` record and explicit remote `directory` values. Keep repository
 definitions there rather than maintaining a second inventory. Pi deployment's
 `models` and the local inventory record should use the same Nix value. Import
-`agent-catalogue` wherever Emacs capture or the human-operated launcher is used.
+`agent-catalogue` wherever the human-operated Emacs launcher is used.
 Machine options, Git maintenance, and the Emacs catalogue remain independent
 of the [retired launchers](agent-retirement.md). The machine name `local` is
 no longer reserved; it is an ordinary catalogue key, not a routing alias.
 
 `agent-catalogue-home-manager-module` tests Nix serialization (including quotes,
 backslashes, and Unicode), Nix option errors, private-field exclusion, and isolated
-configuration loading/reload/capture/list ERT tests. The capture regression runs Vertico's
-real candidate update, navigation, and Return command in a headless test buffer;
-it is not live UI/runtime-pickup evidence. `git-home-manager-module` checks that only local
+configuration loading/reload ERT tests; launcher selection is exercised separately
+by `emacs-agent-shell`. These are not live UI/runtime-pickup evidence.
+`git-home-manager-module` checks that only local
 repositories participate in maintenance. Catalogue checks retain model-default
 coverage and accept an ordinary machine named `local`. See
 [home-manager-checks.md](home-manager-checks.md).

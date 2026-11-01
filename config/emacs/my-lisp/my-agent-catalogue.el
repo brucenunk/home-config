@@ -36,7 +36,7 @@ identity, provider endpoints, or credentials are projected here.
 
 The trusted agent-catalogue.el in `user-emacs-directory' sets this variable
 at startup.  Structural correctness belongs to Nix options and generation
-tests, not a duplicate Lisp schema.  Capture uses this loaded value, not a
+tests, not a duplicate Lisp schema.  Launchers use this loaded value, not a
 fresh disk read; use `my/agent-catalogue-reload' after configuration changes.
 These are configured choices, not readiness or authorization evidence.")
 
@@ -46,7 +46,7 @@ These are configured choices, not readiness or authorization evidence.")
 Clear the previous inventory first, so a missing file cannot retain old
 choices.  With NOERROR, allow a missing file, as at startup.  Other load errors
 propagate normally.  After activation, run this command or restart Emacs to
-pick up the new configuration; capture does not reload it automatically."
+pick up the new configuration; launchers do not reload it automatically."
   (interactive)
   (setq my/agent-machines nil)
   (load (locate-user-emacs-file "agent-catalogue.el") noerror t t))

@@ -63,4 +63,4 @@ Do not collapse deployment or apply success into runtime pickup success unless r
 
 ## Task Guidance
 
-When creating or editing task notes, read `~/work/TASKS.md` for file format and capture conventions. A launcher-supplied task snapshot is sufficient bootstrap context; agents do not need to locate the original note or resolve its Denote identifiers. The source note may exist only on the Emacs host, not the agent's machine.
+When creating or editing task notes, read `~/work/TASKS.md` for lightweight follow-up format and launch conventions. A launcher-supplied task snapshot is sufficient bootstrap context; agents do not need to locate the original note or resolve its Denote identifiers. The source note may exist only on the Emacs host, not the agent's machine.

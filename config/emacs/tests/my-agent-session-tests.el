@@ -196,32 +196,27 @@
             (should (string-suffix-p text (plist-get task :prompt)))))
       (delete-file file))))
 
-(ert-deftest my/agent-session-captured-org-roundtrips-to-saved-launch-context ()
-  (require 'my-denote-task)
-  (let* ((root (make-temp-file "org-capture-launch-" t))
-         (denote-templates '((task-workflow . "* Context\n\nSaved context.\n")))
-         (my/agent-machines
-          '(("machine-a" :repositories ((:name "owner/repo"))
-             :default-model "provider/vendor/model"
-             :models ((:name "provider/vendor/model" :thinking-levels ("medium")
-                       :default-thinking "medium"))))))
+(ert-deftest my/agent-session-handwritten-follow-up-needs-no-skill-or-template ()
+  (let* ((root (make-temp-file "org-follow-up-launch-" t))
+         (file (expand-file-name "20261101T152443--follow-up.org" root))
+         (snapshot "#+title: Follow-up: API/Org
+#+identifier: 20261101T152443
+#+repo: owner/repo
+
+Investigate the issue in ./src/. No prescribed workflow.
+"))
     (unwind-protect
-        (cl-letf (((symbol-function 'my/denote-task-directory) (lambda () root))
-                  ((symbol-function 'completing-read)
-                   (lambda (&rest _) "owner/repo")))
-          (let* ((file (my/denote-task "Capture: API/Org"))
-                 (task (my/agent-session--task-read file))
-                 (hints (my/agent-session--task-hints file))
-                 (snapshot (with-temp-buffer (insert-file-contents file) (buffer-string))))
-            (should (equal (plist-get task :title) "Capture: API/Org"))
+        (progn
+          (write-region snapshot nil file nil 'silent)
+          (let ((task (my/agent-session--task-read file))
+                (hints (my/agent-session--task-hints file)))
+            (should (equal (plist-get task :title) "Follow-up: API/Org"))
             (should (equal (plist-get hints :title) (plist-get task :title)))
             (should (equal (plist-get hints :repo) "owner/repo"))
-            (should (equal (plist-get hints :machine) "machine-a"))
-            (should (equal (plist-get task :model) "provider/vendor/model"))
-            (should (equal (plist-get task :thinking) "medium"))
-            (should (string-suffix-p
-                     (concat snapshot "\n\nLoad the task-workflow agent skill and follow instructions.")
-                     (plist-get task :prompt)))))
+            (should-not (plist-get task :model))
+            (should-not (plist-get task :thinking))
+            (should-not (string-match-p "Load the" (plist-get task :prompt)))
+            (should (string-suffix-p snapshot (plist-get task :prompt)))))
       (delete-directory root t))))
 
 (ert-deftest my/agent-session-naming-collisions ()

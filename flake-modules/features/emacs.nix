@@ -168,7 +168,6 @@ let
         xdg.configFile."emacs/my-emacs.org".source = ../../config/emacs/my-emacs.org;
         xdg.configFile."emacs/my-lisp".source = ../../config/emacs/my-lisp;
         xdg.configFile."emacs/my-emacs-modules".source = "${emacsConfig}/my-emacs-modules";
-        xdg.configFile."emacs/denote-templates".source = ../../config/emacs/denote-templates;
         xdg.configFile."emacs/sounds/agent-attention.wav".source =
           import ../../pkgs/agent-attention-sound.nix
             { inherit pkgs; };
@@ -266,7 +265,6 @@ in
           pkgs.runCommand "emacs-denote-check" { nativeBuildInputs = [ emacs ]; } ''
             export HOME="$TMPDIR/home"
             mkdir -p "$HOME/.config/emacs"
-            ln -s ${../../config/emacs/denote-templates} "$HOME/.config/emacs/denote-templates"
             emacs --batch -Q ${emacsTestPaths} \
               --eval '(setq user-emacs-directory (expand-file-name "~/.config/emacs/"))' \
               --load my-emacs-denote-tests --load my-denote-task-tests \

@@ -10,12 +10,10 @@ repurposing a package or ownership boundary.
 
 Before modifying or creating my-lisp files:
 
-- [ ] Task code manages files, filtering, and capture hints only; repository and
-  machine choices are metadata, not launch operations. Capture remains file-only;
-  task code owns no Git, agent sessions, worktrees, status transitions, or
-  dependency orchestration.
+- [ ] Follow-up note code owns file identity only, not capture UI, templates,
+  Git, agent sessions, worktrees, status transitions, or dependency orchestration.
 - [ ] Explicit human-operated launches belong in `my-agent-session.el`, not task
-  capture; the launcher may create
+  note identity; the launcher may create
   disposable worktrees and conversations, but owns no
   agent-to-agent orchestration, automatic cleanup or task lifecycle.
 - [ ] Function names follow `my/<noun>-<verb>`; predicates end in `-p`.
@@ -39,7 +37,7 @@ Review changed modules and their direct callers/consumers for:
 
 - **UI-thread stalls:** do not add synchronous broad scans, repair, or recomputation
   to interactive/read paths. Use bounded reads and explicit freshness work.
-- **Mixed responsibilities:** keep capture and file configuration
+- **Mixed responsibilities:** keep launch and file configuration
   in their existing narrow owners.
 - **Split state ownership:** avoid duplicate sources of truth; prefer native file
   and Denote state over custom indexes or caches.
@@ -54,13 +52,12 @@ Review changed modules and their direct callers/consumers for:
 Use noun-verb names matching the module or feature:
 
 ```elisp
-my/denote-task
 my/denote-task-file-p
 my/denote-task-directory
 ```
 
 Internals use a double dash after the module prefix, for example
-`my/denote-task--metadata-read`. Internals are not interactive, not autoloaded, and
+`my/agent-session--task-read`. Internals are not interactive, not autoloaded, and
 not called outside their owning module.
 
 ## File Structure

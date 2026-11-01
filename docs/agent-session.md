@@ -1,7 +1,7 @@
 # Human-operated agent-shell launches
 
 Three explicit commands are autoloaded by `init.el` and implemented in
-`config/emacs/my-lisp/my-agent-session.el`, separately from task capture. Each creates a **new Pi conversation**, never a reused project
+`config/emacs/my-lisp/my-agent-session.el`. Each creates a **new Pi conversation**, never a reused project
 conversation. They require the generated [catalogue](agent-catalogue.md), the
 pinned agent-shell/ACP packages, and `pi-acp` on the selected machine.
 
@@ -30,15 +30,19 @@ The optional Lisp argument `FILE` bypasses completion, not saved-task validation
 prompt-file mode. Markdown tasks are neither discovered nor accepted through
 `FILE`; existing files are not migrated, renamed or rewritten.
 
-Task capture is `my/denote-task` on **`C-c n T`**. It creates unsigned Denote
-Org files under the task root without launching a session. There is no
-custom task-list UI or at-point launch binding.
+Follow-up briefs are ordinary Denote Org notes, written manually or by an agent
+when requested; see `work/TASKS.md` for lightweight authoring guidance. There is
+no custom task capture command, template, task-list UI or at-point launch binding.
 
 ### `M-x my/agent-session-start-new-worktree`
 
-Select a configured repository, then an eligible machine. **Always confirm the
-base ref**, create a new sibling worktree, and start ad hoc. There is no initial
-prompt, model/thinking override, or description/name question.
+This is the normal entry point for conversational work: compose the brief in
+agent-shell with project-relative completion. Select a configured repository,
+then an eligible machine. **Always confirm the base ref**, create a new sibling
+worktree, and start ad hoc. There is no initial prompt, model/thinking override,
+or description/name question. Request `task-workflow` in chat when ready to
+delegate implementation, verification, independent review and staged handoff;
+no task note or new session is required.
 
 ### `M-x my/agent-session-start-in-directory`
 
@@ -571,10 +575,11 @@ layouts, and best-effort remote bookkeeping failure handling. Unrelated launcher
 tests suppress GC enablement so their simulated remote paths are not probed by
 the automatic tracking hooks.
 
-The catalogue/capture ERT suite checks Org capture, standard Denote identity,
-skill/launch-hint choices, explicit machine selection and cancellation before
-note creation. The Denote configuration suite checks Org templates, mixed-format
-link resolution and task-only refresh. These tests never create live agent sessions.
+The catalogue ERT suite checks trusted configuration loading and reload. The
+Denote suites check ordinary Org note identity, absence of custom capture and
+templates, mixed-format links, and task-only refresh. Launcher tests also cover
+a handwritten follow-up without a skill/template and legacy explicit skill
+metadata. These tests never create live agent sessions.
 
 Stage intended files, run the required Wampa build on x86_64 Linux, and follow
 [activation.md](activation.md) when delivery is authorized. From Woowoo, Wampa

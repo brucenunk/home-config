@@ -834,9 +834,9 @@ Implementation: [[file:my-lisp/my-denote.el][my-denote.el]].
 (require 'my-denote)
 #+end_src
 
-**** Notes and task capture
+**** Notes and follow-up briefs
 
-New notes use Org under =~/work/docs/=; task capture remains scoped to its =tasks/= subtree. Show notes on empty startup without replacing explicitly requested buffers. Defer new-note refresh and renaming until the file exists. Task-specific debounce and redisplay advice is installed through the helper registration call below, without forcing autorevert to load. Its library option =my/denote-task-auto-revert-debounce-interval= defaults to 0.3 seconds.
+New notes use Org under =~/work/docs/=, without custom capture commands or templates. Follow-up briefs can be written as ordinary Denote Org notes under =tasks/= and launched later through =my/agent-session-start-from-file=. Most agent conversations start directly in a new worktree; select an autonomous delivery skill in chat when ready. Show notes on empty startup without replacing explicitly requested buffers. Defer new-note refresh and renaming until the file exists. Task-specific debounce and redisplay advice is installed through the helper registration call below, without forcing autorevert to load. Its library option =my/denote-task-auto-revert-debounce-interval= defaults to 0.3 seconds.
 
 The Dired hook identifies notes in the configured collection, and the Markdown hook highlights Denote links in existing Markdown notes. =my/denote-startup= opens the notes view only on an otherwise empty startup. =my/denote-rename-new-buffer-maybe= defers buffer naming until a new note exists, replacing Denote’s immediate rename hooks. =my/denote-task-auto-revert-enable-maybe= enables refresh only for task files.
 
@@ -852,9 +852,7 @@ The link advice =my/denote-link-normalize-file-arg= normalizes file arguments be
          (denote-after-new-note . my/denote-rename-new-buffer-maybe)
          (find-file . my/denote-rename-new-buffer-maybe)
          (find-file . my/denote-task-auto-revert-enable-maybe))
-  :bind (("C-c n T" . my/denote-task)
-         ("C-c n n" . denote)
-         ("C-c n t" . denote-template)
+  :bind (("C-c n n" . denote)
          ("C-c n r" . denote-rename-file)
          ("C-c n l" . denote-link)
          ("C-c n b" . denote-backlinks))
@@ -865,8 +863,6 @@ The link advice =my/denote-link-normalize-file-arg= normalizes file arguments be
   (denote-known-keywords nil)
   (denote-file-type 'org)
   (denote-rename-confirmations nil)
-  (denote-templates
-   '((task-workflow . (lambda () (my/denote-template "task-workflow.org")))))
   :config
   (require 'my-denote-task)
   (advice-add #'denote-link :around #'my/denote-link-normalize-file-arg)

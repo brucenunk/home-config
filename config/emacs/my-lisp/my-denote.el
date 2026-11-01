@@ -9,7 +9,6 @@
 
 ;; Implementation for the configuration in my-emacs.org.
 ;; Public functions/commands:
-;;   - my/denote-template
 ;;   - my/denote-startup-buffer
 ;;   - my/denote-startup
 ;;   - my/denote-task-auto-revert-enable-after-save
@@ -36,14 +35,6 @@ with avoiding redundant reverts during rapid agent edits."
 
 (defvar-local my/denote-task-auto-revert-debounce-timer nil
   "Debounce timer for task file auto-revert notifications.")
-
-;;;###autoload
-(defun my/denote-template (filename)
-  "Read FILENAME from the Emacs denote-templates directory."
-  (with-temp-buffer
-    (insert-file-contents
-     (expand-file-name filename (locate-user-emacs-file "denote-templates/")))
-    (buffer-string)))
 
 (defvar my/denote-startup-notes-buffer nil
   "Reusable notes buffer for empty startup and no-file clients.")

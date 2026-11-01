@@ -109,8 +109,7 @@ and platform boundaries.
 - `agent-catalogue` generates trusted executable Elisp configuration for Emacs
   from that inventory, setting `my/agent-machines` at startup with explicit reload.
   It does not install Emacs. Hosts/downstream consumers opt in
-  explicitly; capture and the separate human-operated Emacs session launcher
-  consume it. See [`agent-session.md`](agent-session.md).
+  explicitly; the human-operated Emacs session launcher consumes it. See [`agent-session.md`](agent-session.md).
 - `pi` exposes its deployment interface under
   `brucenunk.homeManager.pi`. Its public theme and extension directories are
   defaults, so provider or transport adapters can replace them without

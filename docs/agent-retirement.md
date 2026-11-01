@@ -6,7 +6,7 @@ configured by this flake. Their Home Manager modules/options, package exports,
 Go implementation/dependencies, themes, Pi state extension, and plugin/service
 integration have been removed. No flake inputs were updated for this removal.
 
-Pi, Emacs agent-shell, task capture/listing, Git maintenance, and the independent
+Pi, Emacs agent-shell, ordinary follow-up notes, Git maintenance, and the independent
 machine/model/repository inventory and Emacs catalogue remain supported. Use the
 three explicit [human-operated Emacs launch commands](agent-session.md).
 They do not orchestrate other agents or perform automatic session/worktree

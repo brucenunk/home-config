@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; Regression coverage for Denote startup and reusable content templates.
+;; Regression coverage for ordinary notes, startup, links and follow-up refresh.
 
 ;;; Code:
 
@@ -30,45 +30,10 @@
         (kill-buffer note-buffer))
       (delete-directory root t))))
 
-(ert-deftest my/denote-task-template-is-content-only ()
-  (let* ((reader (alist-get 'task-workflow denote-templates))
-         (template (funcall reader)))
-    (should (functionp reader))
-    (should (stringp template))
-    (should (equal template "* Context\n\n"))
-    (should (equal (mapcar #'car denote-templates) '(task-workflow)))
-    (should-not (string-match-p "Dependencies" template))
-    (should-not (string-match-p "repo:" template))))
-
-(ert-deftest my/denote-template-reads-requested-file-on-demand ()
-  (let ((user-emacs-directory (make-temp-file "denote-templates-" t)))
-    (unwind-protect
-        (dolist (filename '("task-workflow.org" "technical-note.org"))
-          (let ((file (locate-user-emacs-file (concat "denote-templates/" filename))))
-            (make-directory (file-name-directory file) t)
-            (dolist (body '("* First version\n" "* Revised version\n"))
-              (write-region body nil file nil 'silent)
-              (should (equal (my/denote-template filename) body))
-              (when (equal filename "task-workflow.org")
-                (should (equal (funcall (alist-get 'task-workflow denote-templates))
-                               body))))))
-      (delete-directory user-emacs-directory t))))
-
-(ert-deftest my/denote-extracted-template-inserts-into-org-notes ()
-  (let* ((root (make-temp-file "denote-template-note-" t))
-         (denote-directory root))
-    (unwind-protect
-        (let* ((file (denote "Template test" nil 'org nil nil 'task-workflow))
-               (buffer (find-buffer-visiting file)))
-          (unwind-protect
-              (with-current-buffer buffer
-                (should (derived-mode-p 'org-mode))
-                (should (string-suffix-p (my/denote-template "task-workflow.org")
-                                         (buffer-string))))
-            (when (buffer-live-p buffer)
-              (with-current-buffer buffer (set-buffer-modified-p nil))
-              (kill-buffer buffer))))
-      (delete-directory root t))))
+(ert-deftest my/denote-has-no-custom-templates-or-capture ()
+  (should-not denote-templates)
+  (should-not (fboundp 'my/denote-template))
+  (should-not (fboundp 'my/denote-task)))
 
 (ert-deftest my/denote-startup-sorts-all-files-newest-first ()
   (let* ((root (make-temp-file "denote-startup-" t))
@@ -167,8 +132,10 @@
                   (should (eq initial-buffer-choice #'my/denote-startup-buffer)))))))
       (kill-buffer notes))))
 
-(ert-deftest my/denote-task-binding-releases-old-prefix ()
-  (should (eq (keymap-lookup (current-global-map) "C-c n T") #'my/denote-task))
+(ert-deftest my/denote-ordinary-bindings-remain-without-capture-or-templates ()
+  (should (eq (keymap-lookup (current-global-map) "C-c n n") #'denote))
+  (should-not (keymap-lookup (current-global-map) "C-c n T"))
+  (should-not (keymap-lookup (current-global-map) "C-c n t"))
   (should-not (keymap-lookup (current-global-map) "C-c t"))
   (should-not (fboundp 'my/task-add))
   (should-not (fboundp 'my/task-list-start-agent)))

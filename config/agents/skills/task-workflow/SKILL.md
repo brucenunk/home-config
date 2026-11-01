@@ -1,128 +1,39 @@
 ---
 name: task-workflow
-description: "Chat-first development task workflow. Align on scope in chat, then autonomously build, verify, review, and hand staged or committed changes back for user review. Load when task has skill: task-workflow. Do not execute implementation work until this skill is loaded."
+description: "Explicitly delegated delivery: implement the agreed direction, verify, independently review, and hand back staged changes. Use only when the user requests this skill or a supplied brief explicitly selects it, not merely because a conversation involves coding."
 ---
 
 # Task Workflow
 
-Chat-first delivery with one explicit approval gate before implementation and a review-ready handoff at the end.
+Take agreed work through implementation, verification, independent review, and a user-review-ready handoff. This skill can be invoked at the start or midway through a conversation. It does not require a task note or a new session.
 
-The task note is a bootstrap artifact, not the main collaboration surface. Use chat for scope alignment and the worktree, verification evidence, and review output as implementation artifacts. Do not create or maintain a formal plan file for this workflow.
+## Establish the brief
 
-## Invariants
+- Use the current conversation as the primary brief, plus any supplied note, repository instructions, and existing worktree changes. A launcher-supplied snapshot is sufficient; do not hunt for its original file or resolve its links as a bootstrap step.
+- Briefly state the outcome, important boundaries, and intended verification. Preserve user-specified APIs, names, behavior, and other locked details.
+- Clear authorization to proceed is sufficient: do not demand a scope packet, an exact approval phrase, or another approval after the user has already agreed. Ask only about material ambiguity or missing authorization. For substantial or risky work, make the consequential choices and boundaries explicit before implementing.
+- Follow the human-selected worktree and applicable repository safety/delivery rules. Do not create a plan file, task note, or workflow-state log merely to run this skill.
 
-- **Branch management:** the human-operated Emacs launcher or other explicitly approved human setup has already selected the correct local branch and worktree. Never create, rename, or switch local branches, or create worktrees manually. Preserve the launcher's selected names; do not infer a branch naming convention from the task identifier.
-- **Pushing:** pushing is not part of the default handoff. Push only when explicitly requested or required by repo workflow, using the applicable finish guidance.
-- **Waiting:** waiting means a blocking message has been sent and the agent is paused for user input. Do not use task waiting-marker commands or backend waiting hooks.
-- **Task note:** read it as durable bootstrap context. Verbatim task-note content supplied in the initial conversation satisfies this requirement when the canonical file is on another machine. Do not turn it into a running work log or add phase markers, status history, or dense verification transcripts.
-- **Remote bootstrap:** keep the supplied note, its canonical local file, the current worktree, and Pi session state distinct. If the canonical note is inaccessible, do not claim to edit, maintain, or finish it; ask for that local mutation separately when it is required.
-- Edit the canonical task note only when it is accessible and explicitly requested, a durable task-level constraint must survive later sessions, or repo guidance requires it. When only verbatim bootstrap content is available, report any needed note change for the local owner instead of editing a substitute.
+## Deliver autonomously
 
-## On Entry
+- Prefer the smallest maintainable solution. Once authorized, continue through implementation, affected verification, and review without waiting for prompts between steps.
+- Stop for a material decision or blocker: changing an agreed API or boundary, entering an undisclosed subsystem, taking a different implementation direction, or substantially increasing complexity, maintenance burden, operational machinery, or verification requirements. Explain the trade-off before building the larger solution.
+- Keep discoveries and follow-up suggestions in chat. Create or update durable notes only when requested or required by repository guidance; capture useful context, not a running transcript.
 
-1. Read the canonical task note or its verbatim launcher-supplied content and extract its identifier when present. Repository selection comes from the launcher/current worktree, not required task-note front matter.
-2. Read the applicable `AGENTS.md` hierarchy and load this skill before implementation.
-3. Recenter from current chat, the task note, `git status --short`, and relevant diffs or recent commits.
-4. Task notes are ordinary files; legacy Dependencies sections and links are context, not an enforced lifecycle. Do not parse/check off dependency checkboxes or infer status from filename signatures. Surface any explicit user-stated prerequisites during scope alignment.
-5. If prior approved scope is unclear, reconstruct the likely contract from the note and worktree, then ask the smallest necessary clarification.
+## Verify and review
 
-## Phase 1 — Scope Conversation
+- Assume bugs exist. Exercise the actual behavioral risks, not just whether the code builds. Prefer the furthest practical authorized proof point; distinguish isolated tests, downstream deployment, and live runtime pickup. Never mark user/manual checks passed yourself.
+- Load and follow the review skill for independent read-only diff review. Review is expected unless the change is mechanically tiny, has an obvious narrow blast radius, and verification decisively covers its risk. State explicitly when review is skipped or cannot run, and why.
+- Fix clearly required in-scope correctness, security, and regression findings, then rerun affected verification. Findings do not authorize scope expansion: pause when a fix requires a materially different or more complex approach.
+- Normally rerun review after a material fix. Do not restart full review/build/deployment cycles for evidence-only corrections. Repeated findings or progressively broader defenses are a signal to reconsider the whole approach and simplify, not to add machinery indefinitely.
+- Do not silently accept unresolved findings. Fix them, obtain explicit user disposition, or report them as unresolved and pause. When affected checks pass, no actionable findings remain, and evidence/limitations are stable, proceed to handoff.
 
-Align in chat before building. Reduce material unknowns through focused questions or limited read-only investigation when the repository can answer them cheaply. Unknowns that can only be resolved during implementation or verification need not block approval when they are explicit, bounded, and safe to carry.
+## Handoff
 
-Work toward a shared contract covering:
+- Stage intended changes by default; do not automatically commit. Use checkpoint commits only when genuinely useful or requested.
+- Summarize what changed, preserved boundaries, strongest verification evidence and its implementation identity, review outcome, staged/committed state, and residual limitations or manual checks.
+- Invite user review and yield. This is not permission to merge, push, activate, close the task, or clean up the worktree. Do not continue iterating without a later request.
 
-- user-visible outcome
-- likely file or component impact
-- boundaries and non-goals
-- risks and residual unknowns
-- expected verification evidence
-- locked API or behavior details
+## After user review
 
-Treat user-specified names, flags, signatures, output shapes, invariants, and scope boundaries as **Locked API / Details**. If implementation later requires violating one, stop and rescope.
-
-Before implementation, present a concise scope packet with:
-
-- **Outcome**
-- **Likely file impact**
-- **Non-goals / boundaries**
-- **Locked API / details** (omit only when none)
-- **Risks / unknowns**
-- **Verification plan**
-
-For each material residual unknown, explain why it remains, how it will be handled, and why carrying it is acceptable. Resolve cheaply answerable unknowns before asking exactly: `Approve this scope?`
-
-Do not implement until the user explicitly approves. After a long or exploratory conversation, first restate the approved contract in 5–7 bullets.
-
-## Phase 2 — Build
-
-1. Implement autonomously against the approved contract and codebase reality.
-2. Do not create a formal scratch plan merely to track progress.
-3. Stop and rescope before materially diverging. Material divergence includes:
-   - entering an undisclosed subsystem or directory
-   - creating or deleting files outside expected scope
-   - invalidating a boundary or non-goal
-   - changing a locked detail
-   - materially increasing implementation size, complexity, operational machinery, or subsystem impact beyond the simplest design that satisfies the approved contract
-   - turning a focused change into a generalized mechanism, architectural replacement, or new subsystem
-   - requiring a meaningfully different verification strategy
-4. Commit only when a checkpoint is genuinely useful or requested; do not create commits mechanically.
-
-## Phase 3 — Verification
-
-1. Assume bugs exist and execute the approved evidence plan, noting non-material adjustments in chat.
-2. Prefer the furthest practical proof point and keep isolated worktree, downstream deployed/applied, and runtime-pickup evidence distinct.
-3. Follow repo-specific deploy/apply and runtime-pickup guidance at the correct stage.
-4. Present manual checks to the user; do not mark them passed yourself.
-5. Summarize meaningful evidence in chat rather than copying a dense transcript into the task note.
-6. Rerun only the proof points a change can affect. Substantive behavior changes require affected verification; evidence-only corrections require accuracy checks, not automatic redeployment, runtime-pickup, or rollback repetition.
-
-## Phase 4 — Review
-
-Review is normal unless the change is mechanically tiny, its blast radius is narrow and obvious, and verification decisively covers the actual risk.
-
-Load and follow the reusable `review` skill. It is the canonical owner of review safety, diff capture, basis selection, Pi launch mechanics, and output shape. Repo- or task-specific guidance may add constraints but must not weaken that contract.
-
-Review findings are evidence about risk, not amendments to the approved contract or permission to override locked details and non-goals. Before implementing a finding, compare the proposed fix—and the resulting implementation as a whole—with the simplest design that satisfies the approved outcome and its correctness, security, and operational requirements. Implement the fix autonomously only when it is proportionate and remains within the approved implementation direction. Stop and rescope in chat, leaving the finding explicitly unresolved, when the proposed fix would materially expand size, complexity, operational machinery, subsystem impact, or architecture; undermine a boundary or non-goal; or require a different implementation direction.
-
-After review:
-
-- summarize actionable findings tersely for the implementing agent
-- treat an unresolved finding as actionable unless it is fixed or the user or owning task contract explicitly accepts or assigns it elsewhere; silence is not a disposition
-- do not reopen an explicitly dispositioned finding unless a new variant or evidence materially changes its risk; state that changed basis when it does
-- after the convergence check above, fix clearly required in-scope correctness, security, and regression findings autonomously, then rerun affected verification
-- normally rerun review after a material fix; further full reviews require a material source or risk change, a new actionable finding, or a concrete regression reason
-- if review is skipped or cannot run, state the reason exactly rather than implying success
-
-Repeated material findings can show that the implementation direction is unstable rather than that it needs another layer of machinery. If fixes repeatedly introduce new actionable edge cases or require progressively broader defenses, stop the automatic fix-and-rereview loop. Re-evaluate the assumptions and whole design against the approved contract; prefer removing or rolling back speculative complexity and returning to a simpler in-scope approach. If no such approach resolves the findings, ask for scope alignment. Do not suppress or silently accept correctness or security findings merely to converge.
-
-Converge by proceeding directly to Phase 5 handoff—not task finish or close—when no actionable findings remain, affected verification passes, and the required evidence and explicit residual limitations are stable. Use targeted inspection for evidence-only edits instead of restarting the full review and deployment cycle. Record evidence against a stable implementation identity such as its commit, tree, artifact, or generation, and identify later evidence-only commits separately; do not imply that an evidence-only commit was deployed.
-
-## Phase 5 — Handoff
-
-The endpoint is user-review-ready handoff, not task completion: do not describe the task as complete or closed, merge, push, finish it, or continue iterating without a later explicit request.
-
-1. Stage the intended changes by default.
-2. Mention any useful checkpoint commit; otherwise prefer staged changes over an automatic commit.
-3. Provide a concise handoff covering:
-   - what changed
-   - preserved boundaries or non-goals
-   - strongest verification evidence
-   - review outcome
-   - whether changes are staged or committed
-   - remaining user decisions or manual checks
-4. Invite user review before yielding.
-
-## Post-review commit
-
-The default handoff remains staged and uncommitted. When the user explicitly approves preparing it for delivery:
-
-1. Recheck the staged changes and identify any unstaged or untracked files that will remain outside the commit.
-2. Choose a concise commit message, confirm the staged scope has not changed, and commit it using the repository's normal commit workflow without requesting separate message approval.
-3. If hooks fail or materially change the reviewed result, stop and report that before any push or merge.
-
-If the reviewed result is already committed, do not create an empty commit. Commit approval does not authorize a push, merge, PR creation, or other finish mutation. Once committed, load the applicable finish guidance.
-
-Unless explicitly requested, do not maintain phase state in the note, write Jira text, merge, mutate the task note as a completion action, or close the worktree. Treat later non-PR landing or finish requests as follow-up work and read the applicable repository and owner delivery guidance then.
-
-PR delivery is human-owned. Hand reviewed work back to the user; do not draft PR text, push for PR delivery, create or update PRs, merge them, or enable auto-merge.
+When the user explicitly approves a commit, recheck the staged scope and identify anything left outside it, choose a concise message, and commit through the normal repository workflow. Do not create an empty commit if already committed. If hooks fail or materially change the reviewed result, stop and report it. Commit approval alone does not authorize merge, push, PR delivery, or activation; follow repository finish guidance only when that later action is authorized.

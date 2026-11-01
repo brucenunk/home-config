@@ -1,206 +1,54 @@
 <!-- Managed by brucenunk/home-config. Edit there, not here. -->
 
-# Denote Task Files
+# Follow-up Notes and Agent Launches
 
-Task notes are ordinary files under `~/work/docs/tasks/`, optionally grouped into
-subdirectories. Emacs provides capture, Denote links/identity, Dired file
-management, and browsing—not task status, dependency enforcement, or an agent
-lifecycle. A human may explicitly launch a fresh conversation through the three Emacs commands
-described below; task capture itself performs no launch.
+Start most work directly with Emacs's `my/agent-session-start-new-worktree` and compose the brief in agent-shell, where file completion is project-relative. Use `my/agent-session-start-in-directory` for an existing directory. Neither launch chooses a workflow or sends an initial prompt.
 
-## Agent Task Context
+Task notes are optional durable context, useful for parking a follow-up without distracting from the current conversation. They are ordinary Denote Org files under `~/work/docs/tasks/`, optionally grouped into subdirectories. There is no custom task capture command, Denote template, task status, dependency enforcement, or agent lifecycle.
 
-A launcher-supplied task snapshot is sufficient context, including when the
-agent runs on another machine. Its provenance path and Denote links do not imply
-that the original note is accessible there. Do not try to locate the original
-note or resolve its Denote identifiers as a bootstrap step. If an explicitly
-requested note edit requires access you do not have, ask the local owner rather
-than creating or editing a substitute.
+## Creating a useful follow-up
 
-## Creating a Note
+Create a note when the user requests one or repository guidance requires it, not as a prerequisite for implementation or an automatic response to every discovery. Otherwise, summarize follow-up suggestions in chat.
 
-When the user says “task,” default to a Denote note. Create one through
-`my/denote-task` in Emacs, or create an Org file under `~/work/docs/tasks/` using
-Denote's naming convention:
-
-```text
-{identifier}--{title-slug}.org
-```
-
-- **identifier**: `YYYYMMDDTHHMMSS`, matching the note's identifier field.
-- **title-slug**: lowercase with hyphens for spaces.
-- New captures have no signature. Existing signed Denote Org filenames
-  remain valid; signatures are ordinary organisation, not managed status.
-- Existing Markdown notes are not converted. Ordinary Denote browsing and links
-  still support them, but task selection and launching support Org only.
-
-## New Note Template
+Use Denote's naming convention, `{identifier}--{title-slug}.org`, with a unique `YYYYMMDDTHHMMSS` identifier and lowercase hyphenated title. A minimal example is:
 
 ```org
-#+title: task title
-#+date: [2026-03-04 Wed 15:32]
+#+title: Investigate the follow-up
+#+date: [2026-11-01 Sun 15:24]
 #+filetags:
-#+identifier: 20260304T153250
-#+skill: task-workflow
-#+repo: example/project
-#+machine: machine-a
-#+model: example-provider/vendor/model
-#+thinking: medium
+#+identifier: 20261101T152443
+#+repo: owner/repository
 
-* Context
-
-Initial thoughts, background, and links for future pickup.
-
-* Goals
-
--
-
-* Non-Goals
-
--
-
-* Constraints
-
-- Durable constraints, locked details, or invariants that should survive session handoff.
+Why this deserves attention, what we already learned, and what remains undecided.
 ```
 
-This example shows optional detail for richer task notes, including notes
-written by agents. The capture template itself starts with just `* Context`;
-Goals, Non-Goals, and Constraints can be added when useful, not as required
-boilerplate.
+Capture the minimum context needed to resume without repeating investigation: the desired outcome, relevant findings/files, genuine constraints, and unresolved choices. Add headings or verification suggestions only when useful; do not leave template placeholders, prescribe phases, or turn suggestions into approved requirements. For work spawned from another conversation, summarize the source context; a link alone may be inaccessible to the next agent.
 
-The capture body comes from `config/emacs/denote-templates/task-workflow.org`
-in home-config, deployed under `$XDG_CONFIG_HOME/emacs/denote-templates/`.
-`task-workflow` is the sole named Denote template. Ordinary notes need no
-template; task capture choices that do not use this workflow insert no body.
+No skill is selected by default. Request `task-workflow` in chat when ready to delegate implementation, verification, independent review, and a staged handoff. A well-understood brief may explicitly select it or another skill such as `bump-nix` from the outset.
 
-Fill the note with useful bootstrap context rather than leaving placeholders:
-why it exists, desired outcome, current state, relevant files/commands/links,
-boundaries, and the intended verification target. For a note spawned from other
-work, link to that source and summarize the context; the link is ordinary prose,
-not an enforced or automatically checked-off dependency.
+## Optional launch hints
 
-The launch-hint values above are illustrative; use the generated catalogue and
-the intended repository/destination, not these example values.
+Keep metadata in a contiguous opening Org keyword header followed by a blank line. Keyword names are case-insensitive; supplied values must be non-empty literal single-line strings, without YAML quoting. Duplicate title/launch fields are rejected; body keywords do not supply launch metadata.
 
-`skill` is optional metadata for downstream consumers. Use `task-workflow`
-for scope alignment, autonomous implementation/verification/review, and a
-review-ready handoff. Named capture choices such as `bump-nix` set that skill;
-`none` creates an empty body without skill metadata, while retaining capture's
-launch hints.
+- `repo`: catalogue repository name; a valid hint skips repository selection.
+- `machine`: a catalogue key displayed as an annotation, not an automatic machine selection.
+- `model` and `thinking`: independent optional overrides applied before submission. Omit them to use Pi's configured defaults. Unsupported overrides withhold automatic submission.
+- `skill`: an explicitly chosen skill name; appends a skill-loading instruction. Omit it for an ordinary exploratory conversation.
 
-Existing notes retain their stored skill names. When renaming a skill, update
-their `#+skill:` metadata before launching them with the renamed skill.
+Do not invent launch values or copy example values blindly. Use the generated catalogue and intended repository when hints are useful. Model references preserve additional slashes after the provider. Legacy `base-ref` metadata is ignored; the launcher confirms the base ref.
 
-## Capture Choices and Launch Hints
+## Human-operated launches
 
-`C-c n T` (`my/denote-task`) asks for an optional epic/subdirectory, title, and
-repository and, when multiple destinations qualify, machine. It uses
-`task-workflow` and the shared catalogue's model and thinking defaults.
-`C-u C-c n T` additionally offers skill
-selection and the capture hints in this order:
+- `my/agent-session-start-new-worktree`: select a repository and eligible machine, confirm the base ref, and start a new ad hoc conversation in a sibling worktree.
+- `my/agent-session-start-in-directory`: select a machine and directory, then start a new conversation in that exact directory without creating a worktree.
+- `my/agent-session-start-from-file`: select a saved Denote Org follow-up under the task root, including subdirectories. Create a new worktree and send the complete saved snapshot plus any explicitly selected skill instruction. The optional Lisp FILE argument skips completion, not validation.
 
-1. Repository (always selected explicitly).
-2. Machine (eligible destinations for that repository; skip with one choice).
-3. Model (`provider/model`, with additional slashes preserved in the model ID).
-4. Thinking (only levels supported by that model).
+All choices precede Git mutation or startup. Multiple eligible machines require explicit selection without a default; a sole machine is automatic. Worktree base refs are always confirmed. Commands do not manage other agents, task statuses, delivery, or cleanup. Worktrees/branches are retained after failures; nothing is automatically removed or resent. Transcripts live outside worktrees under `~/work/agent-shell/transcripts/` on the Emacs host.
 
-Both capture forms require an explicit machine choice with no default when
-multiple destinations qualify. A sole eligible machine is selected automatically;
-the machine running Emacs has no preference. The model uses the selected machine's effective default.
-Thinking defaults to `medium` when supported, otherwise `off`; if neither is
-supported, even ordinary capture asks for an explicit supported choice.
+Launchers use the trusted generated `emacs/agent-catalogue.el` loaded at startup. After authorized inventory deployment, explicitly run `my/agent-catalogue-reload` or restart Emacs. Missing inventory stops launch, not ordinary note browsing.
 
-Every captured value is written after `skill` as an Org keyword, in the order
-above. Machine values are catalogue keys, not display labels. Capture neither
-prompts for nor writes `base-ref`; the Emacs launcher confirms it at launch,
-defaulting to the repository's catalogue value (`origin/${defaultBranch}`).
+## Agent context and existing files
 
-Keep metadata in a contiguous opening keyword header followed by a blank line.
-Keyword names are case-insensitive; values are literal, non-empty single-line
-strings without YAML quoting. Duplicate title or launch keywords are rejected.
-Keywords in the body, headings or source blocks are not launch metadata.
+A launcher-supplied snapshot is sufficient bootstrap context. Its provenance path and Denote links do not imply that the original note is accessible on the agent host. Do not hunt for that file or resolve its identifiers as a bootstrap step. If a requested edit needs an inaccessible original, ask the local owner rather than editing a substitute.
 
-Emacs startup loads `$XDG_CONFIG_HOME/emacs/agent-catalogue.el` (normally
-`~/.config/emacs/agent-catalogue.el`) as trusted executable configuration,
-setting `my/agent-machines`. Nix generates it from the shared machine inventory; it includes
-machine browsing directories and machine-local repository paths/base refs, but
-no local-machine identity. Capture uses this loaded value, not a fresh disk
-read. After activating inventory changes, run `M-x my/agent-catalogue-reload`
-or restart Emacs. Missing configuration or unusable
-required choices stop capture with an actionable error; cancellation creates no
-note. Browsing and existing notes do not require the catalogue. The catalogue
-does not implement an Emacs session launcher.
-
-These fields are optional launch hints, not launch authorization. The
-human-operated Emacs commands below own launch choices and resolution. Capture
-neither checks live Git refs nor probes hosts or changes running Pi settings.
-Existing or manually authored notes may omit hints; legacy `base-ref` metadata
-is ignored. Capture does not migrate or automatically change existing notes.
-
-## Human-operated Emacs Launches
-
-There are three explicit commands, separate from capture, with no combined
-selector, dispatcher or compatibility alias:
-
-- `M-x my/agent-session-start-from-file`: styled completion of Denote
-  Org task notes recursively under `~/work/docs/tasks/`, including epics.
-  Saved header titles (with filename fallback) and repository/machine
-  annotations describe candidates. Colliding titles gain relative-path suffixes
-  so each file is selectable. Use a valid repository hint or ask,
-  select an eligible machine, confirm the base ref and create a new worktree.
-  Its optional Lisp `FILE` argument bypasses completion, not task validation;
-  Markdown files are rejected there too.
-- `M-x my/agent-session-start-new-worktree`: select a repository, then eligible
-  machine, confirm the base ref and create a new ad hoc worktree.
-- `M-x my/agent-session-start-in-directory`: select a machine, then browse from
-  its configured directory and start ad hoc in the exact selected directory.
-  It creates no worktree.
-
-These commands do not manage task statuses or other agents. All choices precede
-Git mutation or agent startup. Ad hoc sessions have no initial prompt, overrides
-or description/name/model/thinking questions.
-
-For a worktree, a valid task `repo` hint skips repository selection. One eligible
-machine is automatic; multiple machines always require explicit selection with
-no default, regardless of task `machine` hints or locality. The base ref is
-always confirmed, defaulting to the catalogue value. New worktrees are siblings
-of the configured repository source, not reconstructed from repository names.
-Directory browsing starts at the machine's configured directory and the exact
-chosen directory is retained as the agent CWD.
-
-Local and remote transcripts are uniquely named Markdown files directly under
-`~/work/agent-shell/transcripts/` on the Emacs host. Identifying metadata stays
-in agent-shell's normal header; no transcript directories or Git exclusions are
-created inside worktrees. Existing transcripts/worktrees are left untouched.
-
-Task `model` and `thinking` fields are independent optional overrides, applied
-without confirmation before sending context. An absent field sends no override;
-Pi keeps its configured default. Unsupported values stop automatic submission.
-Ad hoc sessions send neither override and ask no configuration questions.
-Emacs sends a complete saved task snapshot and, when present, its declared skill
-instruction. Remote agents need not read the original local path; provenance
-does not imply that path is accessible or editable remotely.
-
-Failures report the retained directory and shell buffer when available; nothing
-is automatically deleted or resent. Inspect partial Git operations and uncertain
-prompt delivery manually. Open the retained directory and start agent-shell
-normally when ready. There is no retained retry context, special recovery UI,
-automatic cleanup or agent-to-agent control.
-
-## Managing Files
-
-Use ordinary Denote/Dired commands to open, edit, rename, move, or delete
-files. New regular Denote notes default to Org under `~/work/docs/`; task capture and launcher
-discovery use its `tasks/` subtree recursively. Denote links resolve across the
-whole document tree, including existing Markdown notes. Task templates use Org
-headings. There is no custom task list or `C-c t` prefix.
-There are no Emacs finish/discard commands, status transitions, dependency
-parsers, or automatic edits to other notes.
-
-Existing notes, including legacy signatures, `repo`/session metadata, and
-Dependencies sections, are not migrated. Such content is ordinary file content.
-File operations never stop agents, deliver code, remove branches, or release
-worktrees. Session/worktree cleanup is a separate human-coordinated action;
-agents must not automatically remove worktrees or branches. Repository delivery
-follows the applicable repository guidance, separately from note management.
+Use ordinary Denote/Dired for browsing and file operations. Existing notes, including signed filenames, Markdown documents, legacy skill/session metadata, and dependency text, remain untouched. File-based launching supports Org only; Markdown remains available through ordinary Denote browsing and links. File operations do not stop sessions, deliver changes, or delete worktrees/branches. Follow repository delivery guidance separately.
