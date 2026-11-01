@@ -15,6 +15,7 @@
 ;;   - my/doric-theme-preload
 ;;   - my/auto-dark-select-themes
 ;;   - my/fontaine-setup-frame
+;;   - my/fontaine-preview-presets
 ;;   - my/writeroom-text-scale
 ;;   - my/writeroom-visual-line
 ;;   - my/modeline-status
@@ -27,8 +28,13 @@
 ;;; Code:
 
 (require 'face-remap)
+(require 'button)
 
 (declare-function mixed-pitch-mode "mixed-pitch" (&optional arg))
+(declare-function fontaine-set-preset "fontaine" (preset))
+
+(defvar fontaine-presets)
+(defvar fontaine-preset-history)
 
 (defvar mixed-pitch-mode)
 
@@ -151,7 +157,109 @@ Subsequent automatic appearance changes use the selected themes."
           (fontaine-set-preset
            (if (assq preset fontaine-presets)
                preset
-             'aporetic-serif-mono)))))))
+             'iosevka-fixed-ss14-jetbrains-mono)))))))
+
+(defun my/ui--fontaine-preview-families (preset)
+  "Resolve PRESET's default, fixed-pitch and prose families.
+Match Fontaine's single named inheritance layer, followed by the t
+preset (or generic families when t is absent).  Explicit nil values
+mask inherited values, just as they do in Fontaine.  A face without
+a configured family uses its current family."
+  (let* ((own (alist-get preset fontaine-presets))
+         (properties
+          (append own
+                  (alist-get (plist-get own :inherit) fontaine-presets)
+                  (or (alist-get t fontaine-presets)
+                      '(:default-family "Monospace"
+                        :fixed-pitch-family "Monospace"
+                        :variable-pitch-family "Sans"))))
+         (default (or (plist-get properties :default-family)
+                      (face-attribute 'default :family nil t))))
+    (list default
+          (or (plist-get properties :fixed-pitch-family) default)
+          (or (plist-get properties :variable-pitch-family)
+              (face-attribute 'variable-pitch :family nil t)))))
+
+(defun my/ui--fontaine-preview-apply (button)
+  "Apply BUTTON's Fontaine preset without leaving the specimen buffer."
+  (let ((preset (button-get button 'my/ui-preset)))
+    ;; Fontaine persists prompt history, not `fontaine-current-preset'.
+    ;; Buttons bypass the prompt, so record the choice before its save hook.
+    (add-to-history 'fontaine-preset-history (symbol-name preset))
+    (fontaine-set-preset preset)))
+
+(define-derived-mode my/ui--fontaine-preview-mode special-mode "Fontaine Preview"
+  "Compare Fontaine families independently of the active preset."
+  (button-mode 1)
+  (setq-local revert-buffer-function #'my/ui--fontaine-preview-render)
+  (setq-local truncate-lines t)
+  ;; These are explicit specimens, not prose following the active preset.
+  (setq-local face-remapping-alist nil))
+
+(defun my/ui--fontaine-preview-render (&rest _)
+  "Render current Fontaine presets; also serve as the revert function."
+  (require 'fontaine)
+  (let ((inhibit-read-only t)
+        (position (point))
+        ;; Query once per explicit refresh, not once per sample or redisplay.
+        (available (mapcar #'downcase (font-family-list))))
+    (erase-buffer)
+    (insert "FONTAINE PRESETS\n\n"
+            "TAB: next preset button; RET: apply; g: refresh; q: return.\n"
+            "Uniform 13pt, normal-width samples in regular, italic and bold.\n"
+            "Preset sizes and style-face overrides are not simulated.\n"
+            "Missing families are flagged, not rendered using a fallback.\n\n")
+    (dolist (preset fontaine-presets)
+      (unless (eq (car preset) t)
+        (let ((families (my/ui--fontaine-preview-families (car preset))))
+          (insert-text-button (symbol-name (car preset))
+                              'my/ui-preset (car preset)
+                              'action #'my/ui--fontaine-preview-apply
+                              'follow-link t)
+          (insert (format "\nDefault family: %s\n" (car families)))
+          (dolist (entry (list (cons "Fixed pitch" (cadr families))
+                              (cons "Variable pitch" (caddr families))))
+            (let* ((family (cdr entry))
+                   (present (or (member (downcase family) available)
+                                ;; Fontconfig aliases need not be enumerated.
+                                (member (downcase family)
+                                        '("monospace" "sans" "sans-serif" "serif")))))
+              (insert (format "%s: %s%s\n" (car entry) family
+                              (if present "" " [NOT AVAILABLE]")))
+              (when present
+                (dolist (style '(regular italic bold))
+                  (insert
+                   (propertize
+                    (format "  %-7s a ag gq il1 IIl| 0OQ 0123456789 {} [] () -> => !=\n"
+                            style)
+                    'face (list :family family :height 130 :width 'normal
+                                :weight (if (eq style 'bold) 'bold 'normal)
+                                :slant (if (eq style 'italic) 'italic 'normal))))))))
+          (insert "\n"))))
+    (goto-char (min position (point-max)))
+    (set-buffer-modified-p nil)))
+
+;;;###autoload
+(defun my/fontaine-preview-presets ()
+  "Show a specimen buffer generated from `fontaine-presets'.
+Resolve named inheritance and shared defaults without changing the
+active preset.  Show fixed-pitch and variable-pitch families at a
+uniform size, width and set of styles, flagging unavailable families.
+Use RET on a preset button to apply it, g to refresh, and q to quit.
+This is generated rich text: saving it as plain text loses its faces
+and buttons.  Run this command again to recreate it."
+  (interactive)
+  (require 'fontaine)
+  (unless (display-graphic-p)
+    (user-error "Font specimens require a graphical Emacs frame"))
+  (let ((buffer (get-buffer-create "*Fontaine presets*")))
+    (with-current-buffer buffer
+      (unless (eq major-mode 'my/ui--fontaine-preview-mode)
+        (unless (and (= (buffer-size) 0) (not buffer-file-name))
+          (user-error "Buffer %s is already in use" (buffer-name)))
+        (my/ui--fontaine-preview-mode))
+      (my/ui--fontaine-preview-render))
+    (pop-to-buffer buffer)))
 
 (defvar-local my/writeroom-saved-text-scale nil
   "Text scaling state to restore when leaving Writeroom.

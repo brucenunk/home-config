@@ -207,6 +207,45 @@
                       (and (boundp 'after-make-frame-functions-hook)
                            after-make-frame-functions-hook)))))
 
+(ert-deftest my/deferred-fontaine-iosevka-comparison-presets ()
+  (my/deferred-test--fresh
+   (my/deferred-test--declaration (locate-library "my-emacs-ui") 'fontaine)
+   '(require 'fontaine)
+   '(let* ((defaults (alist-get t fontaine-presets))
+           (presets (seq-filter
+                     (lambda (preset)
+                       (string-prefix-p "iosevka-" (symbol-name (car preset))))
+                     fontaine-presets))
+           (families (mapcar (lambda (preset)
+                              (plist-get (cdr preset) :default-family))
+                            presets)))
+      (should (equal (mapcar #'car presets)
+                     '(iosevka-fixed iosevka-fixed-ss14-jetbrains-mono)))
+      (should (equal (plist-get defaults :default-family) "Iosevka Fixed SS14"))
+      (should (equal (plist-get defaults :fixed-pitch-family) "Iosevka Fixed SS14"))
+      (should (equal (plist-get defaults :variable-pitch-family) "Bricolage Grotesque"))
+      (should (equal (plist-get (alist-get 'aporetic-serif-mono fontaine-presets)
+                                :default-family)
+                     "Aporetic Serif Mono"))
+      (should (assq 'aporetic-sans-mono fontaine-presets))
+      (should (equal families '("Iosevka Fixed" "Iosevka Fixed SS14")))
+      (dolist (preset presets)
+        (should (equal (plist-get (cdr preset) :default-family)
+                       (plist-get (cdr preset) :fixed-pitch-family)))
+        ;; Inherit Bricolage and the existing sizes rather than overriding them.
+        (dolist (property '(:variable-pitch-family :default-height
+                            :fixed-pitch-height :variable-pitch-height))
+          (should-not (plist-member (cdr preset) property)))))))
+
+(ert-deftest my/deferred-fontaine-preview-keeps-package-lazy ()
+  (my/deferred-test--fresh
+   '(require 'my-ui)
+   '(should (commandp 'my/fontaine-preview-presets))
+   '(should-not (featurep 'fontaine))
+   (my/deferred-test--declaration (locate-library "my-emacs-ui") 'fontaine)
+   '(should (eq (key-binding (kbd "C-c M-f")) #'my/fontaine-preview-presets))
+   '(should-not (featurep 'fontaine))))
+
 (ert-deftest my/deferred-forge-options-load-orders ()
   (let ((declaration (my/deferred-test--declaration
                       (locate-library "my-emacs-git") 'forge)))
