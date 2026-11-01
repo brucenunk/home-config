@@ -4,22 +4,13 @@ finish-mode: merge-local
 
 # brucenunk Repos
 
-Personal repositories. Finish mode is **merge-local** (squash-merge locally and push).
+Finish mode is **merge-local**: squash-merge locally and push, only when authorized. Commit approval alone does not authorize merge, push or activation.
 
-## Git Finish Workflow (merge-local)
+First commit the reviewed feature result; for `task-workflow`, follow its post-review commit gate. In the existing default-branch worktree (use `cwd` or `git -C`, not `git switch` in the feature worktree), run:
 
-When finishing a task on a merge-local repo, first ensure the reviewed feature result is committed. For a `task-workflow` task, use its post-review commit gate; commit approval does not authorize the later merge or push.
+1. `git pull --ff-only`
+2. `git merge --squash {feature-branch}`
+3. `git commit -m "{message}"`
+4. `git push`
 
-Then:
-
-1. Switch to the default branch worktree (e.g., `~/work/brucenunk/home-config/main`)
-2. Pull latest: `git pull --ff-only`
-3. Squash-merge the feature branch: `git merge --squash {feature-branch}`
-4. Commit: `git commit -m "{message}"`
-5. Push: `git push`
-
-All commands run **in the default branch worktree directory** (use `cwd` or `git -C`). Do NOT `git switch` in the feature worktree.
-
-## Commit Hygiene
-
-- Never amend or manually squash feature-branch commits. Keep useful checkpoints separate for review; the prescribed `git merge --squash` finish step produces the single default-branch commit.
+Never amend or manually squash feature-branch commits; the finish operation produces the single default-branch commit.

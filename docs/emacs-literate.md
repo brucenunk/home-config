@@ -7,13 +7,32 @@ and integration calls. Nix tangles it into `early-init.el`, `init.el` and
 Handwritten implementations live in `config/emacs/my-lisp/`, with ERT suites in
 `config/emacs/tests/`. Package and grammar installation belongs to
 `flake-modules/features/emacs.nix`, not runtime Emacs package installation.
-Keep one owning `use-package` declaration per package and preserve lazy loading.
 
 Document only non-obvious operations, safety constraints and important rationale
 not already clear in code. Prefer rationale beside the relevant code. Do not add
 helper inventories, change narratives, test-coverage lists, verification results
 or speculative documentation TODOs. Delete obsolete prose rather than preserving
 a migration history. A code change alone does not require a documentation change.
+
+## Emacs Lisp configuration
+
+- Keep one `use-package` declaration per package across repository-maintained
+  configuration. Inspect existing declarations before adding configuration.
+- Extend the owning declaration's `:init`, `:config`, `:hook`, or `:bind` rather
+  than adding scattered deferred blocks or duplicate declarations.
+- Put mode-specific configuration, including file and interpreter associations,
+  in that mode's declaration (`:mode` / `:interpreter`), not a generic `emacs`
+  declaration or unrelated module. Add a single declaration for the mode if
+  needed. Consolidation must preserve ownership, not just remove duplicates.
+- Keep feature-specific implementation functions in their owning module; call a
+  registration function from the package declaration when appropriate.
+- Preserve lazy loading, bindings, and behavior whether dependencies load before
+  or after the configuration module. Add focused load-order tests when changing
+  deferred registration.
+- Deferred forms remain appropriate for genuine cross-package integration,
+  reload-sensitive behavior, and reusable libraries. Explain retained exceptions
+  beside the code; do not add `use-package` dependencies to reusable libraries
+  merely for consistency.
 
 ## Generate locally
 

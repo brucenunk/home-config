@@ -22,10 +22,8 @@ let
     in
     {
       home.file = skillEntries // {
-        ".codex/AGENTS.md".source = ../../config/codex/AGENTS.md;
-
-        "work/AGENTS.md" = {
-          source = ../../work/AGENTS.md;
+        ".pi/agent/AGENTS.md" = {
+          source = ../../config/pi/AGENTS.md;
           force = true;
         };
         "work/EMACS-SERVER.md" = {
@@ -80,12 +78,13 @@ in
               "task-workflow"
             ];
           assert !(builtins.hasAttr ".agents/skills/pull-request" plainHome.config.home.file);
-          assert plainHome.config.home.file."work/AGENTS.md".source == ../../work/AGENTS.md;
+          assert plainHome.config.home.file.".pi/agent/AGENTS.md".source == ../../config/pi/AGENTS.md;
+          assert !(builtins.hasAttr "work/AGENTS.md" plainHome.config.home.file);
           assert plainHome.config.home.file."work/TASKS.md".source == ../../work/TASKS.md;
           assert plainHome.config.home.file."work/EMACS-SERVER.md".source == ../../work/EMACS-SERVER.md;
           assert
             plainHome.config.home.file."work/brucenunk/AGENTS.md".source == ../../work/brucenunk/AGENTS.md;
-          assert plainHome.config.home.file.".codex/AGENTS.md".source == ../../config/codex/AGENTS.md;
+          assert !(builtins.hasAttr ".codex/AGENTS.md" plainHome.config.home.file);
           pkgs.runCommand "agents-plain-nixpkgs-home-manager-check" { } ''
             touch "$out"
           '';
