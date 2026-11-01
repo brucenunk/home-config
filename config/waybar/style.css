@@ -7,45 +7,14 @@
 }
 
 window#waybar {
-  background: transparent;
+  background: @background;
   color: @text;
 }
 
 .modules-left,
 .modules-center,
 .modules-right {
-  background: alpha(@surface, 0.94);
-  border: 1px solid @border;
-  border-radius: 12px;
-  box-shadow: 0 3px 10px alpha(@shadow, 0.28);
-  padding: 3px 6px;
-}
-
-#workspaces button {
-  background: transparent;
-  color: @muted;
-  padding: 0 5px;
-  transition: all 120ms ease;
-}
-
-#workspaces button.active {
-  color: @accent;
-}
-
-#workspaces button:hover {
-  background: @surface_alt;
-  box-shadow: none;
-  color: @text;
-}
-
-#workspaces button.urgent {
-  color: @error;
-}
-
-#window {
-  color: @muted;
-  margin-left: 6px;
-  padding: 0 8px;
+  padding: 3px 12px;
 }
 
 #clock,
@@ -57,9 +26,8 @@ window#waybar {
   padding: 0 9px;
 }
 
-#clock {
-  color: @accent;
-  font-weight: 600;
+#custom-separator {
+  color: @muted;
 }
 
 #pulseaudio:hover,

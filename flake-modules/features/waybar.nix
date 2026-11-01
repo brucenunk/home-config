@@ -24,37 +24,25 @@ in
           settings = [
             {
               layer = "top";
-              position = "top";
+              position = "bottom";
               height = 38;
               spacing = 8;
               reload_style_on_change = true;
-              margin-top = 8;
-              margin-left = 12;
-              margin-right = 12;
 
-              modules-left = [
-                "niri/workspaces"
-                "niri/window"
-              ];
-              modules-center = [ "clock" ];
               modules-right = [
                 "pulseaudio"
+                "custom/separator"
                 "network"
+                "custom/separator"
                 "battery"
                 "tray"
+                "custom/separator"
+                "clock"
               ];
 
-              "niri/workspaces" = {
-                format = "{icon}";
-                format-icons = {
-                  active = "●";
-                  default = "○";
-                };
-              };
-
-              "niri/window" = {
-                max-length = 60;
-                separate-outputs = true;
+              "custom/separator" = {
+                format = "·";
+                tooltip = false;
               };
 
               clock = {
