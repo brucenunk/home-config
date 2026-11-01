@@ -284,7 +284,7 @@ Upstream: [[https://github.com/protesilaos/fontaine][package homepage]].
 
 Use Iosevka Fixed SS14 (JetBrains-inspired, with a dotted zero) for code and Bricolage Grotesque for prose. =my/fontaine-setup-frame= restores a known preset after startup and when a frame is created, falling back to =iosevka-fixed-ss14-jetbrains-mono= when there is no valid saved preset and leaving terminal frames alone. Register =after-make-frame-functions= explicitly because it is an abnormal hook that receives the new frame, not a conventional =-hook= variable.
 
-Use =C-c F= to select a preset, or =C-c M-f= (=M-x my/fontaine-preview-presets=) to compare every preset in one specimen buffer. The preview resolves Fontaine's named inheritance and shared defaults, then shows fixed-pitch and variable-pitch families at a uniform 13pt and normal width, each in regular, italic and bold. This compares character designs rather than simulating preset sizes or custom bold/italic face overrides. Missing families are labelled rather than silently replaced. =TAB= moves between preset buttons, =RET= applies the selected preset globally, =g= regenerates from the current preset list, and =q= returns. Opening or refreshing the preview does not change the active preset. The faces and buttons are text properties, not a persistent document format: regenerate the buffer instead of saving it as plain text. Implementation lives in [[file:my-lisp/my-ui.el][my-ui.el]].
+Use =M-x fontaine-set-preset= to select a preset, or =M-x my/fontaine-preview-presets= to compare every preset in one specimen buffer. The preview resolves Fontaine's named inheritance and shared defaults, then shows fixed-pitch and variable-pitch families at a uniform 13pt and normal width, each in regular, italic and bold. This compares character designs rather than simulating preset sizes or custom bold/italic face overrides. Missing families are labelled rather than silently replaced. =TAB= moves between preset buttons, =RET= applies the selected preset globally, =g= regenerates from the current preset list, and =q= returns. Opening or refreshing the preview does not change the active preset. The faces and buttons are text properties, not a persistent document format: regenerate the buffer instead of saving it as plain text. Implementation lives in [[file:my-lisp/my-ui.el][my-ui.el]].
 
 The default =iosevka-fixed-ss14-jetbrains-mono= preset selects JetBrains-inspired character shapes with a dotted zero. =iosevka-fixed= keeps the standard design with a slashed zero available, and the Aporetic presets remain alternatives. Both Iosevka families are strict monospace Fixed families without ligatures. SS14 remains Iosevka, with its narrow proportions, not the separate JetBrains Mono typeface. Both use prebuilt upstream families, so no custom build or Emacs OpenType feature switch is required. Ghostty and the desktop monospace fallback also use SS14. In prose buffers such as the agent viewport, ordinary text remains Bricolage; use the specimen buffer to see each fixed-pitch design directly.
 
@@ -292,8 +292,7 @@ The default =iosevka-fixed-ss14-jetbrains-mono= preset selects JetBrains-inspire
 (use-package fontaine
   :ensure nil
   :hook (after-init . my/fontaine-setup-frame)
-  :bind (("C-c F" . fontaine-set-preset)
-         ("C-c M-f" . my/fontaine-preview-presets))
+  :commands fontaine-set-preset
   :init
   ;; This abnormal hook takes a frame and has no conventional -hook suffix.
   (add-hook 'after-make-frame-functions #'my/fontaine-setup-frame)

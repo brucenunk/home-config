@@ -257,14 +257,22 @@
                             :fixed-pitch-height :variable-pitch-height))
           (should-not (plist-member (cdr preset) property)))))))
 
-(ert-deftest my/deferred-fontaine-preview-keeps-package-lazy ()
+(ert-deftest my/deferred-fontaine-commands-stay-unbound-and-lazy ()
   (my/deferred-test--fresh
    '(require 'my-ui)
    '(should (commandp 'my/fontaine-preview-presets))
    '(should-not (featurep 'fontaine))
    (my/deferred-test--declaration (locate-library "my-emacs-ui") 'fontaine)
-   '(should (eq (key-binding (kbd "C-c M-f")) #'my/fontaine-preview-presets))
-   '(should-not (featurep 'fontaine))))
+   '(should (commandp 'fontaine-set-preset))
+   '(should (commandp 'my/fontaine-preview-presets))
+   '(should-not (key-binding (kbd "C-c F")))
+   '(should-not (key-binding (kbd "C-c M-f")))
+   '(should-not (featurep 'fontaine))
+   '(require 'fontaine)
+   '(should (commandp 'fontaine-set-preset))
+   '(should (commandp 'my/fontaine-preview-presets))
+   '(should-not (key-binding (kbd "C-c F")))
+   '(should-not (key-binding (kbd "C-c M-f")))))
 
 (ert-deftest my/deferred-forge-options-load-orders ()
   (let ((declaration (my/deferred-test--declaration
