@@ -1452,18 +1452,11 @@ Use =M-x my/agent-session-start-from-file= to launch from a task note, =M-x my/a
 
 Prefer Pi and editable viewports. Keep artifacts and transcripts outside project worktrees, on the Emacs host even for remote sessions. The helper's artifact root defaults to =~/work/agent-shell/=, with flat transcripts under =transcripts/=. Linux stays clipboard-first; macOS also gets the direct screenshot binding.
 
-The agent mode and both viewport mode hooks call =my/agent-shell-header-no-underline= to remove header underlines locally. The shared presentation helper lives in =my-ui=, but these agent-only registrations belong here. Mixed-pitch activation remains with its owning package in [[*Prose with fixed-width code][Writing and notes]].
-
 Keep tables fixed-pitch and shade alternate rows using the active Doric palette's =bg-shadow-subtle=. Refresh the table face after theme changes; do not inherit search highlighting's italics, underlining, or subdued foreground.
 
 #+begin_src emacs-lisp
 (use-package agent-shell
   :ensure nil
-  :init
-  (require 'my-ui)
-  :hook ((agent-shell-mode . my/agent-shell-header-no-underline)
-         (agent-shell-viewport-view-mode . my/agent-shell-header-no-underline)
-         (agent-shell-viewport-edit-mode . my/agent-shell-header-no-underline))
   :bind (:map agent-shell-viewport-edit-mode-map
               ("C-c C-y" . agent-shell-send-clipboard-image))
   :custom
@@ -1472,7 +1465,11 @@ Keep tables fixed-pitch and shade alternate rows using the active Doric palette'
   (agent-shell-preferred-agent-config 'pi)
   (agent-shell-prefer-viewport-interaction t)
   (agent-shell-markdown-table-zebra-stripe t)
+  :custom-face
+  (agent-shell-secondary ((t (:inherit shadow))))
   :config
+  (require 'my-agent-shell-header)
+  (my/agent-shell-header-setup)
   ;; This hook ends in -functions, not use-package's conventional -hook.
   (add-hook 'enable-theme-functions #'my/agent-shell-table-faces-refresh)
   (my/agent-shell-table-faces-refresh)
