@@ -1,4 +1,4 @@
-"""Build static, mechanically slanted companions to Bricolage's upright faces."""
+"""Build matched static upright and mechanically slanted Bricolage faces."""
 
 import math
 import sys
@@ -24,6 +24,33 @@ def visit(visitor, anchor, attr, value):
     anchor.XCoordinate = otRound(value + 0.2 * anchor.YCoordinate)
 
 
+def set_names(font, weight, label, *, italic):
+    family = "Bricolage Grotesque"
+    style = label
+    legacy_style = "Bold" if weight == 700 else "Regular"
+    if italic:
+        style = "Italic" if weight == 400 else f"{label} Italic"
+        legacy_style = "Bold Italic" if weight == 700 else "Italic"
+    postscript = f"BricolageGrotesque-{label}{'Italic' if italic else ''}"
+    # Keep copyright and OFL metadata; replace variable-instance names on every
+    # platform so upright and italic peers expose the same family and weights.
+    names = font["name"]
+    replaced = {1, 2, 3, 4, 6, 16, 17, 21, 22, 25}
+    names.names = [n for n in names.names if n.nameID not in replaced and n.nameID < 256]
+    values = {
+        1: family if weight in (400, 700) else f"{family} {label}",
+        2: legacy_style,
+        3: f"{postscript};{'SyntheticOblique' if italic else 'Static'};1",
+        4: f"{family} {style}",
+        6: postscript,
+        16: family,
+        17: style,
+    }
+    for name_id, value in values.items():
+        names.setName(value, name_id, 3, 1, 0x409)
+        names.setName(value, name_id, 1, 0, 0)
+
+
 source, destination = map(Path, sys.argv[1:])
 destination.mkdir(parents=True, exist_ok=True)
 weights = {
@@ -41,6 +68,10 @@ for weight, label in weights.items():
     axes = {axis.axisTag: axis.defaultValue for axis in font["fvar"].axes}
     axes["wght"] = weight
     font = instantiateVariableFont(font, axes, inplace=True)
+    # Save a static upright peer before shearing. Fontconfig ranks a real static
+    # face ahead of variable/named instances, even when its slant is wrong.
+    set_names(font, weight, label, italic=False)
+    font.save(destination / f"BricolageGrotesque-{label}.ttf")
     SlantAnchors().visit(font["GPOS"])
     glyph_set = font.getGlyphSet()
     outlines = {}
@@ -69,26 +100,6 @@ for weight, label in weights.items():
     font["OS/2"].fsSelection &= ~((1 << 0) | (1 << 5) | (1 << 6) | (1 << 9))
     font["OS/2"].fsSelection |= 1 | ((1 << 5) if weight >= 700 else 0)
 
-    family = "Bricolage Grotesque"
-    style = "Italic" if weight == 400 else f"{label} Italic"
-    full_name = f"{family} {style}"
-    postscript = f"BricolageGrotesque-{label}Italic"
-    # Keep copyright and OFL metadata; remove variable-instance names and
-    # replace every platform's family/style records with unambiguous names.
-    names = font["name"]
-    replaced = {1, 2, 3, 4, 6, 16, 17, 21, 22, 25}
-    names.names = [n for n in names.names if n.nameID not in replaced and n.nameID < 256]
-    values = {
-        1: family if weight in (400, 700) else f"{family} {label}",
-        2: "Bold Italic" if weight == 700 else "Italic",
-        3: f"{postscript};SyntheticOblique;1",
-        4: full_name,
-        6: postscript,
-        16: family,
-        17: style,
-    }
-    for name_id, value in values.items():
-        names.setName(value, name_id, 3, 1, 0x409)
-        names.setName(value, name_id, 1, 0, 0)
-    names.setName("Mechanically slanted companion; not an upstream italic design.", 10, 3, 1, 0x409)
-    font.save(destination / f"{postscript}.ttf")
+    set_names(font, weight, label, italic=True)
+    font["name"].setName("Mechanically slanted companion; not an upstream italic design.", 10, 3, 1, 0x409)
+    font.save(destination / f"BricolageGrotesque-{label}Italic.ttf")
