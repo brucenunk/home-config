@@ -27,9 +27,11 @@ Before modifying or creating my-lisp files:
 Compare `grep -c ';;;###autoload' my-MODULE.el` with Commentary entries when public
 APIs change. Preserve native Denote identity and ordinary Dired operations.
 
-Run feature-worktree Lisp only in isolated batch Emacs. Never load it into the
-shared daemon. Deployment and runtime pickup are separate proof points; use
-approved deployed files for later live checks.
+Prefer isolated batch Emacs for automated tests. Explicitly authorized
+session-only testing in a shared Emacs process is allowed under
+`docs/emacs-literate.md`; read `~/work/EMACS-SERVER.md` before live access.
+Session-only testing, persistent deployment and runtime pickup are separate
+proof points; testing does not authorize deployment.
 
 ## Review Guardrails
 

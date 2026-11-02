@@ -102,5 +102,7 @@ Transcripts are stored directly under `~/work/agent-shell/transcripts/` on the
 Emacs host, even for remote agents. Old transcript locations are not migrated.
 Do not shorten global TTLs or collect real sessions merely to test cleanup.
 
-For deployment use [activation.md](activation.md). Never load feature-worktree
-Lisp into the shared Emacs daemon; live checks must use approved deployed files.
+For explicitly authorized session-only testing of feature-worktree Lisp, follow
+[emacs-literate.md](emacs-literate.md#verify) and `~/work/EMACS-SERVER.md` for safe
+server access. This does not require activation or authorize persistent deployment;
+for deployment use [activation.md](activation.md).

@@ -54,6 +54,16 @@ native-platform checks. Run the required Wampa build from the repository README.
 For manual ERT, use the configured Emacs package with the generated module
 directory, `my-lisp/` and `tests/` on `load-path`.
 
-Never load feature-worktree Lisp into the shared daemon. Deployment requires
-explicit authorization and the matching route in [activation.md](activation.md);
-a build does not prove the running daemon loaded the change.
+Prefer isolated batch Emacs for automated tests. With explicit user authorization
+for the change and target session, feature-worktree Lisp may be loaded or evaluated
+in an existing shared Emacs process for session-only testing, without Home Manager
+activation. Before live access, read `~/work/EMACS-SERVER.md` for safe server
+access. Keep evaluation within the authorized scope and agree how to undo the
+session changes or restart if needed; reloading Lisp need not undo hooks, advice,
+timers or other state from an earlier version.
+
+Session-only testing does not authorize persistent deployment or changes to
+deployed files. Deployment still requires explicit authorization and the matching
+route in [activation.md](activation.md). Report isolated checks, session-only
+runtime testing and deployment separately; neither a build nor activation proves
+the running Emacs process loaded the change.

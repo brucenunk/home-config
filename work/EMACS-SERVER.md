@@ -2,11 +2,13 @@
 
 # Emacs Server Guidance
 
-Read this document for Emacs debugging, live evaluation, state inspection, UI work, or recovery from a wedged `emacsclient`. Narrower repository guidance may prohibit loading feature-worktree code into the shared daemon and takes precedence.
+Read this document for Emacs debugging, live evaluation, state inspection, UI work, or recovery from a wedged `emacsclient`. Follow any narrower repository guidance as well.
 
 ## Live Inspection
 
-An Emacs server normally runs continuously. Prefer `emacsclient -e '(elisp-expression)'` for debugging, evaluation, and state inspection when narrower guidance permits it.
+An Emacs server normally runs continuously. Prefer `emacsclient -e '(elisp-expression)'` for debugging, evaluation, and state inspection.
+
+Loading or evaluating feature-worktree Lisp in an existing session requires explicit user authorization for the change and target session. Keep the test within that scope and agree how to undo its effects or restart if needed; reloading Lisp does not necessarily remove earlier state. This is session-only testing, not persistent deployment: it does not require Home Manager activation and does not authorize changing deployed files. Actual deployment must still follow the repository's activation procedure, with runtime pickup verified separately.
 
 Use `screencapture` on macOS or `niri msg action screenshot` in a Niri session when exact Emacs layout or styling state matters.
 
