@@ -50,11 +50,12 @@ from that preset. Undo/redo restore the palette with the converted content.
 
 ### PNG sharing
 
-**`M-x my/excali-export`** exports a disposable Doric Light copy without changing
+**`M-x my/excali-export-png`** exports a disposable Doric Light copy without changing
 the source drawing or Emacs theme. A selection exports only that selection;
 `C-u` exports the whole diagram. Native scale, padding, background and embedded
 scene settings apply. Custom colours remain custom. A usable saved palette and
 installed Doric Light palette are required. `C-c C-e` remains native export.
+The old `my/excali-export` name remains a compatibility alias.
 
 ## Org links and publication
 
@@ -84,6 +85,47 @@ Integer widths are pixels; percentages use the available text area. Narrower
 standalone previews are centred unless overridden. `ATTR_ORG` affects the editor,
 not publication. Cached images under `$XDG_CACHE_HOME/excali/` can be deleted;
 they regenerate when needed. First rendering is synchronous.
+
+### Markdown export
+
+In a file-backed Org buffer, run **`M-x my/org-export-markdown`** and
+choose a `.md` output file. The default keeps each document's export together:
+
+```text
+~/work/docs/export/{basename}/
+  {basename}.md
+  diagram-001.png
+  diagram-002.png
+```
+
+The basename comes from the Org filename, or `#+EXPORT_FILE_NAME` if set (its
+directory component is ignored for this default). Customize
+`my/org-markdown-export-directory` to change the base directory, or choose a
+different output file at the prompt. Missing output directories are created.
+PNGs always go directly beside the chosen Markdown file, numbered in exported
+link order and referenced by relative filename.
+
+The command exports the whole document's current text, ignoring region/narrowing,
+without saving the Org buffer. Every link exports the whole **saved** drawing in
+Doric Light, never an editor selection or unsaved drawing edits.
+
+Copy the whole export directory when sharing. Confluence is the preferred
+destination; Canva can also consume the export. Insert PNGs manually in numbered
+order if the destination does not place them. Uploads and remote replacement are
+not part of this command; an import does not establish comment preservation.
+
+The title appears once, note dates are omitted, and headings remain headings
+through level six. Descriptions become alternative text and visible captions;
+an explicit `#+CAPTION` takes precedence for the visible caption. Destination
+typography is left alone. Use described source links such as
+`[[https://example.com][Source]]`: bare Markdown autolinks may retain literal
+angle brackets in Confluence. No Pandoc is needed.
+
+Re-export replaces numbered PNGs but does not prune old assets. Keep a dedicated
+output directory for each document. Palette requirements and source
+preservation are the same as for PNG sharing above.
+
+### Standard exports
 
 HTML (`C-c C-e h o` / `h h`) and Markdown (`C-c C-e m m`) export use Doric Light,
 regardless of the editor theme. Descriptions supply alternative text;

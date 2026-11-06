@@ -11,7 +11,7 @@
 ;; Public functions/commands:
 ;;   - my/excali-use-preset
 ;;   - my/excali-update-palette
-;;   - my/excali-export
+;;   - my/excali-export-png
 ;;   - my/excali-set-canvas-background
 ;;   - my/excali-new
 ;;   - my/excali-open
@@ -549,7 +549,7 @@ Automatic theme following uses this same conversion."
              (alist-get 'theme target) changed ambiguous)))
 
 ;;;###autoload
-(defun my/excali-export (file &optional selection-only)
+(defun my/excali-export-png (file &optional selection-only)
   "Export a Doric Light PNG to FILE without editing this drawing.
 Convert a disposable scene copy, preserving custom styling just like
 `my/excali-update-palette'.  Usable saved palette metadata is required.
@@ -587,6 +587,8 @@ with a prefix argument export the whole diagram.  No Emacs theme is changed."
             (excali-export-png file selection-only))
         ;; `with-temp-buffer' suppresses the native image-release kill hook.
         (excali--image-release-buffer)))))
+
+(define-obsolete-function-alias 'my/excali-export #'my/excali-export-png "2026-11-06")
 
 (defun my/excali--shown-preset ()
   "Recognise only explicitly selected elements, or the native drawing defaults.
@@ -794,8 +796,10 @@ opening or prevent other drawings from following a theme change."
   "Install the buffer-local scene event before its document is opened."
   (add-hook 'excali-after-open-hook #'my/excali--after-open nil t))
 
-(defun my/excali--render-file (source palette output)
-  "Render saved SOURCE in PALETTE to SVG OUTPUT in a disposable buffer."
+(defun my/excali--render-file (source palette output &optional png)
+  "Render saved SOURCE in PALETTE to OUTPUT in a disposable buffer.
+With PNG non-nil render PNG; otherwise render SVG.  Always export the whole
+saved scene, independently of any live drawing buffer or selection."
   (condition-case err
       (progn (my/excali--check-compatible) (require 'excali))
     (error (user-error "Excalidraw previews require the native excali renderer: %s"
@@ -805,6 +809,7 @@ opening or prevent other drawings from following a theme change."
     (setq major-mode 'excali-mode
           excali--doc (excali--restore-doc (excali--read-scene-file source))
           excali--elements (append (alist-get 'elements excali--doc) nil)
+          excali--selection nil
           excali--native-cache (make-hash-table :test #'eq)
           excali--history-hold t)
     (excali--load-current-style (alist-get 'appState excali--doc))
@@ -816,7 +821,7 @@ opening or prevent other drawings from following a theme change."
                 (excali-export-padding 16)
                 (excali-export-scale 1.0)
                 (excali-export-embed-scene nil))
-            (excali-export-svg output)))
+            (if png (excali-export-png output) (excali-export-svg output))))
       (excali--image-release-buffer))))
 
 (provide 'my-excali)

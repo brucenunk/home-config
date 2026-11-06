@@ -770,6 +770,7 @@ The =org-mode= hook calls =my/prose-wrap= to enable soft wrapping and hide conti
   :hook (org-mode . my/prose-wrap)
   :custom
   (org-support-shift-select t)
+  (org-export-headline-levels 6)
   :config
   (advice-add 'org-fontify-meta-lines-and-blocks :around
               #'my/org-fontify-comment-block)

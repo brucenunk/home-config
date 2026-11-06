@@ -12,8 +12,7 @@
 ;;   - my/excali-org-new
 ;;   - my/excali-org-save-and-return
 ;;   - my/excali-org-cancel
-;;   - my/excali-org-register
-
+;;   - my/org-export-markdown
 ;;   - my/excali-org-register
 
 ;;; Code:
@@ -35,6 +34,10 @@ remaining stable across local text zoom and Writeroom entry/exit.
 Previews shrink to the available text area.  An explicit ATTR_ORG width
 overrides this cap, but cannot exceed that area."
   :type 'natnum :group 'my-excali)
+
+(defcustom my/org-markdown-export-directory (expand-file-name "~/work/docs/export/")
+  "Base directory for per-document Markdown and PNG export bundles."
+  :type 'directory :group 'my-excali)
 
 (defun my/excali--org-base ()
   "Return the containing Org file's directory, never incidental cwd."
@@ -469,26 +472,118 @@ Nested collections leave processing to the outermost call."
   "Render excali links in export TREE for BACKEND using INFO.
 Only the disposable export parse tree is changed.  Native image exporters
 retain ownership of attributes, escaping and backend markup."
-  (org-element-map tree 'link
-    (lambda (link)
-      (when (equal (org-element-property :type link) "excali")
-        (unless (or (org-export-derived-backend-p backend 'html)
-                    (org-export-derived-backend-p backend 'md))
-          (user-error "excali links support HTML and Markdown export, not %s" backend))
-        (let* ((buffer-file-name (plist-get info :input-file))
-               (image (my/excali--org-image (org-element-property :path link) t))
-               (description (and (org-element-contents link)
-                                 (org-element-interpret-data (org-element-contents link)))))
-          (org-element-put-property link :my-excali-image image)
-          (org-element-put-property link :my-excali-description description)
-          ;; Descriptions are alt text, not a request to link rather than embed.
-          (org-element-set-contents link)
-          (org-element-put-property link :contents-begin nil)
-          (org-element-put-property link :contents-end nil)
-          (org-element-put-property link :type "file")
-          (org-element-put-property link :path image)
-          (org-element-put-property link :raw-link (concat "file:" image))))))
+  (let ((number 0))
+    (org-element-map tree 'link
+      (lambda (link)
+        (when (equal (org-element-property :type link) "excali")
+          (unless (or (org-export-derived-backend-p backend 'html)
+                      (org-export-derived-backend-p backend 'md))
+            (user-error "excali links support HTML and Markdown export, not %s" backend))
+          (let* ((buffer-file-name (plist-get info :input-file))
+                 (image (if (org-export-derived-backend-p backend 'my-org-md)
+                            (my/excali--org-markdown-image
+                             (org-element-property :path link) info (cl-incf number))
+                          (my/excali--org-image (org-element-property :path link) t)))
+                 (description (and (org-element-contents link)
+                                   (org-element-interpret-data (org-element-contents link)))))
+            (org-element-put-property link :my-excali-image image)
+            (org-element-put-property link :my-excali-description description)
+            (org-element-put-property link :my-excali-caption (org-element-contents link))
+            ;; Descriptions are alt text, not a request to link rather than embed.
+            (org-element-set-contents link)
+            (org-element-put-property link :contents-begin nil)
+            (org-element-put-property link :contents-end nil)
+            (org-element-put-property link :type "file")
+            (org-element-put-property link :path image)
+            (org-element-put-property link :raw-link (concat "file:" image)))))))
   tree)
+
+(defun my/excali--org-markdown-image (path info number)
+  "Render saved PATH as publication PNG NUMBER beside INFO's output file."
+  (let* ((output (or (plist-get info :output-file)
+                     (user-error "Markdown export requires a Markdown output file")))
+         (assets (file-name-directory (expand-file-name output)))
+         (target (expand-file-name (format "diagram-%03d.png" number) assets))
+         (source (my/excali--org-source path)))
+    (make-directory assets t)
+    ;; Never replace a previous PNG with a partial render on failure.
+    (let ((temporary (make-temp-file (expand-file-name "render-" assets) nil ".png")))
+      (unwind-protect
+          (progn
+            (my/excali--render-file source "doric-light" temporary t)
+            (rename-file temporary target t))
+        (when (file-exists-p temporary) (delete-file temporary))))
+    target))
+
+(defun my/org-markdown--options (info _backend)
+  "Apply publication policy to INFO, including over file-local export options."
+  (org-combine-plists
+   info '(:headline-levels 6 :md-headline-style atx :md-toplevel-hlevel 1
+          :with-title t :with-date nil :time-stamp-file nil :with-author nil
+          :with-toc nil :section-numbers nil)))
+
+(defun my/org-markdown--template (contents info)
+  "Prepend INFO's document title once to Markdown CONTENTS."
+  (let* ((title (org-export-data (plist-get info :title) info))
+         (roots (seq-filter (lambda (element) (eq (org-element-type element) 'headline))
+                            (org-element-contents (plist-get info :parse-tree))))
+         ;; Notes may already have a single document-title heading.  Keep its
+         ;; hierarchy intact rather than printing the metadata title above it.
+         (title-heading (and (= (length roots) 1)
+                             (equal title (org-export-data
+                                           (org-element-property :title (car roots)) info)))))
+    (concat (when (and (org-string-nw-p title) (not title-heading))
+              (concat "# " title "\n\n"))
+            contents)))
+
+(defun my/org-markdown--paragraph (paragraph contents info)
+  "Transcode PARAGRAPH and CONTENTS with a visible diagram caption using INFO."
+  (let* ((links (org-element-map paragraph 'link
+                  (lambda (link)
+                    (and (org-element-property :my-excali-image link) link))))
+         ;; Markdown image titles are tooltips, not reliable visible captions.
+         ;; Prefer an explicit caption, falling back to the link descriptions.
+         (caption (when links
+                    (if-let* ((explicit (org-export-get-caption paragraph)))
+                        (org-export-data explicit info)
+                        (mapconcat
+                         (lambda (link)
+                           (org-export-data
+                            (org-element-property :my-excali-caption link) info))
+                         links "; ")))))
+    (concat (org-md-paragraph paragraph contents info)
+            (when (org-string-nw-p caption) (concat "\n\n" caption "\n")))))
+
+;;;###autoload
+(defun my/org-export-markdown (file)
+  "Export this whole Org document to Markdown FILE and numbered PNG assets.
+Render whole saved excali scenes in Doric Light, never live drawing edits.
+Export the current Org text without saving it.  Ignore region and narrowing.
+PNGs are written beside FILE.  The prompt defaults to a per-document directory
+under `my/org-markdown-export-directory'.
+Upload the Markdown and insert the PNGs manually at the destination."
+  (interactive
+   (progn
+     (require 'ox-md)
+     (let ((default-directory (my/excali--org-base)))
+       (save-restriction
+         (widen)
+         (let* ((name (file-name-nondirectory (org-export-output-file-name ".md")))
+                (directory (file-name-as-directory
+                            (expand-file-name (file-name-sans-extension name)
+                                              my/org-markdown-export-directory))))
+           (list (read-file-name "Markdown output: " directory name)))))))
+  (unless (derived-mode-p 'org-mode) (user-error "Select an Org document first"))
+  (my/excali--org-base)
+  (unless (equal (file-name-extension file) "md")
+    (user-error "Markdown output must have a .md extension"))
+  (require 'ox-md)
+  (setq file (expand-file-name file))
+  (make-directory (file-name-directory file) t)
+  (save-restriction
+    (widen)
+    (let ((mark-active nil))
+      (org-export-to-file 'my-org-md (expand-file-name file)))))
 
 (defun my/excali--org-html-link (transcode link description info)
   "Embed a publication SVG in TRANSCODE's native HTML image for LINK.
@@ -511,14 +606,17 @@ INFO and DESCRIPTION are passed through to the native translator."
       result)))
 
 (defun my/excali--org-md-link (transcode link description info)
-  "Deliver LINK's SVG beside the Markdown output and call native TRANSCODE.
-Use the output basename for the asset directory, or the input basename for
-buffer/string export.  DESCRIPTION and INFO are native translator arguments."
+  "Deliver LINK's image beside the Markdown output and call native TRANSCODE.
+PNG bundles keep images directly beside the output.  Standard Markdown uses
+a basename-assets directory, based on the input file for buffer/string export.
+DESCRIPTION and INFO are native translator arguments."
   (if-let* ((file (org-element-property :my-excali-image link)))
       (let* ((output (or (plist-get info :output-file) (plist-get info :input-file)
                          (user-error "Save the Org document before exporting diagrams")))
              (output (expand-file-name output))
-             (assets (concat (file-name-sans-extension output) "-assets/"))
+             (bundlep (org-export-derived-backend-p (plist-get info :back-end) 'my-org-md))
+             (assets (if bundlep (file-name-directory output)
+                       (concat (file-name-sans-extension output) "-assets/")))
              (target (expand-file-name (file-name-nondirectory file) assets))
              (relative (file-relative-name target (file-name-directory output))))
         (require 'url-util)
@@ -531,7 +629,10 @@ buffer/string export.  DESCRIPTION and INFO are native translator arguments."
               (alt (or (org-element-property :my-excali-description link) "Diagram")))
           ;; Org's Markdown image translator uses the literal alt text "img".
           (setq alt (replace-regexp-in-string "[][\\\\]" "\\\\\\&" alt))
-          (replace-regexp-in-string "!\\[img\\]" (concat "![" alt "]") result t t)))
+          (if bundlep
+              ;; Diagram captions are visible prose, not Markdown title tooltips.
+              (format "![%s](%s)" alt relative)
+            (replace-regexp-in-string "!\\[img\\]" (concat "![" alt "]") result t t))))
     (funcall transcode link description info)))
 
 (defun my/excali--org-theme-enabled (&rest _)
@@ -544,7 +645,6 @@ refresh removes overlays that cannot be regenerated without a palette."
                      (expand-file-name (concat name ".json") my/excali-palette-directory)))
       (my/excali--org-refresh))))
 
-;;;###autoload
 ;;;###autoload
 (defun my/excali-org-register ()
   "Register deferred Org, exporter and drawing integrations."
@@ -568,7 +668,11 @@ refresh removes overlays that cannot be regenerated without a palette."
     (with-eval-after-load 'ox-html
       (advice-add 'org-html-link :around #'my/excali--org-html-link))
     (with-eval-after-load 'ox-md
-      (advice-add 'org-md-link :around #'my/excali--org-md-link))
+      (advice-add 'org-md-link :around #'my/excali--org-md-link)
+      (org-export-define-derived-backend 'my-org-md 'md
+        :translate-alist '((template . my/org-markdown--template)
+                           (paragraph . my/org-markdown--paragraph))
+        :filters-alist '((:filter-options . my/org-markdown--options))))
     (add-hook 'after-save-hook #'my/excali--org-after-save)
     (with-eval-after-load 'excali
       (advice-add 'excali-save :around #'my/excali--org-workflow-save '((depth . -10)))

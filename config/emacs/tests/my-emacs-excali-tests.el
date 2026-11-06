@@ -1566,7 +1566,12 @@
        (should (equal before (my/excali-test--conversion-state)))
        (should-error (my/excali-update-palette) :type 'user-error)))))
 
-(ert-deftest my/excali-export-preserves-source-on-success-error-and-quit ()
+(ert-deftest my/excali-export-retains-compatible-command-alias ()
+  (should (commandp 'my/excali-export))
+  (should (eq (indirect-function 'my/excali-export)
+              (indirect-function 'my/excali-export-png))))
+
+(ert-deftest my/excali-export-png-preserves-source-on-success-error-and-quit ()
   (dolist (outcome '(success error quit))
     (dolist (modified '(nil t))
       (my/excali-test--conversion-scene
@@ -1609,10 +1614,10 @@
                    ((symbol-function 'load-theme) (lambda (&rest _) (ert-fail "Theme changed")))
                    ((symbol-function 'excali-save) (lambda () (ert-fail "Source saved"))))
            (pcase outcome
-             ('error (should-error (my/excali-export "export.png" t)))
-             ('quit (should (eq (condition-case nil (my/excali-export "export.png" t)
+             ('error (should-error (my/excali-export-png "export.png" t)))
+             ('quit (should (eq (condition-case nil (my/excali-export-png "export.png" t)
                                   (quit :cancelled)) :cancelled)))
-             (_ (should (equal (my/excali-export "export.png" t)
+             (_ (should (equal (my/excali-export-png "export.png" t)
                                (expand-file-name "export.png"))))))
          (should-not (buffer-live-p disposable))
          (should (eq (current-buffer) source))
@@ -1630,10 +1635,10 @@
          (should (eq themes custom-enabled-themes))
          (should (eq modified (buffer-modified-p))))))))
 
-(ert-deftest my/excali-export-interactive-uses-native-png-prompt-and-selection ()
+(ert-deftest my/excali-export-png-interactive-uses-native-png-prompt-and-selection ()
   (with-temp-buffer
     (cl-letf (((symbol-function 'read-file-name) (lambda (&rest _) (ert-fail "Prompted outside drawing"))))
-      (should-error (call-interactively #'my/excali-export) :type 'user-error)))
+      (should-error (call-interactively #'my/excali-export-png) :type 'user-error)))
   (dolist (selected '(nil t))
     (dolist (current-prefix-arg '(nil (4)))
       (my/excali-test--conversion-scene
@@ -1650,18 +1655,18 @@
                       (setq called t)
                       (should (equal file (expand-file-name "chosen.png")))
                       (should (eq selection-only (and selected (not current-prefix-arg)))))))
-           (call-interactively #'my/excali-export))
+           (call-interactively #'my/excali-export-png))
          (should called)))))
   (my/excali-test--conversion-scene
    (let ((before (my/excali-test--conversion-state))
          (undo excali--undo-stack))
      (cl-letf (((symbol-function 'read-file-name) (lambda (&rest _) (signal 'quit nil))))
-       (should (eq (condition-case nil (call-interactively #'my/excali-export)
+       (should (eq (condition-case nil (call-interactively #'my/excali-export-png)
                      (quit :cancelled)) :cancelled)))
      (should (equal before (my/excali-test--conversion-state)))
      (should (eq undo excali--undo-stack)))))
 
-(ert-deftest my/excali-export-releases-disposable-image-registrations ()
+(ert-deftest my/excali-export-png-releases-disposable-image-registrations ()
   (dolist (outcome '(success error quit))
     (my/excali-test--conversion-scene
      (let ((source (current-buffer))
@@ -1677,12 +1682,12 @@
                     (pcase outcome
                       ('error (error "Export failed"))
                       ('quit (signal 'quit nil))))))
-         (condition-case nil (my/excali-export "unused.png") ((error quit) nil)))
+         (condition-case nil (my/excali-export-png "unused.png") ((error quit) nil)))
        (should (equal (gethash "shared" excali--image-users) (list source)))
        (should-not (gethash "export-only" excali--image-users))
        (should (equal forgotten '("export-only")))))))
 
-(ert-deftest my/excali-export-invalid-palettes-do-not-write-or-edit ()
+(ert-deftest my/excali-export-png-invalid-palettes-do-not-write-or-edit ()
   (my/excali-test--conversion-scene
    (dolist (kind '(missing-source missing-target))
      (let ((excali--doc (copy-tree excali--doc t))
@@ -1695,11 +1700,11 @@
              (let ((before (my/excali-test--conversion-state)))
                (cl-letf (((symbol-function 'excali-export-png)
                           (lambda (&rest _) (ert-fail "Exported invalid scene"))))
-                 (should-error (my/excali-export "must-not-exist.png")))
+                 (should-error (my/excali-export-png "must-not-exist.png")))
                (should (equal before (my/excali-test--conversion-state)))))
          (when (eq kind 'missing-target) (delete-directory my/excali-palette-directory)))))))
 
-(ert-deftest my/excali-export-writes-real-doric-light-png-with-embedded-scene ()
+(ert-deftest my/excali-export-png-writes-real-doric-light-png-with-embedded-scene ()
   (let ((directory (make-temp-file "excali-light-export-" t)))
     (unwind-protect
         (dolist (selection-only '(nil t))
@@ -1712,7 +1717,7 @@
                  (target (my/excali--read-palette "doric-light"))
                  (excali-export-embed-scene t)
                  (excali-export-background t))
-             (should (equal (my/excali-export file selection-only) file))
+             (should (equal (my/excali-export-png file selection-only) file))
              (should (equal (substring (excali--read-image-file file) 0 8)
                             (unibyte-string 137 80 78 71 13 10 26 10)))
              (let* ((exported (excali--read-scene-file file))
