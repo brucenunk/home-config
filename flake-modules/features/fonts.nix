@@ -20,13 +20,19 @@
           with pkgs;
           [
             aporetic
-            # Emacs cannot select Fontconfig's synthetic slant as an italic face.
+            # Linux Emacs cannot select Fontconfig's synthetic slant as an italic face.
             # Install matched static upright peers too: otherwise Fontconfig can
             # prefer the static italics to the upstream variable upright font.
             # TODO(bump-nix): Check https://github.com/ateliertriay/bricolage for native
             # italics; once packaged by nixpkgs, verify Emacs selects them and remove
             # this companion package and pkgs/bricolage-oblique.
-            (pkgs.callPackage ../../pkgs/bricolage-oblique { })
+            (
+              if pkgs.stdenv.hostPlatform.isLinux then
+                pkgs.callPackage ../../pkgs/bricolage-oblique { }
+              else
+                # Keep macOS's native slant and optical sizing for the variable font.
+                google-fonts.override { fonts = [ "Bricolage Grotesque" ]; }
+            )
             open-sans
           ]
           ++ map (variant: iosevka-bin.override { inherit variant; }) [
