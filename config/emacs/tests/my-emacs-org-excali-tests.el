@@ -161,29 +161,40 @@
 
 (ert-deftest my/org-markdown-prompt-defaults-to-self-contained-document-bundle ()
   (my/excali-test--org-scene
-   (let ((default-directory temporary-file-directory)
-         (my/org-markdown-export-directory (expand-file-name "export/" directory)))
+   (let ((default-directory (expand-file-name "docs/" directory))
+         (my/org-markdown-export-directory (expand-file-name "export/" directory))
+         (read-file-name-function #'read-file-name-default)
+         (insert-default-directory t)
+         (use-dialog-box nil))
      (dolist (base '("page" "chosen-name"))
        (widen)
        (when (equal base "chosen-name")
          (goto-char (point-min))
          (insert "#+EXPORT_FILE_NAME: elsewhere/chosen-name.md\n"))
-       (let ((expected (expand-file-name (concat base "/" base ".md")
-                                         my/org-markdown-export-directory)))
-         (narrow-to-region (- (point-max) 5) (point-max))
-         (cl-letf (((symbol-function 'read-file-name)
-                    (lambda (_prompt dir default &rest _)
-                      (let ((file (expand-file-name default dir)))
-                        (should (equal file expected))
-                        file))))
-           (call-interactively #'my/org-export-markdown))
-         (should (buffer-narrowed-p))
-         (with-temp-buffer
-           (insert-file-contents expected)
-           (should (string-match-p (regexp-quote "![Diagram](diagram-001.png)")
-                                   (buffer-string))))
-         (should (file-regular-p (expand-file-name "diagram-001.png"
-                                                   (file-name-directory expected)))))))))
+       (dolist (destination '(default relative absolute))
+         (let* ((bundle (expand-file-name (concat base "/")
+                                          my/org-markdown-export-directory))
+                (input (pcase destination
+                         ('relative "renamed.md")
+                         ('absolute (expand-file-name (concat "chosen/" base ".md")
+                                                      directory))))
+                (expected (expand-file-name (or input (concat base ".md")) bundle)))
+           (narrow-to-region (- (point-max) 5) (point-max))
+           ;; Keep read-file-name's real default/relative-path handling.  Joining
+           ;; its arguments in a stub masked exports landing beside the source.
+           (cl-letf (((symbol-function 'completing-read)
+                      (lambda (_prompt _collection _predicate _match initial &rest _)
+                        (or input (if (consp initial) (car initial) initial)))))
+             (should (equal (call-interactively #'my/org-export-markdown) expected)))
+           (should (buffer-narrowed-p))
+           (should (equal default-directory (expand-file-name "docs/" directory)))
+           (with-temp-buffer
+             (insert-file-contents expected)
+             (should (string-match-p (regexp-quote "![Diagram](diagram-001.png)")
+                                     (buffer-string))))
+           (should (file-regular-p (expand-file-name "diagram-001.png"
+                                                    (file-name-directory expected)))))))
+     (should-not (directory-files default-directory nil "\\.\\(?:md\\|png\\)\\'")))))
 
 (ert-deftest my/org-markdown-does-not-duplicate-an-existing-title-heading ()
   (my/excali-test--org-scene

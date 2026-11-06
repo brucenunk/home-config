@@ -572,7 +572,10 @@ Upload the Markdown and insert the PNGs manually at the destination."
                 (directory (file-name-as-directory
                             (expand-file-name (file-name-sans-extension name)
                                               my/org-markdown-export-directory))))
-           (list (read-file-name "Markdown output: " directory name)))))))
+           (list (expand-file-name
+                  (read-file-name "Markdown output: " directory
+                                  (expand-file-name name directory))
+                  directory)))))))
   (unless (derived-mode-p 'org-mode) (user-error "Select an Org document first"))
   (my/excali--org-base)
   (unless (equal (file-name-extension file) "md")
