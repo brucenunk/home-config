@@ -161,7 +161,7 @@
      '(should (advice-member-p #'my/denote-task-auto-revert-debounce-notify
                               'auto-revert-notify-handler)))))
 
-(ert-deftest my/deferred-agent-header-hooks-load-orders ()
+(ert-deftest my/deferred-agent-header-load-orders ()
   (let ((declaration (my/deferred-test--declaration
                       (locate-library "my-emacs-agents") 'agent-shell)))
     (dolist (loaded '(nil t))
@@ -170,12 +170,13 @@
        `(when ,loaded (require 'agent-shell))
        declaration
        `(should (eq (featurep 'agent-shell) ,loaded))
-       '(should (fboundp 'my/agent-shell-header-no-underline))
-       '(dolist (hook '(agent-shell-mode-hook
-                       agent-shell-viewport-view-mode-hook
-                       agent-shell-viewport-edit-mode-hook))
-          (should (memq #'my/agent-shell-header-no-underline
-                        (symbol-value hook))))))))
+       '(require 'agent-shell)
+       '(should (advice-member-p #'my/agent-shell-header--identity
+                                'agent-shell--make-header-model))
+       '(should (advice-member-p #'my/agent-shell-header--context-face
+                                'agent-shell--context-usage-face))
+       '(should (advice-member-p #'my/agent-shell-header--render
+                                'agent-shell--render-header-model))))))
 
 (ert-deftest my/deferred-agent-table-shading-load-orders ()
   (let ((declaration (my/deferred-test--declaration
