@@ -41,7 +41,7 @@ with avoiding redundant reverts during rapid agent edits."
 
 ;;;###autoload
 (defun my/denote-startup-buffer ()
-  "Return all Denote files sorted newest first, or the scratch buffer.
+  "Return all Denote files sorted by title ascending, or the scratch buffer.
 Do not leave the caller's window layout changed while preparing the buffer."
   (let ((scratch (get-scratch-buffer-create)))
     (if (not (file-directory-p denote-directory))
@@ -54,7 +54,9 @@ Do not leave the caller's window layout changed while preparing the buffer."
               (switch-to-buffer my/denote-startup-notes-buffer)
               (revert-buffer nil t))
           (switch-to-buffer scratch)
-          (denote-sort-dired "" 'identifier t nil))
+          ;; Denote falls back to this default even for an explicit nil REVERSE.
+          (let ((denote-sort-dired-default-reverse-sort nil))
+            (denote-sort-dired "" 'title nil nil)))
         (if (derived-mode-p 'dired-mode)
             (setq my/denote-startup-notes-buffer (current-buffer))
           (setq my/denote-startup-notes-buffer nil)

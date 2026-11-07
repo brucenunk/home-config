@@ -35,12 +35,13 @@
   (should-not (fboundp 'my/denote-template))
   (should-not (fboundp 'my/denote-task)))
 
-(ert-deftest my/denote-startup-sorts-all-files-newest-first ()
+(ert-deftest my/denote-startup-sorts-all-files-by-title-ascending ()
   (let* ((root (make-temp-file "denote-startup-" t))
          (denote-directory root)
          (my/denote-startup-notes-buffer nil)
          ;; Startup must not depend on interactive settings or prompt history.
-         (denote-sort-dired-default-sort-component 'title)
+         (denote-sort-dired-default-sort-component 'identifier)
+         (denote-sort-dired-default-reverse-sort t)
          (denote-sort-component-history '("keywords"))
          (files '("20261030T100000--alpha.org"
                   "tasks/20261031T100000--zulu.org"
@@ -59,10 +60,11 @@
           (with-current-buffer notes-buffer
             (should (derived-mode-p 'dired-mode))
             (should (equal denote-sort-dired--last-arguments
-                           '("" identifier t nil nil)))
+                           '("" title nil nil nil)))
             (should (equal (cdr dired-directory)
-                           (list (nth 1 files) (nth 0 files) (nth 2 files)))))
-          (should (eq denote-sort-dired-default-sort-component 'title))
+                           (list (nth 0 files) (nth 2 files) (nth 1 files)))))
+          (should (eq denote-sort-dired-default-sort-component 'identifier))
+          (should denote-sort-dired-default-reverse-sort)
           (should (equal denote-sort-component-history '("keywords"))))
       (when (buffer-live-p notes-buffer) (kill-buffer notes-buffer))
       (delete-directory root t))))

@@ -862,6 +862,8 @@ The link advice =my/denote-link-normalize-file-arg= normalizes file arguments be
   (denote-dired-directories-include-subdirectories t)
   (denote-known-keywords nil)
   (denote-file-type 'org)
+  (denote-sort-dired-default-sort-component 'title)
+  (denote-sort-dired-default-reverse-sort nil)
   (denote-rename-confirmations nil)
   :config
   (require 'my-denote-task)
