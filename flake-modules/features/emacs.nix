@@ -36,7 +36,6 @@ let
           consult-denote
           corfu
           denote
-          diff-hl
           (import ../../pkgs/doric-themes.nix { inherit pkgs epkgs; })
           editorconfig
           embark
