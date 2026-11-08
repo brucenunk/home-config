@@ -1467,6 +1467,7 @@ Keep tables fixed-pitch and shade alternate rows using the active Doric palette'
   (agent-shell-transcript-file-path-function #'my/agent-shell--transcript-file-path)
   (agent-shell-preferred-agent-config 'pi)
   (agent-shell-prefer-viewport-interaction t)
+  (agent-shell-activity-group-expand-by-default nil)
   (agent-shell-markdown-table-zebra-stripe t)
   :custom-face
   (agent-shell-secondary ((t (:inherit shadow))))
