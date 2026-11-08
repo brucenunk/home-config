@@ -92,7 +92,7 @@ error.  Evaluate the theme's package source once and retry to register it."
          (signal (car err) (cdr err)))))))
 
 (defun my/auto-dark--read-doric-theme (prompt themes current)
-  "Read an available Doric theme from THEMES with PROMPT and CURRENT default."
+  "Preview and read a Doric theme from THEMES with PROMPT and CURRENT default."
   (let* ((available (custom-available-themes))
          (candidates
           (sort (mapcar #'symbol-name
@@ -100,34 +100,56 @@ error.  Evaluate the theme's package source once and retry to register it."
                                     themes))
                 #'string-lessp))
          (default (and current (symbol-name current))))
-    (intern
-     (completing-read
-      (format-prompt prompt default)
-      (lambda (string pred action)
-        (if (eq action 'metadata)
-            '(metadata (category . theme)
-                       (display-sort-function . identity)
-                       (cycle-sort-function . identity))
-          (complete-with-action action candidates string pred)))
-      nil t nil nil default))))
+    (consult--read
+     candidates
+     :prompt (format-prompt prompt default)
+     :require-match t
+     :category 'theme
+     :sort nil
+     :default default
+     :lookup (lambda (selected &rest _) (and selected (intern selected)))
+     :state (lambda (action theme)
+              (when (and theme (memq action '(preview return)))
+                ;; Doric definitions need registering before Consult loads them.
+                (my/doric-theme-preload theme)
+                (consult-theme theme))))))
 
 ;;;###autoload
 (defun my/auto-dark-select-themes ()
-  "Select one light and one dark Doric theme for this session only.
-Prompt light first, defaulting to the current selections.  Update
-`auto-dark-themes' only after both prompts complete, and let its setter
-apply the current OS appearance when `auto-dark-mode' is enabled.
-Subsequent automatic appearance changes use the selected themes."
+  "Preview and select a light and dark Doric theme for this session only.
+Pause `auto-dark-mode' while prompting, light first.  Commit the pair only
+after both prompts complete, then resume automatic switching if previously
+enabled.  On cancellation or error, restore the original pair and themes.
+If automatic switching was disabled, leave the original themes enabled."
   (interactive)
-  (let* ((light (my/auto-dark--read-doric-theme
-                 "Light Doric theme" doric-themes-light-themes
-                 (car (cadr auto-dark-themes))))
-         (dark (my/auto-dark--read-doric-theme
-                "Dark Doric theme" doric-themes-dark-themes
-                (caar auto-dark-themes))))
-    ;; Register new Doric definitions before auto-dark's setter preloads them.
-    (mapc #'my/doric-theme-preload (list light dark))
-    (setopt auto-dark-themes (list (list dark) (list light)))))
+  (require 'consult)
+  (let ((resume auto-dark-mode)
+        (original-pair auto-dark-themes)
+        (original-themes (copy-sequence custom-enabled-themes))
+        (original-background frame-background-mode)
+        committed)
+    (unwind-protect
+        (progn
+          (when resume (auto-dark-mode -1))
+          (let* ((light (my/auto-dark--read-doric-theme
+                         "Light Doric theme" doric-themes-light-themes
+                         (car (cadr auto-dark-themes))))
+                 (dark (my/auto-dark--read-doric-theme
+                        "Dark Doric theme" doric-themes-dark-themes
+                        (caar auto-dark-themes))))
+            (mapc #'my/doric-theme-preload (list light dark))
+            (setopt auto-dark-themes (list (list dark) (list light))))
+          (setq committed t))
+      (unless committed (set-default 'auto-dark-themes original-pair))
+      (unwind-protect
+          (when resume (auto-dark-mode 1))
+        ;; Resuming can apply the OS appearance; cancellation must still restore
+        ;; the exact starting theme stack, including any manual override.
+        (unless (and committed resume)
+          (mapc #'disable-theme custom-enabled-themes)
+          (mapc #'enable-theme (reverse original-themes))
+          (setq frame-background-mode original-background)
+          (mapc #'frame-set-background-mode (frame-list)))))))
 
 ;;;###autoload
 (defun my/fontaine-setup-frame (&optional frame)
