@@ -34,8 +34,11 @@ nix eval --impure --raw --expr '
     };
 
     linuxOnlyModuleNames = [
+      "battery-alerts"
       "darkman"
+      "icons-and-cursors"
       "niri"
+      "notifications"
       "tramp-rpc-server"
       "waybar"
     ];
