@@ -1,0 +1,84 @@
+mode="${1:-}"
+
+if [ "$mode" = "--startup" ]; then
+  if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    if ! systemctl --user import-environment WAYLAND_DISPLAY; then
+      printf 'failed to import WAYLAND_DISPLAY for desktop services\n' >&2
+    fi
+  fi
+
+  mode=""
+  attempts=0
+  while [ "$attempts" -lt 20 ]; do
+    if mode="$(darkman get 2>/dev/null)"; then
+      break
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.25
+  done
+  mode="${mode:-dark}"
+  case "$mode" in
+    light | dark) ;;
+    *) mode="dark" ;;
+  esac
+fi
+
+case "$mode" in
+  light) theme="doric-earth" ;;
+  dark) theme="doric-obsidian" ;;
+  *)
+    printf 'usage: doric-desktop-theme light|dark|--startup\n' >&2
+    exit 2
+    ;;
+esac
+
+# Share Darkman's preference with direct readers and the Settings portal,
+# including when Niri invokes this script to initialise the session.
+if ! dconf write /org/gnome/desktop/interface/color-scheme "'prefer-$mode'"; then
+  printf 'failed to update desktop colour preference\n' >&2
+fi
+
+niri_config="$HOME/.config/niri/config-$mode.kdl"
+if command -v niri >/dev/null 2>&1 && [ -f "$niri_config" ]; then
+  # Darkman may start before Niri publishes its socket, so the daemon's
+  # original environment can lack NIRI_SOCKET even after the user manager
+  # has imported it. Recover the current value before sending the reload.
+  manager_environment=""
+  if manager_environment="$(systemctl --user show-environment 2>/dev/null)"; then
+    manager_niri_socket="$(
+      printf '%s\n' "$manager_environment" |
+        while IFS='=' read -r name value; do
+          if [ "$name" = "NIRI_SOCKET" ]; then
+            printf '%s\n' "$value"
+            break
+          fi
+        done
+    )"
+    if [ -n "$manager_niri_socket" ]; then
+      NIRI_SOCKET="$manager_niri_socket"
+      export NIRI_SOCKET
+    fi
+  fi
+
+  if [ -n "${NIRI_SOCKET:-}" ]; then
+    if ! niri msg action load-config-file \
+      --path "$niri_config" >/dev/null; then
+      printf 'failed to load Niri %s theme\n' "$mode" >&2
+    fi
+  else
+    printf 'cannot load Niri %s theme: NIRI_SOCKET is unavailable\n' \
+      "$mode" >&2
+  fi
+fi
+
+wallpaper_service="niri-wallpaper-$mode.service"
+if systemctl --user cat "$wallpaper_service" >/dev/null 2>&1; then
+  if ! systemctl --user start "$wallpaper_service"; then
+    printf 'failed to start Niri %s wallpaper\n' "$mode" >&2
+  fi
+fi
+
+waybar_theme="$HOME/.config/waybar/doric-waybar-theme"
+if [ -x "$waybar_theme" ]; then
+  "$waybar_theme" "$theme"
+fi

@@ -49,6 +49,7 @@ in
           config.flake.modules.homeManager.agents
           config.flake.modules.homeManager.agent-catalogue
           config.flake.modules.homeManager.bazel
+          config.flake.modules.homeManager.battery-alerts
           config.flake.modules.homeManager.direnv
           config.flake.modules.homeManager.emacs
           config.flake.modules.homeManager.fd
@@ -58,6 +59,7 @@ in
           config.flake.modules.homeManager.fzf
           config.flake.modules.homeManager.ghostty
           config.flake.modules.homeManager.git
+          config.flake.modules.homeManager.icons-and-cursors
           config.flake.modules.homeManager.golang
           config.flake.modules.homeManager.kube
           config.flake.modules.homeManager.language-servers
@@ -65,8 +67,10 @@ in
           config.flake.modules.homeManager.ripgrep
           config.flake.modules.homeManager.rust
           config.flake.modules.homeManager.pi
+          config.flake.modules.homeManager.portals
           config.flake.modules.homeManager.darkman
           config.flake.modules.homeManager.niri
+          config.flake.modules.homeManager.notifications
           config.flake.modules.homeManager.waybar
         ];
       }

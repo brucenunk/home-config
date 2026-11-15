@@ -2,7 +2,12 @@
 
 {
   flake.modules.homeManager.niri =
-    { pkgs, lib, ... }:
+    {
+      config,
+      pkgs,
+      lib,
+      ...
+    }:
 
     let
       # Licensed Adobe Stock downloads, provisioned separately on each machine.
@@ -75,10 +80,15 @@
       programs.ghostty.enable = true; # Super+T in the default setting (terminal)
       programs.swaylock.enable = true; # Super+Alt+L in the default setting (screen locker)
 
-      services.mako.enable = true; # notification daemon
       services.polkit-gnome.enable = true; # polkit
 
       xdg.configFile = {
+        "niri/cursor.kdl".text = lib.optionalString config.home.pointerCursor.enable ''
+          cursor {
+              xcursor-theme ${builtins.toJSON config.home.pointerCursor.name}
+              xcursor-size ${toString config.home.pointerCursor.size}
+          }
+        '';
         "niri" = {
           source = ../../config/niri;
           recursive = true;

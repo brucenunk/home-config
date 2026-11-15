@@ -6,7 +6,7 @@
 
     {
       dconf.settings."org/gnome/desktop/interface" = {
-        font-name = "Open Sans 12";
+        font-name = "Open Sans 10";
         monospace-font-name = "Iosevka Fixed SS14 12";
       };
 
