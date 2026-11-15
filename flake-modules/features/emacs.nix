@@ -64,6 +64,7 @@ let
           spacious-padding
           terraform-mode
           (import ../../pkgs/tramp-rpc.nix { inherit inputs pkgs epkgs; })
+          ultra-scroll
           vertico
           wgrep
           writeroom-mode

@@ -39,7 +39,10 @@
       # Niri installed via nixos-config repo.
       # https://wiki.nixos.org/wiki/Niri/en
 
-      home.packages = [ pkgs.xwayland-satellite ]; # xwayland support
+      home.packages = [
+        pkgs.wf-recorder
+        pkgs.xwayland-satellite # xwayland support
+      ];
 
       systemd.user.services = {
         niri-wallpaper-light = {

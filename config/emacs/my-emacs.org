@@ -130,12 +130,29 @@ Use short, quiet interactions and spaces for indentation. The stale-file policy 
   :custom
   (ring-bell-function 'ignore)
   (visible-bell nil)
+  (blink-cursor-blinks 3)
+  ;; Allow more allocation between collections during interactive work.
+  (gc-cons-threshold (* 16 1024 1024))
+  ;; Permit larger reads for bulk language-server responses.
+  (read-process-output-max (* 1024 1024))
   (scroll-conservatively 101)
   :config
   (delete-selection-mode)
   (electric-pair-mode)
   (pixel-scroll-precision-mode)
   (setq-default indent-tabs-mode nil))
+#+end_src
+
+*** Trackpad scrolling
+
+Enable =ultra-scroll= for responsive pixel-precise trackpad scrolling. To return to built-in pixel scrolling for a session, disable =ultra-scroll-mode= first, then enable =pixel-scroll-precision-mode=.
+
+#+begin_src emacs-lisp
+(use-package ultra-scroll
+  :ensure nil
+  :demand t
+  :config
+  (ultra-scroll-mode 1))
 #+end_src
 
 *** EditorConfig
@@ -332,6 +349,16 @@ Briefly highlight the current line after supported navigation commands so it is 
   (pulsar-highlight-face 'pulsar-generic)
   :config
   (pulsar-global-mode))
+#+end_src
+
+*** Programming line highlighting
+
+Highlight the current line in programming buffers.
+
+#+begin_src emacs-lisp
+(use-package hl-line
+  :ensure nil
+  :hook (prog-mode . hl-line-mode))
 #+end_src
 
 *** Selection highlighting
