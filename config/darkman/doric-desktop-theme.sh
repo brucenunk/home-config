@@ -24,8 +24,14 @@ if [ "$mode" = "--startup" ]; then
 fi
 
 case "$mode" in
-  light) theme="doric-earth" ;;
-  dark) theme="doric-obsidian" ;;
+  light)
+    theme="doric-earth"
+    cursor="phinger-cursors-dark"
+    ;;
+  dark)
+    theme="doric-obsidian"
+    cursor="phinger-cursors-light"
+    ;;
   *)
     printf 'usage: doric-desktop-theme light|dark|--startup\n' >&2
     exit 2
@@ -36,6 +42,10 @@ esac
 # including when Niri invokes this script to initialise the session.
 if ! dconf write /org/gnome/desktop/interface/color-scheme "'prefer-$mode'"; then
   printf 'failed to update desktop colour preference\n' >&2
+fi
+
+if ! dconf write /org/gnome/desktop/interface/cursor-theme "'$cursor'"; then
+  printf 'failed to update desktop cursor preference\n' >&2
 fi
 
 niri_config="$HOME/.config/niri/config-$mode.kdl"

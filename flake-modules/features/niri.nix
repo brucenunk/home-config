@@ -89,6 +89,18 @@
               xcursor-size ${toString config.home.pointerCursor.size}
           }
         '';
+        "niri/cursor-light.kdl".text = lib.optionalString config.home.pointerCursor.enable ''
+          cursor {
+              xcursor-theme "phinger-cursors-dark"
+              xcursor-size ${toString config.home.pointerCursor.size}
+          }
+        '';
+        "niri/cursor-dark.kdl".text = lib.optionalString config.home.pointerCursor.enable ''
+          cursor {
+              xcursor-theme "phinger-cursors-light"
+              xcursor-size ${toString config.home.pointerCursor.size}
+          }
+        '';
         "niri" = {
           source = ../../config/niri;
           recursive = true;
