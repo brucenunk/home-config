@@ -15,8 +15,8 @@
 ;;   - my/auto-dark-select-themes
 ;;   - my/fontaine-setup-frame
 ;;   - my/fontaine-preview-presets
-;;   - my/writeroom-text-scale
-;;   - my/writeroom-visual-line
+;;   - my/writeroom-exit-on-kill
+;;   - my/centred-buffer-wrap
 ;;   - my/modeline-status
 ;;   - my/modeline-buffer-name
 ;;   - my/modeline-details-p
@@ -31,6 +31,7 @@
 
 (declare-function mixed-pitch-mode "mixed-pitch" (&optional arg))
 (declare-function fontaine-set-preset "fontaine" (preset))
+(declare-function writeroom-mode "writeroom-mode" (&optional arg))
 
 (defvar fontaine-presets)
 (defvar fontaine-preset-history)
@@ -162,7 +163,7 @@ If automatic switching was disabled, leave the original themes enabled."
           (fontaine-set-preset
            (if (assq preset fontaine-presets)
                preset
-             'iosevka-fixed-ss14-jetbrains-mono)))))))
+             'default)))))))
 
 (defun my/ui--fontaine-preview-families (preset)
   "Resolve PRESET's default, fixed-pitch and prose families.
@@ -266,67 +267,39 @@ and buttons.  Run this command again to recreate it."
       (my/ui--fontaine-preview-render))
     (pop-to-buffer buffer)))
 
-(defvar-local my/writeroom-saved-text-scale nil
-  "Text scaling state to restore when leaving Writeroom.
-Stored as (MODE AMOUNT), or nil outside the writing view.")
-
-(defvar-local my/ui--writeroom-scaled-p nil
-  "Whether Writeroom's extra text scaling is currently applied.")
-
-(defun my/ui--writeroom-scale-restore ()
-  "Restore the saved text scale without discarding the writing baseline."
-  (setq text-scale-mode-amount (cadr my/writeroom-saved-text-scale))
-  (text-scale-mode (if (car my/writeroom-saved-text-scale) 1 -1)))
-
-(defun my/ui--writeroom-scale-update ()
-  "Update writing scale for ordinary windows in the selected frame.
-This buffer-local window hook runs with a displaying window selected.
-Text scaling is buffer-local; two windows showing this buffer still
-count as a split.  Cross-frame coordination is intentionally unsupported."
-  (when my/writeroom-saved-text-scale
-    (let ((enlarge (= (length (window-list nil 'nomini)) 1)))
-      (unless (eq enlarge my/ui--writeroom-scaled-p)
-        (setq my/ui--writeroom-scaled-p enlarge)
-        (if enlarge
-            (text-scale-set
-             (1+ (if (car my/writeroom-saved-text-scale)
-                     (cadr my/writeroom-saved-text-scale)
-                   0)))
-          (my/ui--writeroom-scale-restore))))))
+(defvar-local my/centred-buffer-saved-wrap nil
+  "Original visual-line mode and local wrapping settings while centred.")
 
 ;;;###autoload
-(defun my/writeroom-text-scale (arg)
-  "For positive ARG, enlarge writing text only in a single-window layout.
-Otherwise restore the original buffer-local scale and stop tracking layouts."
-  (if (> arg 0)
-      (progn
-        (unless my/writeroom-saved-text-scale
-          (setq my/writeroom-saved-text-scale
-                (list text-scale-mode text-scale-mode-amount)))
-        (add-hook 'window-configuration-change-hook
-                  #'my/ui--writeroom-scale-update nil t)
-        (my/ui--writeroom-scale-update))
-    (remove-hook 'window-configuration-change-hook
-                 #'my/ui--writeroom-scale-update t)
-    (when my/writeroom-saved-text-scale
-      (my/ui--writeroom-scale-restore)
-      (setq my/writeroom-saved-text-scale nil
-            my/ui--writeroom-scaled-p nil))))
-
-(defvar-local my/writeroom-saved-visual-line nil
-  "Visual-line state on entering Writeroom, wrapped in a list.")
+(defun my/centred-buffer-wrap ()
+  "Use quiet word wrapping while visual-fill-column-mode is active."
+  (if (bound-and-true-p visual-fill-column-mode)
+      (unless my/centred-buffer-saved-wrap
+        (setq my/centred-buffer-saved-wrap
+              (cons visual-line-mode
+                    (mapcar (lambda (symbol)
+                              (list symbol (local-variable-p symbol)
+                                    (symbol-value symbol)))
+                            '(line-move-visual truncate-lines
+                              truncate-partial-width-windows word-wrap
+                              fringe-indicator-alist))))
+        (let ((visual-line-fringe-indicators '(nil nil)))
+          (visual-line-mode 1)))
+    (when my/centred-buffer-saved-wrap
+      (visual-line-mode (if (car my/centred-buffer-saved-wrap) 1 -1))
+      ;; An already active visual-line-mode has its own earlier baseline.
+      ;; Restore the settings at centring entry without replacing that baseline.
+      (dolist (entry (cdr my/centred-buffer-saved-wrap))
+        (if (nth 1 entry)
+            (set (make-local-variable (car entry)) (nth 2 entry))
+          (kill-local-variable (car entry))))
+      (setq my/centred-buffer-saved-wrap nil))))
 
 ;;;###autoload
-(defun my/writeroom-visual-line (arg)
-  "Enable wrapping for positive ARG; restore its prior state otherwise."
-  (if (> arg 0)
-      (progn
-        (unless my/writeroom-saved-visual-line
-          (setq my/writeroom-saved-visual-line (list visual-line-mode)))
-        (visual-line-mode 1))
-    (when my/writeroom-saved-visual-line
-      (visual-line-mode (if (car my/writeroom-saved-visual-line) 1 -1))
-      (setq my/writeroom-saved-visual-line nil))))
+(defun my/writeroom-exit-on-kill ()
+  "Leave Writeroom normally so killing its buffer restores the layout."
+  (when (bound-and-true-p writeroom-mode)
+    (writeroom-mode -1)))
 
 ;;;###autoload
 (defun my/modeline-status ()

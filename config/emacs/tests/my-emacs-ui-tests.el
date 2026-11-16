@@ -226,90 +226,160 @@
           (should (eq frame-background-mode original-background)))
       (set-default 'auto-dark-themes original-pair))))
 
-(ert-deftest my/ui-writeroom-is-opt-in-and-restores-writing-formatting ()
-  (should (commandp 'writeroom-mode))
+(ert-deftest my/ui-centred-buffer-and-focus-restore-presentation ()
+  (require 'visual-fill-column)
   (require 'writeroom-mode)
-  (should (= writeroom-width 80))
-  (should-not writeroom-maximize-window)
-  (should-not writeroom-restore-window-config)
-  (should (equal writeroom-local-effects
-                 '(my/writeroom-visual-line my/writeroom-text-scale)))
-  (should-not (bound-and-true-p global-writeroom-mode))
-  ;; Frame effects need a graphical manual check.  Exercise the real buffer
-  ;; effects without changing fullscreen in batch.
+  ;; Graphical fullscreen/divider appearance needs a manual check.
   (let ((writeroom-global-effects nil))
-    (dolist (mode '(text-mode markdown-mode))
+    (dolist (centred '(nil t))
       (save-window-excursion
         (with-temp-buffer
-          (funcall mode)
-          (should-not (bound-and-true-p writeroom-mode))
-          (insert (make-string 200 ?a) " " (make-string 200 ?b))
-          (set-buffer-modified-p nil)
+          (text-mode)
+          (visual-line-mode -1)
+          (text-scale-set 2)
           (switch-to-buffer (current-buffer))
           (delete-other-windows)
-          (split-window-below)
-          (let ((text (buffer-string))
+          (let ((reference (split-window-below))
                 (modeline mode-line-format)
+                (header header-line-format)
                 (mixed (bound-and-true-p mixed-pitch-mode)))
+            (insert (make-string 200 ?a) " " (make-string 200 ?b))
+            (set-buffer-modified-p nil)
+            (when centred
+              (visual-fill-column-mode 1)
+              (should (= visual-fill-column-width 80))
+              (should visual-fill-column-center-text)
+              (should (= (length (window-list)) 2))
+              (should (equal mode-line-format modeline))
+              (should (equal header-line-format header))
+              (should visual-line-mode)
+              (should word-wrap)
+              (should (equal (cdr (assq 'continuation fringe-indicator-alist))
+                             '(nil nil))))
+            (let ((text (buffer-string)))
+              (unwind-protect
+                  (progn
+                    (writeroom-mode 1)
+                    (should (= (length (window-list)) 1))
+                    (should visual-line-mode)
+                    (should (= text-scale-mode-amount 2))
+                    (should visual-fill-column-mode)
+                    (should (= visual-fill-column-width 80))
+                    (should visual-fill-column-center-text)
+                    (should-not mode-line-format)
+                    (should-not header-line-format)
+                    (should (eq mixed (bound-and-true-p mixed-pitch-mode))))
+                (writeroom-mode -1))
+              (should (= (length (window-list)) 2))
+              (should (window-live-p reference))
+              (should (eq (not (null visual-fill-column-mode)) centred))
+              (when centred
+                (should (= visual-fill-column-width 80))
+                (should visual-fill-column-center-text))
+              (should (equal modeline mode-line-format))
+              (should (equal header header-line-format))
+              (should (eq (not (null visual-line-mode)) centred))
+              (when centred (visual-fill-column-mode -1))
+              (should-not visual-line-mode)
+              (should text-scale-mode)
+              (should (= text-scale-mode-amount 2))
+              (should (equal text (buffer-string)))
+              (should-not (buffer-modified-p)))))))))
+
+(ert-deftest my/ui-centring-restores-wrapping-and-indicator-overrides ()
+  (require 'visual-fill-column)
+  (dolist (already-wrapping '(nil t))
+    (dolist (local-overrides '(nil t))
+      (with-temp-buffer
+        (when already-wrapping (visual-line-mode 1))
+        (when local-overrides
+          (setq-local word-wrap nil)
+          (setq-local truncate-lines t)
+          (setq-local truncate-partial-width-windows 42)
+          (setq-local line-move-visual nil)
+          (setq-local fringe-indicator-alist
+                      '((continuation left-arrow right-arrow)
+                        (truncation . right-triangle))))
+        (let* ((state (lambda ()
+                        (mapcar (lambda (symbol)
+                                  (list symbol (local-variable-p symbol)
+                                        (symbol-value symbol)))
+                                '(line-move-visual truncate-lines
+                                  truncate-partial-width-windows word-wrap
+                                  fringe-indicator-alist))))
+               (before (funcall state))
+               (native-baseline (copy-tree visual-line--saved-state)))
+          (dotimes (_ 2)
             (unwind-protect
                 (progn
-                  (writeroom-mode 1)
-                  (should (= (length (window-list)) 2))
+                  (visual-fill-column-mode 1)
+                  ;; Re-enabling must not overwrite the original baseline.
+                  (visual-fill-column-mode 1)
                   (should visual-line-mode)
-                  (should-not text-scale-mode)
-                  (should (= text-scale-mode-amount 0))
-                  (should visual-fill-column-mode)
-                  (should (= visual-fill-column-width 80))
-                  (should visual-fill-column-center-text)
-                  (should-not mode-line-format)
-                  (should (eq mixed (bound-and-true-p mixed-pitch-mode))))
-              (writeroom-mode -1))
-            (should (= (length (window-list)) 2))
-            (should (equal modeline mode-line-format))
-            (should-not visual-line-mode)
-            (should-not text-scale-mode)
-            (should (= text-scale-mode-amount 0))
-            (should-not visual-fill-column-mode)
-            (should (equal text (buffer-string)))
-            (should-not (buffer-modified-p))))))))
+                  (should word-wrap)
+                  (should-not truncate-lines)
+                  (should (equal (cdr (assq 'continuation fringe-indicator-alist))
+                                 '(nil nil)))
+                  (should (equal (assq 'truncation fringe-indicator-alist)
+                                 (assq 'truncation (caddr (assq 'fringe-indicator-alist before))))))
+              (visual-fill-column-mode -1))
+            (should (eq (not (null visual-line-mode)) already-wrapping))
+            (should (equal (funcall state) before))
+            (should (equal visual-line--saved-state native-baseline))))))))
 
-(ert-deftest my/ui-writeroom-preserves-user-controlled-window-layouts ()
+(ert-deftest my/ui-writeroom-restores-layout-after-focus-changes ()
   (require 'writeroom-mode)
   (let ((writeroom-global-effects nil))
-    (dolist (change '(nil split delete focus))
-      (save-window-excursion
-        (with-temp-buffer
-          (let ((reference-buffer (current-buffer)))
-            (with-temp-buffer
-              (text-mode)
-              (switch-to-buffer (current-buffer))
-              (delete-other-windows)
-              (let* ((writing-window (selected-window))
-                     (reference-window (split-window-below))
-                     (layout (lambda ()
-                               (mapcar (lambda (window)
-                                         (list window (window-buffer window)
-                                               (window-edges window)))
-                                       (window-list)))))
-                (set-window-buffer reference-window reference-buffer)
-                (let ((before (funcall layout)))
-                  (unwind-protect
-                      (progn
-                        (writeroom-mode 1)
-                        (should (equal before (funcall layout)))
-                        (should (eq writing-window (selected-window)))
-                        (pcase change
-                          ('split
-                           (set-window-buffer (split-window-right) reference-buffer))
-                          ('delete (delete-window reference-window))
-                          ;; C-x 1 remains an explicit user choice.
-                          ('focus (delete-other-windows)))
-                        (let ((during (funcall layout)))
-                          (writeroom-mode -1)
-                          (should (equal during (funcall layout)))
-                          (should (eq writing-window (selected-window)))))
-                    (when (bound-and-true-p writeroom-mode)
-                      (writeroom-mode -1))))))))))))
+    (save-window-excursion
+      (with-temp-buffer
+        (let ((reference-buffer (current-buffer)))
+          (with-temp-buffer
+            (text-mode)
+            (switch-to-buffer (current-buffer))
+            (delete-other-windows)
+            (set-window-buffer (split-window-below) reference-buffer)
+            (let* ((writing-window (selected-window))
+                   (layout (lambda ()
+                             (mapcar (lambda (window)
+                                       (list window (window-buffer window)
+                                             (window-edges window)))
+                                     (window-list))))
+                   (before (funcall layout)))
+              (unwind-protect
+                  (progn
+                    (writeroom-mode 1)
+                    (should (= (length (window-list)) 1))
+                    (should (eq (selected-window) writing-window))
+                    (set-window-buffer (split-window-right) reference-buffer))
+                (writeroom-mode -1))
+              (should (equal before (funcall layout)))
+              (should (eq (selected-window) writing-window)))))))))
+
+(ert-deftest my/ui-writeroom-killing-writing-buffer-restores-surviving-windows ()
+  (require 'writeroom-mode)
+  (let ((writeroom-global-effects nil))
+    (save-window-excursion
+      (with-temp-buffer
+        (switch-to-buffer (current-buffer))
+        (delete-other-windows)
+        (let* ((reference-buffer (current-buffer))
+               (reference-window (split-window-below))
+               (edges (window-edges reference-window)))
+          ;; Unlike with-temp-buffer, this must run real buffer-kill hooks.
+          (let ((writing (generate-new-buffer " *writing-kill-test*")))
+            (unwind-protect
+                (with-current-buffer writing
+                  (text-mode)
+                  (switch-to-buffer writing)
+                  (writeroom-mode 1)
+                  (should (= (length (window-list)) 1))
+                  (kill-buffer writing)
+                  (should (= (length (window-list)) 2))
+                  (should (window-live-p reference-window))
+                  (should (eq (window-buffer reference-window) reference-buffer))
+                  (should (equal (window-edges reference-window) edges)))
+              (when (buffer-live-p writing)
+                (kill-buffer writing)))))))))
 
 (ert-deftest my/ui-writeroom-preserves-prose-wrapping-and-fringes ()
   (require 'org)
@@ -349,119 +419,6 @@
                   (should (equal text (buffer-string))))
               (when (bound-and-true-p writeroom-mode) (writeroom-mode -1)))))))))
 
-(ert-deftest my/ui-writeroom-restores-prior-buffer-text-scaling ()
-  (require 'writeroom-mode)
-  (let ((writeroom-global-effects nil))
-    (save-window-excursion
-      (with-temp-buffer
-        (let ((other-buffer (current-buffer)))
-          (text-scale-set 2)
-          ;; Include a disabled scale whose remembered amount is nonzero.
-          (dolist (state '((nil 0) (t 2) (t -1) (nil 3)))
-            (with-temp-buffer
-              (text-mode)
-              (switch-to-buffer (current-buffer))
-              (delete-other-windows)
-              ;; Set the baseline directly: batch frames clamp negative
-              ;; amounts in `text-scale-set' because of their font metrics.
-              (setq text-scale-mode-amount (cadr state))
-              (text-scale-mode (if (car state) 1 -1))
-              (dotimes (_ 2)
-                (unwind-protect
-                    (progn
-                      (writeroom-mode 1)
-                      (should (eq (not (null text-scale-mode))
-                                  (not (equal state '(t -1)))))
-                      (should (= text-scale-mode-amount
-                                 (1+ (if (car state) (cadr state) 0))))
-                      ;; Re-enabling must not overwrite the saved baseline.
-                      (writeroom-mode 1)
-                      (should (= text-scale-mode-amount
-                                 (1+ (if (car state) (cadr state) 0))))
-                      ;; Manual adjustments during writing are temporary too.
-                      (text-scale-increase 2)
-                      (with-current-buffer other-buffer
-                        (should text-scale-mode)
-                        (should (= text-scale-mode-amount 2))
-                        (should-not my/writeroom-saved-text-scale)))
-                  (writeroom-mode -1))
-                (should (eq (not (null text-scale-mode)) (car state)))
-                (should (= text-scale-mode-amount (cadr state)))
-                (should-not my/writeroom-saved-text-scale)
-                (writeroom-mode -1)
-                (should (= text-scale-mode-amount (cadr state)))))))))))
-
-(ert-deftest my/ui-writeroom-scale-follows-layout-and-buffer-display ()
-  (require 'writeroom-mode)
-  (let ((writeroom-global-effects nil))
-    (dolist (state '((nil 0) (t 2) (t -1) (nil 3)))
-      (dolist (start-split '(nil t))
-        (save-window-excursion
-          (with-temp-buffer
-            (let ((reference (current-buffer)))
-              (with-temp-buffer
-                (text-mode)
-                (switch-to-buffer (current-buffer))
-                (delete-other-windows)
-                (when start-split
-                  (set-window-buffer (split-window-below) reference))
-                (setq text-scale-mode-amount (cadr state))
-                (text-scale-mode (if (car state) 1 -1))
-                (let ((writing (current-buffer))
-                      (baseline (lambda ()
-                                  (should (eq (not (null text-scale-mode))
-                                              (car state)))
-                                  (should (= text-scale-mode-amount (cadr state)))))
-                      (enlarged (lambda ()
-                                  (should (= text-scale-mode-amount
-                                             (1+ (if (car state) (cadr state) 0)))))))
-                  (unwind-protect
-                      (progn
-                        (writeroom-mode 1)
-                        (should (memq #'my/ui--writeroom-scale-update
-                                      window-configuration-change-hook))
-                        (funcall (if start-split baseline enlarged))
-                        (dotimes (_ 2)
-                          (delete-other-windows)
-                          ;; Batch redisplay does not dispatch window hooks.
-                          ;; Use Emacs's dispatcher, not the helper directly.
-                          (run-window-configuration-change-hook)
-                          (funcall enlarged)
-                          (let ((second (split-window-below)))
-                            ;; Splits count even when showing the same buffer.
-                            (should (eq (window-buffer second) writing))
-                            (run-window-configuration-change-hook)
-                            (funcall baseline)
-                            (should (equal my/writeroom-saved-text-scale state))
-                            (writeroom-mode 1)
-                            (funcall baseline)
-                            (set-window-buffer second reference)
-                            (select-window second)
-                            (run-window-configuration-change-hook)
-                            (with-current-buffer writing (funcall baseline))
-                            ;; Hide then redisplay the writing buffer after
-                            ;; returning to a single-window frame.
-                            (delete-other-windows)
-                            (run-window-configuration-change-hook)
-                            (switch-to-buffer writing)
-                            (run-window-configuration-change-hook)
-                            (funcall enlarged)))
-                        ;; Manual adjustments survive unrelated notifications,
-                        ;; but are discarded at a layout eligibility change.
-                        (text-scale-set 4)
-                        (run-window-configuration-change-hook)
-                        (should (= text-scale-mode-amount 4))
-                        (split-window-below)
-                        (run-window-configuration-change-hook)
-                        (funcall baseline))
-                    (with-current-buffer writing (writeroom-mode -1)))
-                  (funcall baseline)
-                  (should-not my/writeroom-saved-text-scale)
-                  (should-not (memq #'my/ui--writeroom-scale-update
-                                    window-configuration-change-hook))
-                  (delete-other-windows)
-                  (run-window-configuration-change-hook)
-                  (funcall baseline))))))))))
 
 (defun my/ui-test--remapped-family (face)
   "Return the family installed by mixed-pitch for FACE."
@@ -988,26 +945,25 @@
                              '(italic mode-line-buffer-id)))))))
     (mapc #'disable-theme custom-enabled-themes)))
 
-(ert-deftest my/ui-fontaine-frame-restores-valid-presets-or-ss14-default ()
+(ert-deftest my/ui-fontaine-frame-restores-valid-presets-or-default ()
   (require 'fontaine)
-  (let ((fontaine-presets '((iosevka-fixed-ss14-jetbrains-mono)
-                            (aporetic-serif-mono))))
-    (dolist (saved '(nil removed-preset aporetic-serif-mono))
-      (let (applied enabled)
-        (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
-                  ((symbol-function 'fontaine-mode) (lambda (arg) (setq enabled arg)))
-                  ((symbol-function 'fontaine-restore-latest-preset) (lambda () saved))
-                  ((symbol-function 'fontaine-set-preset)
-                   (lambda (preset &rest _) (setq applied preset))))
-          (my/fontaine-setup-frame)
-          (should (= enabled 1))
-          (should (eq applied (if (eq saved 'aporetic-serif-mono)
-                                 saved
-                               'iosevka-fixed-ss14-jetbrains-mono))))))
-    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
-              ((symbol-function 'fontaine-mode)
-               (lambda (&rest _) (ert-fail "Fontaine enabled in a terminal frame"))))
-      (my/fontaine-setup-frame))))
+  (dolist (saved '(nil removed-preset iosevka-fixed-ss14-jetbrains-mono
+                      aporetic-serif-mono default writing))
+    (let (applied enabled)
+      (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+                ((symbol-function 'fontaine-mode) (lambda (arg) (setq enabled arg)))
+                ((symbol-function 'fontaine-restore-latest-preset) (lambda () saved))
+                ((symbol-function 'fontaine-set-preset)
+                 (lambda (preset &rest _) (setq applied preset))))
+        (my/fontaine-setup-frame)
+        (should (= enabled 1))
+        (should (eq applied (if (memq saved '(default writing))
+                               saved
+                             'default))))))
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+            ((symbol-function 'fontaine-mode)
+             (lambda (&rest _) (ert-fail "Fontaine enabled in a terminal frame"))))
+    (my/fontaine-setup-frame)))
 
 (ert-deftest my/ui-fontaine-preview-resolves-inheritance-and-nil ()
   (let ((fontaine-presets

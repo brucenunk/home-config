@@ -228,35 +228,48 @@
                       (and (boundp 'after-make-frame-functions-hook)
                            after-make-frame-functions-hook)))))
 
-(ert-deftest my/deferred-fontaine-iosevka-comparison-presets ()
+(ert-deftest my/deferred-centred-wrapping-load-orders ()
+  (dolist (loaded '(nil t))
+    (my/deferred-test--fresh
+     '(require 'my-ui)
+     `(when ,loaded (require 'visual-fill-column))
+     (my/deferred-test--declaration (locate-library "my-emacs-ui") 'visual-fill-column)
+     '(require 'visual-fill-column)
+     '(with-temp-buffer
+        (setq-local truncate-lines t)
+        (unwind-protect
+            (progn
+              (visual-fill-column-mode 1)
+              (should visual-line-mode)
+              (should word-wrap)
+              (should-not truncate-lines)
+              (should (equal (cdr (assq 'continuation fringe-indicator-alist))
+                             '(nil nil))))
+          (visual-fill-column-mode -1))
+        (should-not visual-line-mode)
+        (should truncate-lines)))))
+
+(ert-deftest my/deferred-fontaine-writing-and-default-apply-inherited-faces ()
   (my/deferred-test--fresh
    (my/deferred-test--declaration (locate-library "my-emacs-ui") 'fontaine)
    '(require 'fontaine)
-   '(let* ((defaults (alist-get t fontaine-presets))
-           (presets (seq-filter
-                     (lambda (preset)
-                       (string-prefix-p "iosevka-" (symbol-name (car preset))))
-                     fontaine-presets))
-           (families (mapcar (lambda (preset)
-                              (plist-get (cdr preset) :default-family))
-                            presets)))
-      (should (equal (mapcar #'car presets)
-                     '(iosevka-fixed iosevka-fixed-ss14-jetbrains-mono)))
-      (should (equal (plist-get defaults :default-family) "Iosevka Fixed SS14"))
-      (should (equal (plist-get defaults :fixed-pitch-family) "Iosevka Fixed SS14"))
-      (should (equal (plist-get defaults :variable-pitch-family) "Bricolage Grotesque"))
-      (should (equal (plist-get (alist-get 'aporetic-serif-mono fontaine-presets)
-                                :default-family)
-                     "Aporetic Serif Mono"))
-      (should (assq 'aporetic-sans-mono fontaine-presets))
-      (should (equal families '("Iosevka Fixed" "Iosevka Fixed SS14")))
-      (dolist (preset presets)
-        (should (equal (plist-get (cdr preset) :default-family)
-                       (plist-get (cdr preset) :fixed-pitch-family)))
-        ;; Inherit Bricolage and the existing sizes rather than overriding them.
-        (dolist (property '(:variable-pitch-family :default-height
-                            :fixed-pitch-height :variable-pitch-height))
-          (should-not (plist-member (cdr preset) property)))))))
+   ;; Batch frames ignore graphical face clauses; inspect the theme specs
+   ;; produced by the real preset setter instead of terminal face metrics.
+   '(cl-letf (((symbol-function 'daemonp) (lambda () t)))
+      (cl-labels ((spec (face)
+                    (cdaar (alist-get 'fontaine (get face 'theme-face))))
+                  (families ()
+                    (mapcar (lambda (face) (plist-get (spec face) :family))
+                            '(default fixed-pitch variable-pitch))))
+        (fontaine-set-preset 'default)
+        (let ((families (families))
+              (height (plist-get (spec 'default) :height)))
+          (fontaine-set-preset 'writing)
+          (should (eq fontaine-current-preset 'writing))
+          (should (> (plist-get (spec 'default) :height) height))
+          (should (equal families (families)))
+          (fontaine-set-preset 'default)
+          (should (= (plist-get (spec 'default) :height) height)))))))
 
 (ert-deftest my/deferred-fontaine-commands-stay-unbound-and-lazy ()
   (my/deferred-test--fresh

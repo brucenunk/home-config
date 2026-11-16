@@ -66,6 +66,7 @@ let
           (import ../../pkgs/tramp-rpc.nix { inherit inputs pkgs epkgs; })
           ultra-scroll
           vertico
+          visual-fill-column
           wgrep
           writeroom-mode
           ws-butler
@@ -347,6 +348,7 @@ in
               epkgs.auto-dark
               epkgs.fontaine
               epkgs.spacious-padding
+              epkgs.visual-fill-column
               epkgs.writeroom-mode
               epkgs.pulsar
               epkgs.lin
