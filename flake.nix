@@ -6,7 +6,7 @@
     import-tree.url = "git+https://github.com/vic/import-tree.git";
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
-    # Use only the build overlay; flake.lock pins its Emacs master snapshot.
+    # flake.lock pins both the Emacs master snapshot and Lisp package metadata.
     emacs-overlay = {
       url = "github:nix-community/emacs-overlay";
       flake = false;
@@ -31,6 +31,7 @@
           config.allowUnfree = true;
           overlays = [
             inputs.llm-agents.overlays.shared-nixpkgs
+            (import (inputs.emacs-overlay + "/overlays/package.nix"))
             (_final: prev: {
               pythonPackagesExtensions =
                 prev.pythonPackagesExtensions

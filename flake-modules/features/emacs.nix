@@ -1,4 +1,4 @@
-{ inputs, ... }:
+{ inputs, mkPkgs, ... }:
 
 let
   homeManagerModule =
@@ -179,9 +179,10 @@ let
 in
 {
   perSystem =
-    { lib, pkgs, ... }:
+    { lib, system, ... }:
 
     let
+      pkgs = mkPkgs system;
       emacsMaster = import ../../pkgs/emacs-master.nix { inherit inputs pkgs; };
       emacsConfig = import ../../pkgs/emacs-config.nix {
         inherit pkgs;

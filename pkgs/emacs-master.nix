@@ -7,6 +7,9 @@ let
 in
 emacsMaster.overrideAttrs (
   final: old: {
+    # Keep the overlay's revision and source hash, but avoid Savannah's unreliable HTTP endpoint.
+    src = old.src.override { url = "https://github.com/emacsmirror/emacs.git"; };
+
     # Master already contains the security fix carried by this stable-release patch.
     patches = builtins.filter (
       patch:
