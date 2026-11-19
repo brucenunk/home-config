@@ -1,6 +1,6 @@
 {
   "defaultProvider": "openai-proxy",
-  "defaultModel": "gpt-6.1-sol",
+  "defaultModel": "gpt-6.2-sol",
   "terminal": {
     "showTerminalProgress": true
   }
