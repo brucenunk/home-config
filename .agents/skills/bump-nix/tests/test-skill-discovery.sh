@@ -8,7 +8,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-mkdir -p "$tmp/project/.agents/skills" "$tmp/project/tasks" \
+mkdir -p "$tmp/project/.agents/skills" \
   "$tmp/home" "$tmp/agent/skills/bump-nix" "$tmp/project/nested"
 cp -R "$repo_root/.agents/skills/bump-nix" "$tmp/project/.agents/skills/"
 cat >"$tmp/agent/skills/bump-nix/SKILL.md" <<'EOF'
@@ -18,13 +18,6 @@ description: Conflicting deployed global bump skill used only by this test.
 ---
 
 # Wrong global skill
-EOF
-cat >"$tmp/project/tasks/representative-bump.md" <<'EOF'
----
-title: Representative bump
-repo: brucenunk/home-config
-skill: bump-nix
----
 EOF
 git -C "$tmp/project" init -q
 expected_path=$(cd "$tmp/project/.agents/skills/bump-nix" && pwd -P)/SKILL.md
@@ -56,4 +49,4 @@ jq -e --arg expected "$expected_path" '
   | length == 1
 ' <<<"$response" >/dev/null
 
-printf '%s\n' 'PASS: Pi preferred the project-local bump-nix skill over a global copy'
+printf '%s\n' 'PASS: Pi preferred the project-local bump-nix skill without a task file'

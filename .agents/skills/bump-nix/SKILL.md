@@ -1,11 +1,11 @@
 ---
 name: bump-nix
-description: "Bump default Nix flake inputs in tasks that explicitly set skill: bump-nix. Runs a direct update, verification, and repository-prescribed delivery workflow."
+description: "Bump default Nix flake inputs when explicitly requested in chat or selected in a task brief. Runs a direct update, verification, and repository-prescribed delivery workflow."
 ---
 
 # Bump Nix Workflow
 
-Use this skill only when the task front matter sets `skill: bump-nix`.
+Use this skill only when explicitly selected, either in chat (for example, “Run full bump-nix skill” or `/skill:bump-nix`) or in a supplied brief with `skill: bump-nix`. A task file is not required. Report outcomes in chat; do not create a task note just to run this skill.
 
 This workflow is intentionally direct and does not use the structured `task-workflow` discovery, planning, review, routing, or handoff ceremony. Treat it as a cheap, disposable execution path: update, verify, and either deliver a successful bump or promptly restore and discard a broken one. A routine bump is not an open-ended upstream repair task.
 
@@ -154,12 +154,12 @@ If any check fails, stop and resolve the discrepancy without broad staging. Thes
 
 For nontrivial breakage before delivery, perform this cleanup immediately:
 
-1. Stop retries and retain only a concise diagnostic summary. Record the failed phase or compatibility check, the command when applicable, updated input revisions, affected package or derivation, the first stable error signature or incompatibility finding, and any relevant realization/cache fact. Never record a token or secret. Summarize a transient structured log when available; the summary in the task note is the durable evidence, not the temporary log file.
+1. Stop retries and retain only a concise diagnostic summary. Record the failed phase or compatibility check, the command when applicable, updated input revisions, affected package or derivation, the first stable error signature or incompatibility finding, and any relevant realization/cache fact. Never record a token or secret. Summarize a transient structured log when available; report the summary in chat rather than retaining the temporary log file.
 2. Recheck both explicit path lists. Refuse cleanup and alert the user if status contains a path that is on neither list; it may predate or be unrelated to the bump.
 3. Restore deliverable paths that existed at the pre-bump revision in both index and worktree with `git restore --source="$pre_bump_revision" --staged --worktree -- <pre-existing-deliverable-path>...`.
 4. For newly created deliverable files and cleanup-only paths, first remove any staged entry with the exact-path command `git rm --cached --ignore-unmatch -- <created-path>...`, then remove only those worktree paths with `rm -- <created-path>...`. Stop on an index discrepancy; do not force removal or recursively remove directories.
 5. Require `git status --porcelain=v1 --untracked-files=all` to be empty. Never use broad `git reset`, `git restore`, `git clean`, or staging commands as cleanup.
-6. Add a short `## Outcome` to the task note headed **Failed bump — restored**, including the diagnostic summary and that the explicit changed paths were restored. Report the failed bump and stop; never describe it as a successful no-op. Notes are ordinary files: do not change a status signature, invoke an Emacs finish/discard command, delete the note, or edit other notes' dependency checkboxes. Any required session/worktree teardown is a separate human-coordinated action; do not automatically remove worktrees or branches.
+6. Report **Failed bump — restored** in chat, including the diagnostic summary and which paths were restored. Add a short outcome to the supplied task note only if requested or required by repository guidance. Stop; never describe the failure as a successful no-op. Notes are ordinary files: do not change a status signature, invoke an Emacs finish/discard command, delete the note, or edit other notes' dependency checkboxes. Any required session/worktree teardown is a separate human-coordinated action; do not automatically remove worktrees or branches.
 
 The explicit restore and clean check proves source cleanup; a note outcome is not a substitute for it.
 
@@ -241,8 +241,7 @@ Treat a failed Ghostel compatibility or closure check exactly like any other ver
 ## Steps
 
 1. Confirm task context:
-   - Read the task file.
-   - Ensure front matter has `skill: bump-nix`.
+   - Confirm the user explicitly selected `bump-nix` in chat or in a supplied brief. Read the brief if provided; otherwise use the chat request as the task context.
    - Require a completely clean task worktree and index as described above.
    - Record the pre-bump revision and initialize the explicit deliverable-path and cleanup-only-path lists.
    - Record `old_ghostel_version` and `old_nixpkgs_path` as described in **Ghostel prebuilt-module compatibility** before changing the lock file. Run the strict updater with both version arguments set to `old_ghostel_version`; stop if the current package lacks complete hash coverage or has an unexpected version relationship.
@@ -252,9 +251,8 @@ Treat a failed Ghostel compatibility or closure check exactly like any other ver
    - If GitHub token acquisition fails before Nix starts, require the worktree to remain clean and ask the user to authenticate as described above; this prerequisite failure is neither a no-op nor a failed bump. For any other update-command failure, refresh both explicit path lists from status and apply the bounded diagnosis, correction, and retry rules in **Fail-fast threshold** before deciding whether to follow **Discarding a failed bump**. A failed command is not a no-op even when it left `flake.lock` unchanged.
    - Check whether the full/default update changed `flake.lock`.
    - If the successful full/default `nix flake update` produces no lockfile changes, abort immediately:
-     - Add a concise task-note outcome headed **No-op update** stating that the default full update produced no changes and was unnecessary.
-     - Confirm the task worktree remains clean and report the no-op to the user.
-     - Do not proceed with commit, merge, or deploy; stop after reporting the no-op. Leave the note unchanged apart from the outcome. Any session/worktree cleanup is a separate human-coordinated action; do not automatically remove worktrees or branches.
+     - Confirm the task worktree remains clean and report **No-op update** in chat: the default full update produced no changes. Add the outcome to a supplied task note only if requested or required by repository guidance.
+     - Do not proceed with commit, merge, or deploy; stop after reporting the no-op. Any session/worktree cleanup is a separate human-coordinated action; do not automatically remove worktrees or branches.
    - If lockfile changes are detected, proceed to step 3.
 3. Implement bump:
    - Keep the `flake.lock` changes from the full/default `nix flake update`.

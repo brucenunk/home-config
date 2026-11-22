@@ -24,7 +24,7 @@ Why this deserves attention, what we already learned, and what remains undecided
 
 Capture the minimum context needed to resume without repeating investigation: the desired outcome, relevant findings/files, genuine constraints, and unresolved choices. Add headings or verification suggestions only when useful; do not leave template placeholders, prescribe phases, or turn suggestions into approved requirements. For work spawned from another conversation, summarize the source context; a link alone may be inaccessible to the next agent.
 
-No skill is selected by default. Request `task-workflow` in chat when ready to delegate implementation, verification, independent review, and a staged handoff. A well-understood brief may explicitly select it or another skill such as `bump-nix` from the outset.
+No skill is selected by default. Request `task-workflow` in chat when ready to delegate implementation, verification, independent review, and a staged handoff. Request `bump-nix` in chat for a routine full Nix bump. A saved brief can also select either skill; neither requires a task file.
 
 ## Optional launch hints
 
