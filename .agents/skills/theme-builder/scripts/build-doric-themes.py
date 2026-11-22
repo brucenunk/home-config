@@ -326,6 +326,7 @@ def waybar_theme_text(theme: dict[str, str]) -> str:
             f"@define-color shadow {mix_colors(theme['bg_main'], '#000000', 0.55)};",
             f"@define-color success {theme['fg_green']};",
             f"@define-color warning {theme['fg_yellow']};",
+            f"@define-color warning_bg {theme['bg_yellow']};",
             f"@define-color error {theme['fg_red']};",
             "",
         ]

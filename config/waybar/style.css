@@ -41,17 +41,20 @@ window#waybar {
   color: @muted;
 }
 
+#battery.charging,
+#battery.plugged {
+  color: @success;
+}
+
+/* Capacity alerts take precedence over charging status. */
 #battery.warning {
+  background: @warning_bg;
   color: @warning;
 }
 
 #battery.critical {
-  color: @error;
-}
-
-#battery.charging,
-#battery.plugged {
-  color: @success;
+  background: @error;
+  color: @background;
 }
 
 tooltip {
