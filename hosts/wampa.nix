@@ -81,7 +81,6 @@ in
           gcc
           google-chrome
           keymapp
-          python3 # Required by the bump-nix helpers.
           qmk
           spice
           spice-gtk

@@ -113,6 +113,10 @@ let
 
         package = lib.mkOption {
           type = lib.types.package;
+          # TODO(bump-nix): If Pi's version changes, review the intervening
+          # releases for changes affecting our Pi setup. Check whether upstream
+          # can replace config/pi/extensions/apply-patch without losing
+          # behavior we rely on, and summarize what changed.
           default = pkgs.llm-agents.pi;
           defaultText = lib.literalExpression "pkgs.llm-agents.pi";
           description = "Pi package to install.";

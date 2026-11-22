@@ -4,7 +4,13 @@ let
   ghostel = epkgs.melpaStablePackages.ghostel;
 
   # Pair MELPA Stable's Lisp package with the same upstream release module.
-  # A flake bump must not silently select a mismatched native module.
+  # TODO(bump-nix): Compare the MELPA Stable Ghostel version and src.rev from
+  # Wampa's Emacs package set (before this override). If either changes, verify
+  # the stable release tag matches src.rev and the loader layout still fits
+  # postInstall. Prefetch both versioned release assets with nix store
+  # prefetch-file, update the version and hashes, and check the Wampa build
+  # uses the matching prebuilt module, not a Zig source build. Stop if the
+  # release or assets don't match; don't fall back to a different version.
   supportedVersion = "0.66.0";
   modules = {
     "aarch64-darwin" = {
