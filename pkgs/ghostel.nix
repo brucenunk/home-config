@@ -1,20 +1,19 @@
 { epkgs, pkgs }:
 
 let
-  ghostel = epkgs.ghostel;
+  ghostel = epkgs.melpaStablePackages.ghostel;
 
-  # Ghostel's nixpkgs package builds this module with Zig, whose dependency
-  # fetcher is slow and unreliable. Keep the release metadata explicit so a
-  # flake bump fails at evaluation time until the new assets are hash-pinned.
-  supportedVersion = "0.59.0";
+  # Pair MELPA Stable's Lisp package with the same upstream release module.
+  # A flake bump must not silently select a mismatched native module.
+  supportedVersion = "0.66.0";
   modules = {
     "aarch64-darwin" = {
       asset = "ghostel-module-aarch64-macos.dylib";
-      hash = "sha256-BXE+v+0LGu2GqkoppeNfQupiXPAkeMVMZNVwheRXeF4=";
+      hash = "sha256-RrxsHRv+gaAlG73BOMYoKddYbcXj5bXD0PVI1SGuRgE=";
     };
     "x86_64-linux" = {
       asset = "ghostel-module-x86_64-linux.so";
-      hash = "sha256-YGKjQK2FCgznKkjvTiHLCRM/3kfDnzZgpndPXii9DgI=";
+      hash = "sha256-niPob03NXkE5ylWuS6iHLQTK2m4NFNUFCm4quUgMJ1Q=";
     };
   };
 
@@ -38,16 +37,16 @@ let
   '';
 in
 ghostel.overrideAttrs (old: {
-  # Remove the source-built module's Zig dependencies from the package
-  # derivation while retaining nixpkgs's expected module layout.
-  zig = null;
-  zigDeps = null;
-  preBuild = ''
-    install ${module}/ghostel-module${moduleExtension} ghostel-module${moduleExtension}
-    install --mode=444 ${module}/ghostel-module.version ghostel-module.version
+  # The loader looks for the native module and version sidecar in the
+  # installed package's resource root. Leave the MELPA recipe unchanged.
+  postInstall = (old.postInstall or "") + ''
+    packageDir="$out/share/emacs/site-lisp/elpa/ghostel-${ghostel.melpaVersion}"
+    test -f "$packageDir/ghostel.el"
+    test -d "$packageDir/etc"
+    ln -s ${module}/ghostel-module${moduleExtension} "$packageDir/ghostel-module${moduleExtension}"
+    ln -s ${module}/ghostel-module.version "$packageDir/ghostel-module.version"
   '';
-  passthru = {
+  passthru = (old.passthru or { }) // {
     inherit module;
-    inherit (old.passthru) updateScript;
   };
 })

@@ -265,7 +265,7 @@ def main() -> int:
         if supported_version != args.old_version:
             raise UpdateError(
                 "non-mechanical version relationship: package supports "
-                f"{supported_version}, but pre-bump nixpkgs resolved {args.old_version}"
+                f"{supported_version}, but the pre-bump base package resolved {args.old_version}"
             )
         old_tuple = version_tuple(args.old_version)
         new_tuple = version_tuple(args.new_version)

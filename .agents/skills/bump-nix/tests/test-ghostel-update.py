@@ -30,7 +30,7 @@ def package_fixture() -> str:
     return f'''{{ epkgs, pkgs }}:
 
 let
-  ghostel = epkgs.ghostel;
+  ghostel = epkgs.melpaStablePackages.ghostel;
   supportedVersion = "{OLD_VERSION}";
   modules = {{
     "aarch64-darwin" = {{

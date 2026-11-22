@@ -9,6 +9,20 @@ Use this skill only when explicitly selected, either in chat (for example, “Ru
 
 This workflow is intentionally direct and does not use the structured `task-workflow` discovery, planning, review, routing, or handoff ceremony. Treat it as a cheap, disposable execution path: update, verify, and either deliver a successful bump or promptly restore and discard a broken one. A routine bump is not an open-ended upstream repair task.
 
+## Delivery authorization
+
+In this repository, explicitly selecting `bump-nix` is an explicit request to run the full workflow, including the step 5 commit, the step 6 local squash-merge to `main` and normal push, Wampa activation, and applicable runtime checks. Do not pause for separate approval between these steps. An explicit scope limit from the user wins; this authorization does not cover force-pushing, unrelated changes, or bypassing any preflight, verification, or rollback rule. A successful no-op still stops before delivery.
+
+## Wampa activation
+
+Before delivery, confirm that activation can run on Wampa as `james`. After delivery, run the following from the clean `main` worktree at the delivered commit, using the authenticated Nix pattern below:
+
+```sh
+nix run --no-update-lock-file '.#homeConfigurations."james@wampa".activationPackage'
+```
+
+Successful activation does not prove that already-running applications have reloaded their configuration. Check runtime pickup separately when the change requires it.
+
 ## Scope
 
 - Bump Nix by updating all default flake inputs/lockfile entries in the task worktree.
@@ -187,16 +201,14 @@ Treat every match as a required bump-time check. Follow its instructions when th
 
 ## Ghostel prebuilt-module compatibility
 
-Every bump must compare the Ghostel version resolved directly from nixpkgs before and after `flake update`, even when `flake.lock` does not visibly identify Ghostel. Before the update, record both values below; after the update, evaluate the same expressions as `new_ghostel_version` and `new_nixpkgs_path`. Run these Nix evaluations with the guarded GitHub token pattern from **Authenticated GitHub access**.
+Every bump must compare the Ghostel version and source revision from the actual Wampa Emacs package set before and after `flake update`. `pkgs/ghostel.nix` selects `melpaStablePackages.ghostel` from `emacs-overlay`, not nixpkgs' top-level `emacsPackages.ghostel`. Evaluate the base package (before adding the module) so a new version can be inspected before updating its hashes. Run these evaluations with the guarded GitHub token pattern from **Authenticated GitHub access**.
 
 ```bash
-ghostel_version_expr='let f = builtins.getFlake (toString ./.); pkgs = f.inputs.nixpkgs.legacyPackages.${builtins.currentSystem}; in pkgs.emacsPackages.ghostel.version'
-nixpkgs_path_expr='let f = builtins.getFlake (toString ./.); in f.inputs.nixpkgs.outPath'
-old_ghostel_version=$(nix --option extra-access-tokens "github.com=$github_token" eval --raw --impure --expr "$ghostel_version_expr")
-old_nixpkgs_path=$(nix --option extra-access-tokens "github.com=$github_token" eval --raw --impure --expr "$nixpkgs_path_expr")
+ghostel_metadata_expr='let f = builtins.getFlake (toString ./.); c = f.homeConfigurations."james@wampa"; e = c.config.programs.emacs; epkgs = (c.pkgs.emacsPackagesFor e.package).overrideScope e.overrides; p = epkgs.melpaStablePackages.ghostel; in { inherit (p) version; rev = p.src.rev; }'
+ghostel_metadata=$(nix --option extra-access-tokens "github.com=$github_token" eval --json --impure --no-update-lock-file --expr "$ghostel_metadata_expr")
 ```
 
-The repository's `pkgs/ghostel.nix` is deliberately a single supported version with one hash-pinned release asset per supported platform. Do not turn it into a fallback, retain the old nixpkgs package, or add another metadata lookup. Run the strict updater on every non-no-op bump, including when the two resolved versions are equal:
+Record `.version` and `.rev` as `old_ghostel_version` and `old_ghostel_rev` before the update, and `new_ghostel_version` and `new_ghostel_rev` afterward. The repository's `pkgs/ghostel.nix` deliberately supports a single version with one hash-pinned release asset per platform. Do not fall back to the nixpkgs package or another version. Run the strict updater on every non-no-op bump, including when the two resolved versions are equal:
 
 ```bash
 .agents/skills/bump-nix/scripts/update-ghostel-module \
@@ -220,9 +232,7 @@ gh api --method GET "repos/dakra/ghostel/releases/tags/v${new_ghostel_version}"
 
 The helper accepts only the existing `aarch64-darwin` and `x86_64-linux` entries, exact immutable version-tagged download URLs, stable non-draft release metadata, and Nix SRI hashes. Review its dry-run diff, then repeat the same command without `--dry-run` to make the edit. The test-only `--fixture-dir` mode demonstrates the same commands and edit without network access; never use fixture mode for a real bump.
 
-Before making that edit, compare
-`pkgs/applications/editors/emacs/elisp-packages/manual-packages/ghostel/package.nix`
-under `old_nixpkgs_path` and `new_nixpkgs_path`. Continue mechanically only when the package still exposes the same override interface (`zig`, `zigDeps`, `preBuild`, and `passthru.module`), expects the same module filename and version file, and its changes are limited to the expected Ghostel version/source/fixed hashes. A missing package file, changed build or install behavior, module/asset naming change, ABI or platform change, version downgrade, pre-bump resolved version that differs from `supportedVersion`, unsupported platform, missing release or asset, or unexpected release URL/state is a non-mechanical compatibility finding. A prefetch or release-query failure may receive bounded diagnosis and the single transient-prerequisite retry from **Fail-fast threshold**; never bypass release or hash validation. Once a compatibility finding is confirmed, or that budget is exhausted, apply **Discarding a failed bump**; do not edit around it or attempt a source build.
+If the version is unchanged, require the source revision to be unchanged as well. On a version increase, before making the hash edit, verify that `gh api "repos/dakra/ghostel/commits/v${new_ghostel_version}" --jq .sha` equals `new_ghostel_rev`. Check the MELPA recipe and upstream loader for changes to the installed resource root, module filename, or version sidecar. Continue mechanically only when the existing `postInstall` hook still places the matching module and sidecar where the loader expects them. Treat a source mismatch, packaging or module-layout change, version downgrade, unsupported platform, or missing release or asset as non-mechanical. Never bypass release or hash validation; use **Fail-fast threshold** and **Discarding a failed bump**, not a source build or a fallback.
 
 After the activation-package build, evaluate the overridden Ghostel derivation with the actual `pkgs` exported by the selected Home Manager configuration, including its overlays and nixpkgs configuration, and with the same Emacs package set selected by `flake-modules/features/emacs.nix`. Do not substitute `inputs.nixpkgs.legacyPackages`. Capture its recursive derivation closure in the existing temporary log directory:
 
@@ -244,7 +254,7 @@ Treat a failed Ghostel compatibility or closure check exactly like any other ver
    - Confirm the user explicitly selected `bump-nix` in chat or in a supplied brief. Read the brief if provided; otherwise use the chat request as the task context.
    - Require a completely clean task worktree and index as described above.
    - Record the pre-bump revision and initialize the explicit deliverable-path and cleanup-only-path lists.
-   - Record `old_ghostel_version` and `old_nixpkgs_path` as described in **Ghostel prebuilt-module compatibility** before changing the lock file. Run the strict updater with both version arguments set to `old_ghostel_version`; stop if the current package lacks complete hash coverage or has an unexpected version relationship.
+   - Record `old_ghostel_version` and `old_ghostel_rev` as described in **Ghostel prebuilt-module compatibility** before changing the lock file. Run the strict updater with both version arguments set to `old_ghostel_version`; stop if the current package lacks complete hash coverage or has an unexpected version relationship.
 2. Check for no-op:
    - Confirm GitHub CLI authentication with `gh auth status --hostname github.com`.
    - Acquire and validate the token separately as described above, then run the default full update as `nix --option extra-access-tokens "github.com=$github_token" flake update`, preserve its status, and unset the token.
@@ -256,7 +266,7 @@ Treat a failed Ghostel compatibility or closure check exactly like any other ver
    - If lockfile changes are detected, proceed to step 3.
 3. Implement bump:
    - Keep the `flake.lock` changes from the full/default `nix flake update`.
-   - Evaluate `new_ghostel_version` and `new_nixpkgs_path`, compare the old and new nixpkgs Ghostel package definitions, and run the strict Ghostel updater as described in **Ghostel prebuilt-module compatibility**. Run it even when the resolved version is unchanged. Classify any non-mechanical finding before continuing.
+   - Evaluate `new_ghostel_version` and `new_ghostel_rev`, check compatibility, and run the strict Ghostel updater as described in **Ghostel prebuilt-module compatibility**. Run it even when the resolved version is unchanged. Classify any non-mechanical finding before continuing.
    - Review `flake.lock` changes and keep only bump-related updates.
    - Do not revert non-`nixpkgs` input updates merely because they are not `nixpkgs`; inputs such as `llm-agents` are part of the intended package bump surface.
    - Search for and evaluate every `TODO(bump-nix):` breadcrumb as described above. Classify any required repository change against the fail-fast threshold before implementing it; a compatibility finding can require discard even when no command has failed.
@@ -280,8 +290,8 @@ Treat a failed Ghostel compatibility or closure check exactly like any other ver
    - `git commit -m "Bump flake inputs"`
    - Confirm the task worktree is clean after the commit.
 6. Deliver and deploy:
-   - Read and follow the applicable owner and repository guidance for finish mode, merge or pull-request delivery, pushing, deployment target and entry point, staging requirements, and host smoke tests.
-   - Do not infer a deployment command, target host, branch strategy, or smoke-test command from this reusable skill.
+   - Use the authorization from **Delivery authorization** and follow the applicable owner and repository guidance for finish mode, merge or pull-request delivery, pushing, deployment target and entry point, staging requirements, and host smoke tests.
+   - Use **Wampa activation** for the target and entry point; do not infer an alternate deployment route or branch strategy.
    - Before invoking repository-prescribed delivery, require every worktree that delivery will mutate, including a default-branch worktree when applicable, to have a clean index and worktree including no untracked files. Stop rather than absorbing, deleting, or overwriting unrelated content.
    - After any repository-prescribed merge or staging step and before its commit or push, inspect the complete staged diff and confirm it contains only the reviewed bump result. Never use broad staging to repair a discrepancy.
    - Inspect effective Nix settings and the expected realization plan before the expensive deployment. When the entry point invokes nested Nix, use the authenticated helper and structured capture described above.
