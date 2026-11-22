@@ -4,7 +4,7 @@ Read before changing task packages, module boundaries, or task identity. Coding 
 
 ## Module Map
 
-Configuration is authored in `../my-emacs.org` and tangled by Nix into ordinary startup files and `my-emacs-modules/`. This directory owns handwritten implementations, never generated package declarations. ERT suites are in `../tests/`. See `../../../docs/emacs-literate.md` for the generation workflow.
+Configuration is authored in `../my-emacs.org` and tangled by Nix into ordinary startup files and `my-emacs-modules/`. This directory owns handwritten implementations, never generated package declarations. ERT suites are in `../tests/`.
 
 | Configuration library | Purpose |
 |-----------------------|---------|
@@ -31,7 +31,7 @@ my-denote.el ── recognizes follow-up files through ──► my-denote-task.
 ## Boundaries
 
 - Most conversations start ad hoc in a new worktree. Follow-ups are optional ordinary Denote Org files under `~/work/docs/tasks/`, with optional subdirectories. There is no custom task capture command, template registration, automatic skill selection, task-list UI, or task lifecycle.
-- `my-agent-session.el` owns three explicit human launch commands: `my/agent-session-start-from-file` creates a worktree and submits a saved brief; `my/agent-session-start-new-worktree` creates an ad hoc worktree; `my/agent-session-start-in-directory` starts ad hoc in an exact directory. They share Git/startup internals, without a dispatcher or global agent prefix map. The generated agent module autoloads the commands for `M-x`. Cleanup is a separate human-coordinated action, never launch rollback or task orchestration. See `../../../docs/agent-session.md`.
+- `my-agent-session.el` owns three explicit human launch commands: `my/agent-session-start-from-file` creates a worktree and submits a saved brief; `my/agent-session-start-new-worktree` creates an ad hoc worktree; `my/agent-session-start-in-directory` starts ad hoc in an exact directory. They share Git/startup internals, without a dispatcher or global agent prefix map. The generated agent module autoloads the commands for `M-x`. Cleanup is a separate human-coordinated action, never launch rollback or task orchestration.
 - Follow-up discovery accepts unsigned and legacy signed Denote Org filenames, recursively under the task root. Markdown notes remain available through ordinary Denote browsing/links, but are not launch candidates. Regular notes default to Org under `~/work/docs/`. Existing notes, signatures, metadata and dependency text are not migrated or treated as lifecycle state.
 - Optional `skill`, `repo`, `machine`, `model` and `thinking` keywords live in a contiguous opening Org header. Parsing is case-insensitive, rejects duplicate title/launch fields, and ignores body lookalikes. The full saved snapshot is submitted unchanged; unsaved/stale visiting buffers block launch. Absent skill means no injected skill instruction; absent model/thinking hints leave Pi defaults intact. Repository/machine selection and base-ref confirmation remain human-operated; legacy `base-ref` metadata is ignored.
 - `my-agent-catalogue.el` declares the trusted generated inventory contract. Typed Nix options and generation tests own structural validation, not a duplicate Lisp schema. Startup loads `emacs/agent-catalogue.el`; after deployment explicitly reload it or restart Emacs. The launcher consumes loaded inventory for repository/machine/directory choices. Note identity and browsing do not depend on it.

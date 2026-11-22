@@ -24,10 +24,6 @@ let
           source = ../../config/pi/AGENTS.md;
           force = true;
         };
-        "work/EMACS-SERVER.md" = {
-          source = ../../work/EMACS-SERVER.md;
-          force = true;
-        };
         "work/TASKS.md" = {
           source = ../../work/TASKS.md;
           force = true;

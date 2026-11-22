@@ -5,7 +5,7 @@
 
 This is the authoring entry point for our Emacs configuration, inspired by [[https://protesilaos.com/emacs/dotemacs][Prot's literate configuration]]. It records what is enabled and why. The implementation lives in [[file:my-lisp/][my-lisp/]]; tests live in [[file:tests/][tests/]].
 
-Nix tangles this document during the build and deploys ordinary Lisp. Emacs never parses this document at startup. Do not edit the generated files. Use =scripts/tangle-emacs-config OUTPUT-DIRECTORY= for a disposable local render; see [[file:../../docs/emacs-literate.md][the maintenance guide]] for verification and deployment boundaries.
+Nix tangles this document during the build and deploys ordinary Lisp. Emacs never parses this document at startup. Do not edit the generated files.
 
 Nix owns package and tree-sitter grammar installation. =use-package= only configures those packages. Each package has one owning declaration. Hooks, key bindings, settings and integration calls stay here; function bodies stay in handwritten libraries. The prose describes the current behaviour and trade-offs without assuming undocumented historical reasons.
 

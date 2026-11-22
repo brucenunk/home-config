@@ -82,13 +82,7 @@ This is deliberately not a sandbox or general process supervisor. It runs the no
 - it supplies no access-token or `--log-format` options; and
 - it does not leave background descendants holding stderr.
 
-The supported public wrappers are:
-
-- `scripts/check-home-configuration`, whose four evaluations and final build are sequential and leave stderr attached;
-- `scripts/check-exported-home-manager-modules`, which performs one foreground evaluation with stderr attached; and
-- the activation matrix's direct `nix run`, which resolves the shim as the command itself.
-
-All inherit `PATH`, invoke Nix by name, and neither redirect Nix stderr nor supply conflicting options. Reinspect them before use because the boundary depends on their current implementation. Stop rather than claiming authenticated or structured coverage if an assumption no longer holds.
+For a direct `nix` command, the helper resolves the shim as the command itself. Stop rather than claiming authenticated or structured coverage if an assumption no longer holds.
 
 Never solve nested authentication with a partial assignment such as:
 
@@ -115,7 +109,7 @@ nix show-config --json | jq '{
 
 Treat this as a diagnostic snapshot, not a cache prescription. Do not add, remove, or prioritize a cache merely to make the bump faster.
 
-Read `docs/activation.md` completely before selecting a realization or deployment command. Follow the row for the actual source machine and target, including its source identity, source-state, delivery, target-checkout, lock-file, and runtime-pickup boundaries. Run the underlying installable's authenticated `--dry-run` equivalent when Nix supports one; this is a realization plan, not verification or deployment.
+Before selecting a deployment command, confirm the authorized source, target, entry point, and runtime checks. If guidance is missing, ask rather than inferring a deployment route. Run the underlying installable's authenticated `--dry-run` equivalent when Nix supports one; this is a realization plan, not verification or deployment.
 
 For a cheap check-evaluation preflight, prefer authenticated writable evaluation of the native check derivation paths, for example `nix eval --json '.#checks.x86_64-linux' --apply 'checks: builtins.mapAttrs (_: check: check.drvPath) checks'`. On some Nix versions, `nix flake check --no-build` enables read-only store mode: a valid check that reads a newly created `builtins.toFile` fixture can then fail with `path '…' is not valid`. Confirm that command-mode cause with direct writable evaluation; do not alter valid fixtures or treat it as dependency incompatibility. This preflight does not replace the normal `nix flake check` or required activation-package build.
 
@@ -289,7 +283,6 @@ Treat a failed Ghostel compatibility or closure check exactly like any other ver
    - Confirm the task worktree is clean after the commit.
 6. Deliver and deploy:
    - Read and follow the applicable owner and repository guidance for finish mode, merge or pull-request delivery, pushing, deployment target and entry point, staging requirements, and host smoke tests.
-   - If that guidance routes activation through a repository-local matrix or procedure, read it again after delivery, select its row from the machine where delivery is running and the declared target, and execute its exact source-safety and direct-activation sequence. Stop if no row matches; do not infer a route.
    - Do not infer a deployment command, target host, branch strategy, or smoke-test command from this reusable skill.
    - Before invoking repository-prescribed delivery, require every worktree that delivery will mutate, including a default-branch worktree when applicable, to have a clean index and worktree including no untracked files. Stop rather than absorbing, deleting, or overwriting unrelated content.
    - After any repository-prescribed merge or staging step and before its commit or push, inspect the complete staged diff and confirm it contains only the reviewed bump result. Never use broad staging to repair a discrepancy.

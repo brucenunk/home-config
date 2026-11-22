@@ -27,9 +27,9 @@ Before modifying or creating my-lisp files:
 Compare `grep -c ';;;###autoload' my-MODULE.el` with Commentary entries when public
 APIs change. Preserve native Denote identity and ordinary Dired operations.
 
-Prefer isolated batch Emacs for automated tests. Explicitly authorized
-session-only testing in a shared Emacs process is allowed under
-`docs/emacs-literate.md`; read `~/work/EMACS-SERVER.md` before live access.
+Prefer isolated batch Emacs for automated tests. Before testing worktree Lisp
+in a shared Emacs process, obtain explicit authorization for the change and
+target session and agree how to undo its effects.
 Session-only testing, persistent deployment and runtime pickup are separate
 proof points; testing does not authorize deployment.
 

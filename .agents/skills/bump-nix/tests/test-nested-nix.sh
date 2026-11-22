@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root=$(git rev-parse --show-toplevel)
 skill_dir=$(cd "$(dirname "$0")/.." && pwd)
 runner="$skill_dir/scripts/nix-with-gh-token"
 summarizer="$skill_dir/scripts/summarize-nix-log"
@@ -58,14 +57,7 @@ fi
 for argument in "$@"; do
   [[ $argument != fail ]] || exit 23
 done
-case " $* " in
-  *' activationPackage.system '*) printf '%s\n' x86_64-linux ;;
-  *' config.home.username '*) printf '%s\n' james ;;
-  *' config.home.homeDirectory '*) printf '%s\n' /home/james ;;
-  *' config.home.stateVersion '*) printf '%s\n' 24.11 ;;
-  *' build '*) printf '%s\n' /nix/store/test-activation ;;
-  *) printf '%s\n' nested-ok ;;
-esac
+printf '%s\n' nested-ok
 EOF
 chmod 700 "$tmp/fake/nix"
 
@@ -119,16 +111,13 @@ output=$(
 [[ $output == nested-ok ]] \
   || fail 'relative TMPDIR made the Nix shim depend on wrapper cwd'
 
-printf '%s\n' 'Checking the inspected repository verification wrapper...'
-PATH="$tmp/fake:$PATH" "$runner" --log-file "$tmp/repository-check.jsonl" -- \
-  "$repo_root/scripts/check-home-configuration" . 'james@wampa' \
-  >"$tmp/repository-check-stdout" 2>"$tmp/repository-check-stderr"
-rg -F 'configuration=james@wampa' "$tmp/repository-check-stdout" >/dev/null \
-  || fail 'repository wrapper did not complete'
-"$summarizer" "$tmp/repository-check.jsonl" >"$tmp/repository-check-summary"
-rg -F 'Nested Nix invocation markers: 5 starts, 5 matched stops' \
-  "$tmp/repository-check-summary" >/dev/null \
-  || fail 'repository wrapper no longer performs five sequential visible Nix calls'
+printf '%s\n' 'Checking structured capture of successful nested Nix calls...'
+output=$(PATH="$tmp/fake:$PATH" "$runner" --log-file "$tmp/success.jsonl" -- \
+  sh -ec 'nix nested; nix nested' 2>"$tmp/success-stderr")
+[[ $output == $'nested-ok\nnested-ok' ]] || fail 'nested Nix output was not preserved'
+"$summarizer" "$tmp/success.jsonl" >"$tmp/success-summary"
+rg -F 'Nested Nix invocation markers: 2 starts, 2 matched stops' \
+  "$tmp/success-summary" >/dev/null || fail 'success summary invocation count missing'
 
 printf '%s\n' 'Checking command execution failure propagation...'
 status=0
