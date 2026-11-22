@@ -36,5 +36,6 @@ let
     };
 in
 {
+  flake.lib.skills.bump-nix = ../../.agents/skills/bump-nix;
   flake.modules.homeManager.agents = homeManagerModule;
 }

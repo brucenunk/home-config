@@ -14,3 +14,7 @@ See `README.md` for the repository layout.
   ```
 
   Use targeted checks where appropriate. Activate only when explicitly requested.
+- For `bump-nix`, check GitHub authentication before updating and include the
+  Wampa build above in verification. Record and report old → new versions or
+  revisions for Wampa's Pi, Emacs, and notable Emacs packages. Summarize upstream
+  changes that affect this configuration.
