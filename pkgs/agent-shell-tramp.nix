@@ -9,8 +9,7 @@ epkgs.trivialBuild {
     rev = "da17568f61c30133df1cf3fdf9d0fa4137cfd66e";
     hash = "sha256-J4TBVkhlaso+TQvFLBwnWqGu5q2eCW8978mYuD1BbqM=";
   };
-  # Use the same pinned agent-shell and ACP dependencies as the main package.
-  packageRequires = [ (import ./agent-shell.nix { inherit pkgs epkgs; }) ];
+  packageRequires = [ epkgs.agent-shell ];
   postPatch = ''
     rm agent-shell-tramp-tests.el
   '';

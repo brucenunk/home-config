@@ -9,9 +9,7 @@ epkgs.trivialBuild {
     rev = "fbf7a6b8c16326242d6e07430b7a8f5e84442466";
     hash = "sha256-aSEq4VHIcQVY6AEhqEtOR1FcxAvV2rDdgcFh/C0vhBk=";
   };
-  packageRequires = [
-    (import ./agent-shell.nix { inherit pkgs epkgs; })
-  ];
+  packageRequires = [ epkgs.agent-shell ];
   # The optional backend requires KnockKnock during byte compilation.  Do not
   # ship it: our provider is audio-only and needs only the notification core.
   postPatch = ''

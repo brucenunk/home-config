@@ -1181,7 +1181,8 @@ When BARE is non-nil, use a bare source like the supported launcher layout."
                         '(:type file :target "a.go") t)
            :type 'user-error))
         (with-current-buffer shell
-          (setq-local agent-shell-cwd-function (lambda () "/ssh:other:/project/")))
+          ;; The startup hook does not change an existing shell's directory.
+          (setq-local default-directory "/ssh:other:/project/"))
         (let ((embark--command 'consult-fd))
           (should-error
            (embark--act #'my/agent-shell-insert-reference

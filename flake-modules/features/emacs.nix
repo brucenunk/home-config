@@ -24,7 +24,7 @@ let
       # owns package configuration in config/emacs.
       emacsPackages =
         epkgs: with epkgs; [
-          (import ../../pkgs/agent-shell.nix { inherit pkgs epkgs; })
+          agent-shell
           (import ../../pkgs/agent-shell-gc.nix { inherit pkgs epkgs; })
           (import ../../pkgs/agent-shell-notifications.nix { inherit pkgs epkgs; })
           (import ../../pkgs/agent-shell-tramp.nix { inherit pkgs epkgs; })
@@ -36,7 +36,7 @@ let
           consult-denote
           corfu
           denote
-          (import ../../pkgs/doric-themes.nix { inherit pkgs epkgs; })
+          doric-themes
           editorconfig
           embark
           embark-consult
@@ -327,7 +327,7 @@ in
               epkgs = emacsMaster.pkgs;
             };
             emacsWithAgent = emacsMaster.pkgs.emacsWithPackages (epkgs: [
-              (import ../../pkgs/agent-shell.nix { inherit pkgs epkgs; })
+              epkgs.agent-shell
               (import ../../pkgs/agent-shell-notifications.nix { inherit pkgs epkgs; })
               agentShellGc
               agentShellTramp
@@ -345,7 +345,7 @@ in
               epkgs.mixed-pitch
               epkgs.markdown-mode
               epkgs.rainbow-delimiters
-              (import ../../pkgs/doric-themes.nix { inherit pkgs epkgs; })
+              epkgs.doric-themes
               epkgs.auto-dark
               epkgs.fontaine
               epkgs.spacious-padding
