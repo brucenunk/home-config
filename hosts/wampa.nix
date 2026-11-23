@@ -18,7 +18,6 @@ let
     repositories = {
       "brucenunk/home-config".path = "/home/james/work/home-config";
       "brucenunk/nixos-config".path = "/home/james/work/nixos-config";
-      "brucenunk/playground".path = "/home/james/work/playground";
       "brucenunk/qmk_firmware".path = "/home/james/work/qmk_firmware";
     };
   };
