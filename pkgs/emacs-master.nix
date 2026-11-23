@@ -18,6 +18,16 @@ emacsMaster.overrideAttrs (
       ))
     ) (old.patches or [ ]);
 
+    # Temporarily revert c9f0656d47 (Emacs bug#79204): its Cairo image cache
+    # introduces an outline around the graphical agent-shell header on PGTK.
+    # TODO(bump-nix): Test the graphical agent-shell header on PGTK at 2×
+    # scaling without this revert; drop the revert once the outline is gone.
+    postPatch =
+      (old.postPatch or "")
+      + pkgs.lib.optionalString (!pkgs.stdenv.hostPlatform.isDarwin) ''
+        patch --reverse --fuzz=0 -p1 < ${./emacs-cairo-image-cache.patch}
+      '';
+
     # The overlay's package scope otherwise retains the unmodified Emacs build.
     passthru = old.passthru // {
       pkgs = old.passthru.pkgs.overrideScope (

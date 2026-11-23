@@ -1,0 +1,218 @@
+diff --git a/src/dispextern.h b/src/dispextern.h
+index 3114cdfcec9..8eef5e684b6 100644
+--- a/src/dispextern.h
++++ b/src/dispextern.h
+@@ -3223,6 +3223,7 @@ struct image
+ 
+ #ifdef USE_CAIRO
+   void *cr_data;
++  void *cr_surface;
+ #endif
+ #ifdef HAVE_X_WINDOWS
+   /* X images of the image, corresponding to the above Pixmaps.
+diff --git a/src/image.c b/src/image.c
+index 3bd08ca3dae..cffbd933d92 100644
+--- a/src/image.c
++++ b/src/image.c
+@@ -343,8 +343,20 @@ cr_create_surface_from_pix_containers (Emacs_Pix_Container pimg,
+   return surface;
+ }
+ 
++/* Adjust image's surface size to take into account screen's DPI.  */
++
++static void
++cr_adjust_surface_size (struct frame *f, int *width, int *height)
++{
++  /* See `x_get_scale_factor'.  */
++  int base_res = 96;
++
++  *width = *width * FRAME_DISPLAY_INFO (f)->resx / base_res;
++  *height = *height * FRAME_DISPLAY_INFO (f)->resy / base_res;
++}
++
+ static void
+-cr_put_image_to_cr_data (struct image *img)
++cr_put_image_to_cr_data (struct frame *f, struct image *img)
+ {
+   cairo_pattern_t *pattern = NULL;
+   cairo_surface_t *surface = cr_create_surface_from_pix_containers (img->pixmap,
+@@ -352,6 +364,7 @@ cr_put_image_to_cr_data (struct image *img)
+   if (surface)
+     {
+       pattern = cairo_pattern_create_for_surface (surface);
++
+       if (img->cr_data)
+ 	{
+ 	  cairo_matrix_t matrix;
+@@ -361,10 +374,39 @@ cr_put_image_to_cr_data (struct image *img)
+             (pattern, cairo_pattern_get_filter (img->cr_data));
+ 	  cairo_pattern_destroy (img->cr_data);
+ 	}
++
+       cairo_surface_destroy (surface);
++      cairo_pattern_get_surface (pattern, &surface);
++
++      /* Allocate a new surface and paint this pattern on it.
++
++	 This is used as a rendering optimization for `x_cr_draw_image'
++	 and `pgtk_cr_draw_image', because in Cairo drawing surfaces is
++	 much faster than drawing patterns.  */
++
++      cairo_format_t format = cairo_image_surface_get_format (surface);
++      int width = cairo_image_surface_get_width (surface);
++      int height = cairo_image_surface_get_height (surface);
++
++      cr_adjust_surface_size (f, &width, &height);
++
++      surface = cairo_surface_create_similar_image (surface, format, width,
++						    height);
++
++      cairo_t *cr = cairo_create (surface);
++
++      cairo_set_source (cr, pattern);
++      cairo_paint (cr);
++      cairo_destroy (cr);
++    }
++
++  if (img->cr_surface)
++    {
++      cairo_surface_destroy (img->cr_surface);
+     }
+ 
+   img->cr_data = pattern;
++  img->cr_surface = surface;
+ }
+ 
+ #endif	/* USE_CAIRO */
+@@ -1878,7 +1920,7 @@ prepare_image_for_display (struct frame *f, struct image *img)
+ 	     we have img->pixmap->data/img->mask->data.  */
+ 	  IMAGE_BACKGROUND (img, f, img->pixmap);
+ 	  IMAGE_BACKGROUND_TRANSPARENT (img, f, img->mask);
+-	  cr_put_image_to_cr_data (img);
++	  cr_put_image_to_cr_data (f, img);
+ 	  if (img->cr_data == NULL)
+ 	    {
+ 	      img->load_failed_p = 1;
+@@ -2156,6 +2198,12 @@ image_clear_image_1 (struct frame *f, struct image *img, int flags)
+       cairo_pattern_destroy (img->cr_data);
+       img->cr_data = NULL;
+     }
++
++  if (img->cr_surface)
++    {
++      cairo_surface_destroy (img->cr_surface);
++      img->cr_surface = NULL;
++    }
+ #endif	/* USE_CAIRO */
+ }
+ 
+diff --git a/src/pgtkterm.c b/src/pgtkterm.c
+index 89a3b013e7a..97594d0a778 100644
+--- a/src/pgtkterm.c
++++ b/src/pgtkterm.c
+@@ -2223,8 +2223,8 @@ pgtk_draw_glyph_string_bg_rect (struct glyph_string *s, int x, int y, int w,
+ 
+ static void
+ pgtk_cr_draw_image (struct frame *f, Emacs_GC *gc, cairo_pattern_t *image,
+-		    int src_x, int src_y, int width, int height,
+-		    int dest_x, int dest_y, bool overlay_p)
++		    cairo_surface_t *surface, int src_x, int src_y, int width,
++		    int height, int dest_x, int dest_y, bool overlay_p)
+ {
+   cairo_t *cr = pgtk_begin_cr_clip (f);
+ 
+@@ -2239,12 +2239,17 @@ pgtk_cr_draw_image (struct frame *f, Emacs_GC *gc, cairo_pattern_t *image,
+ 
+   cairo_translate (cr, dest_x - src_x, dest_y - src_y);
+ 
+-  cairo_surface_t *surface;
+-  cairo_pattern_get_surface (image, &surface);
+-  cairo_format_t format = cairo_image_surface_get_format (surface);
++  cairo_surface_t *image_surface;
++  cairo_pattern_get_surface (image, &image_surface);
++  cairo_format_t format = cairo_image_surface_get_format (image_surface);
++
+   if (format != CAIRO_FORMAT_A8 && format != CAIRO_FORMAT_A1)
+     {
+-      cairo_set_source (cr, image);
++      if (surface)
++	cairo_set_source_surface (cr, surface, 0, 0);
++      else
++	cairo_set_source (cr, image);
++
+       cairo_fill (cr);
+     }
+   else
+@@ -2283,7 +2288,7 @@ pgtk_draw_image_foreground (struct glyph_string *s)
+     {
+       cairo_t *cr = pgtk_begin_cr_clip (s->f);
+       pgtk_set_glyph_string_clipping (s, cr);
+-      pgtk_cr_draw_image (s->f, &s->xgcv, s->img->cr_data,
++      pgtk_cr_draw_image (s->f, &s->xgcv, s->img->cr_data, s->img->cr_surface,
+ 			  s->slice.x, s->slice.y, s->slice.width, s->slice.height,
+ 			  x, y, true);
+       if (!s->img->mask)
+@@ -3704,7 +3709,7 @@ pgtk_draw_fringe_bitmap (struct window *w, struct glyph_row *row,
+ 			   : FRAME_X_OUTPUT (f)->cursor_color)
+ 			: face->foreground);
+       gcv.background = face->background;
+-      pgtk_cr_draw_image (f, &gcv, fringe_bmp[p->which], 0, p->dh,
++      pgtk_cr_draw_image (f, &gcv, fringe_bmp[p->which], NULL, 0, p->dh,
+ 			  p->wd, p->h, p->x, p->y, p->overlay_p);
+     }
+ 
+diff --git a/src/xterm.c b/src/xterm.c
+index 8872a1e508c..8a156f4e21a 100644
+--- a/src/xterm.c
++++ b/src/xterm.c
+@@ -6285,8 +6285,8 @@ x_cr_destroy_fringe_bitmap (int which)
+ 
+ static void
+ x_cr_draw_image (struct frame *f, GC gc, cairo_pattern_t *image,
+-		 int src_x, int src_y, int width, int height,
+-		 int dest_x, int dest_y, bool overlay_p)
++		 cairo_surface_t *surface, int src_x, int src_y, int width,
++		 int height, int dest_x, int dest_y, bool overlay_p)
+ {
+   cairo_t *cr = x_begin_cr_clip (f, gc);
+ 
+@@ -6301,12 +6301,17 @@ x_cr_draw_image (struct frame *f, GC gc, cairo_pattern_t *image,
+ 
+   cairo_translate (cr, dest_x - src_x, dest_y - src_y);
+ 
+-  cairo_surface_t *surface;
+-  cairo_pattern_get_surface (image, &surface);
+-  cairo_format_t format = cairo_image_surface_get_format (surface);
++  cairo_surface_t *image_surface;
++  cairo_pattern_get_surface (image, &image_surface);
++  cairo_format_t format = cairo_image_surface_get_format (image_surface);
++
+   if (format != CAIRO_FORMAT_A8 && format != CAIRO_FORMAT_A1)
+     {
+-      cairo_set_source (cr, image);
++      if (surface)
++	cairo_set_source_surface (cr, surface, 0, 0);
++      else
++	cairo_set_source (cr, image);
++
+       cairo_fill (cr);
+     }
+   else
+@@ -7908,7 +7913,7 @@ x_draw_fringe_bitmap (struct window *w, struct glyph_row *row,
+ 	     daemon Emacs.  Create the missing pattern now.  */
+ 	  gui_define_fringe_bitmap (f, p->which);
+ 	}
+-      x_cr_draw_image (f, gc, fringe_bmp[p->which], 0, p->dh,
++      x_cr_draw_image (f, gc, fringe_bmp[p->which], NULL, 0, p->dh,
+ 		       p->wd, p->h, p->x, p->y, p->overlay_p);
+       XSetForeground (display, gc, gcv.foreground);
+       XSetBackground (display, gc, gcv.background);
+@@ -10186,7 +10191,7 @@ x_draw_image_foreground (struct glyph_string *s)
+   if (s->img->cr_data)
+     {
+       x_set_glyph_string_clipping (s);
+-      x_cr_draw_image (s->f, s->gc, s->img->cr_data,
++      x_cr_draw_image (s->f, s->gc, s->img->cr_data, s->img->cr_surface,
+ 		       s->slice.x, s->slice.y, s->slice.width, s->slice.height,
+ 		       x, y, true);
+       if (!s->img->mask)
