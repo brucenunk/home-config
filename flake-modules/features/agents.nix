@@ -1,6 +1,4 @@
 let
-  bumpNixSkill = ../../.agents/skills/bump-nix;
-
   homeManagerModule =
     {
       lib,
@@ -9,6 +7,7 @@ let
 
     let
       skillNames = [
+        "bump-nix"
         "review"
         "task-workflow"
       ];
@@ -22,7 +21,6 @@ let
     in
     {
       home.file = skillEntries // {
-        ".agents/skills/bump-nix".source = bumpNixSkill;
         ".pi/agent/AGENTS.md" = {
           source = ../../config/pi/AGENTS.md;
           force = true;
@@ -39,6 +37,5 @@ let
     };
 in
 {
-  flake.lib.skills.bump-nix = bumpNixSkill;
   flake.modules.homeManager.agents = homeManagerModule;
 }
