@@ -25,6 +25,11 @@
 
 (defvar vertico-preselect)
 
+(defcustom my/agent-session-worktree-root "~/worktrees/"
+  "Absolute or home-relative root for new worktrees on the source machine."
+  :type 'directory
+  :group 'agent-shell)
+
 (defun my/agent-session--task-candidates (root)
   "Return filename titles paired with Denote Org files under ROOT.
 Discovery is recursive and filename-only, ordered by Denote identifier
@@ -227,7 +232,7 @@ Do not mutate Git or start an agent."
          (default (plist-get record :base-ref))
          (base (read-string (format-prompt "Base ref" default) nil nil default)))
     (append (list :branch nil :machine (car entry) :source source :base base :directory nil
-                  :worktree t)
+                  :worktree t :worktree-repo (file-name-nondirectory repo))
             task)))
 
 (defun my/agent-session--git-result (source &rest args)
@@ -284,9 +289,10 @@ Accept branch names or explicit refs/heads/ and refs/remotes/ names."
     (if (string-empty-p slug) "task" slug)))
 
 (defun my/agent-session--name (context)
-  "Choose an unused branch and sibling path for CONTEXT."
+  "Choose an unused branch and worktree path for CONTEXT."
   (let* ((source (plist-get context :source))
-         (parent (file-name-directory (directory-file-name source)))
+         (root (expand-file-name (concat (file-remote-p source) my/agent-session-worktree-root) "/"))
+         (parent (file-name-concat root (plist-get context :worktree-repo)))
          (stem (concat (if (plist-get context :prompt)
                            (my/agent-session--slug (plist-get context :title)) "adhoc")
                        "-" (my/agent-session--base36 (floor (float-time)))))
@@ -456,7 +462,7 @@ All selections precede Git mutation or agent startup."
 ;;;###autoload
 (defun my/agent-session-start-new-worktree ()
   "Select a repository, eligible machine and base ref; start Pi ad hoc.
-Create a new sibling worktree, with no prompt, overrides or naming questions.
+Create a worktree under `my/agent-session-worktree-root' on the source machine.
 All selections precede Git mutation or agent startup."
   (interactive)
   (my/agent-session--start (my/agent-session--worktree-options)))

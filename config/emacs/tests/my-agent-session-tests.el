@@ -16,7 +16,7 @@
 (defun my/agent-session-test--context (&rest values)
   "Make launch options with VALUES; no runtime or recovery state is retained."
   (let ((context (list :branch nil :machine "test" :source nil :base "main" :directory temporary-file-directory
-                       :title "Full task title" :worktree nil :prompt nil
+                       :title "Full task title" :worktree nil :worktree-repo "repo" :prompt nil
                        :model nil :thinking nil)))
     (while values (setf (plist-get context (pop values)) (pop values)))
     context))
@@ -25,7 +25,8 @@
   "Run BODY with temporary `root' and `source' Git directories."
   (declare (indent 0))
   `(let* ((root (make-temp-file "agent-session-" t))
-          (source (expand-file-name "repo space/main" root)))
+          (source (expand-file-name "repo space/main" root))
+          (my/agent-session-worktree-root (expand-file-name "worktrees/" root)))
      (unwind-protect
          (progn
            (make-directory source t)
@@ -224,12 +225,12 @@ Investigate the issue in ./src/. No prescribed workflow.
     (let* ((context (my/agent-session-test--context :source source :prompt "task" :title "Long task title")))
       (cl-letf (((symbol-function 'float-time) (lambda (&optional _) 36)))
         (my/agent-session--git source "branch" "long-task-title-10")
-        (make-directory (expand-file-name "../long-task-title-10-1" source))
-        (make-symbolic-link "missing" (expand-file-name "../long-task-title-10-2" source))
+        (make-directory (expand-file-name "worktrees/repo/long-task-title-10-1" root) t)
+        (make-symbolic-link "missing" (expand-file-name "worktrees/repo/long-task-title-10-2" root))
         (my/agent-session--name context)
         (should (equal (plist-get context :branch) "long-task-title-10-3"))
         (should (equal (plist-get context :directory)
-                       (expand-file-name "../long-task-title-10-3/" source)))
+                       (expand-file-name "worktrees/repo/long-task-title-10-3/" root)))
         (setf (plist-get context :prompt) nil)
         (my/agent-session--name context)
         (should (equal (plist-get context :branch) "adhoc-10"))))))
@@ -260,23 +261,24 @@ Investigate the issue in ./src/. No prescribed workflow.
         (let ((context (my/agent-session-test--context :source git-source)))
           (my/agent-session--name context)
           (should (equal (file-name-directory (directory-file-name (plist-get context :directory)))
-                         (file-name-directory (directory-file-name source))))
+                         (expand-file-name "worktrees/repo/" root)))
           (my/agent-session--git git-source "worktree" "add" "--no-track" "-b"
                                  (plist-get context :branch) "--" (plist-get context :directory) commit)
           (should (equal commit (my/agent-session--git (plist-get context :directory) "rev-parse" "HEAD")))))
       (should (equal (my/agent-session--git source "branch" "--show-current") "main")))))
 
 (ert-deftest my/agent-session-remote-paths-and-git-boundary ()
-  (let ((source "/rpc:user@host#22:/srv/repo/master.git/") calls)
+  (let ((source "/rpc:user@host#22:/srv/repo/master.git/")
+        (my/agent-session-worktree-root "/srv/worktrees/") calls)
     (cl-letf (((symbol-function 'my/agent-session--git-result)
                (lambda (dir &rest args) (push (cons dir args) calls) '(1 . "")))
               ((symbol-function 'file-exists-p) (lambda (_) nil))
               ((symbol-function 'file-symlink-p) (lambda (_) nil)))
       (let ((context (my/agent-session-test--context :source source)))
         (my/agent-session--name context)
-        (should (string-prefix-p "/rpc:user@host#22:/srv/repo/adhoc-" (plist-get context :directory)))
+        (should (string-prefix-p "/rpc:user@host#22:/srv/worktrees/repo/adhoc-" (plist-get context :directory)))
         (should (equal (caar calls) source))
-        (should (string-prefix-p "/srv/repo/adhoc-" (file-local-name (plist-get context :directory))))))
+        (should (string-prefix-p "/srv/worktrees/repo/adhoc-" (file-local-name (plist-get context :directory))))))
     (cl-letf (((symbol-function 'process-file)
                (lambda (program infile destination display &rest args)
                  (should (equal program "git")) (should-not infile) (should-not display)
@@ -1198,11 +1200,11 @@ Investigate the issue in ./src/. No prescribed workflow.
            (agent-shell-pi-acp-command (list (executable-find "git")))
            (task-file (expand-file-name "task.org" root))
            (my/agent-machines (list (list "only" :directory root :repositories
-                                         (list (list :name "repo" :path source :base-ref "main")))))
+                                         (list (list :name "owner/repo" :path source :base-ref "main")))))
            (exclude (expand-file-name ".git/info/exclude" source))
            (exclude-before (with-temp-buffer (insert-file-contents exclude) (buffer-string)))
            shell requests)
-      (with-temp-file task-file (insert "#+title: Task\n#+repo: repo\n\nTask snapshot"))
+      (with-temp-file task-file (insert "#+title: Task\n#+repo: owner/repo\n\nTask snapshot"))
       (unwind-protect
           (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "main"))
                     ((symbol-function 'agent-shell--handle)
@@ -1219,6 +1221,7 @@ Investigate the issue in ./src/. No prescribed workflow.
             (should (buffer-live-p shell))
             (should (= 1 (length requests)))
             (with-current-buffer shell
+              (should (string-prefix-p (expand-file-name "worktrees/repo/task-" root) (agent-shell-cwd)))
               (should (equal (file-name-directory agent-shell--transcript-file) my/agent-shell-transcript-directory))
               (should (file-exists-p agent-shell--transcript-file))
               (with-temp-buffer

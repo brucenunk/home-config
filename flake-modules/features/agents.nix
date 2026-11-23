@@ -25,14 +25,6 @@ let
           source = ../../config/pi/AGENTS.md;
           force = true;
         };
-        "work/TASKS.md" = {
-          source = ../../work/TASKS.md;
-          force = true;
-        };
-        "work/brucenunk/AGENTS.md" = {
-          source = ../../work/brucenunk/AGENTS.md;
-          force = true;
-        };
       };
     };
 in
