@@ -11,6 +11,7 @@
 
 - Use `gh`/`gh api` to access Github.
 - Push only when explicitly requested; force-push requires explicit authorization for that action.
+- When pushing to remote, use `jamesl/` prefix and a meaningful suffix.
 - Keep primary clones at `~/work/<repo>` and new linked worktrees at `~/worktrees/<repo>/<worktree>`. Use Git to discover existing checkouts rather than inferring their paths.
 - Merge locally only when explicitly requested. Commit the reviewed feature first. Identify the default branch (for example via `origin/HEAD`) and find its checkout with `git worktree list --porcelain`; ask if unclear. In that checkout, pull with `git pull --ff-only`, squash-merge the feature branch, and commit. Don't switch branches in the feature worktree or rewrite its commits.
 
