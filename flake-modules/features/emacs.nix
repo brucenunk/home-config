@@ -23,7 +23,12 @@ let
       # Nix owns Emacs package and Tree-sitter parser installation; use-package
       # owns package configuration in config/emacs.
       emacsPackages =
-        epkgs: with epkgs; [
+        epkgs:
+        let
+          ghostel = import ../../pkgs/ghostel.nix { inherit pkgs epkgs; };
+        in
+        with epkgs;
+        [
           agent-shell
           (import ../../pkgs/agent-shell-gc.nix { inherit pkgs epkgs; })
           (import ../../pkgs/agent-shell-notifications.nix { inherit pkgs epkgs; })
@@ -34,6 +39,7 @@ let
           cape
           consult
           consult-denote
+          (import ../../pkgs/consult-ghostel.nix { inherit epkgs ghostel; })
           corfu
           denote
           doric-themes
@@ -48,7 +54,7 @@ let
           exec-path-from-shell
           fontaine
           forge
-          (import ../../pkgs/ghostel.nix { inherit pkgs epkgs; })
+          ghostel
           jinx
           jsonnet-mode
           lin

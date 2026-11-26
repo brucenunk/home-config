@@ -1044,7 +1044,7 @@ The registration above connects =excali:= links, previews and publication export
 
 *** Project commands
 
-Use Emacs’s built-in project support without additional package-specific settings here. Defer configuration until Magit loads; the Ghostel integration in [[*Terminal buffers][Shells and terminals]] owns the extra project-switch action.
+Use Emacs’s built-in project support without additional package-specific settings here. Defer configuration until Magit loads; [[*Terminal selection with Consult][the Consult Ghostel integration]] owns the extra project-switch action.
 
 #+begin_src emacs-lisp
 (use-package project
@@ -1336,7 +1336,9 @@ Include TRAMP support in Eshell and scroll to the bottom when entering input so 
 
 *** Terminal buffers
 
-Prefer the Nix-profile Fish executable when available, preserve buffers after exit, and enable shell integration and clipboard support. Add the project switch action only once both Ghostel and Project have loaded; neither should force the other to load.
+Prefer Fish locally, checking the Nix profile before searching Emacs’s executable path. For TRAMP RPC, use the remote account’s login shell, as Ghostel already does for SSH. Use =M-x ghostel-new= from a local or remote buffer to start a terminal there; =M-x ghostel= can reuse an existing terminal instead.
+
+Preserve buffers after exit and enable clipboard support. Enable shell integration locally and for remote Fish shells, where Ghostel transfers temporary integration files and terminfo. Keep Ghostel’s automatic terminfo behavior, which also makes interactive =ssh HOST= inside a Ghostel shell use Ghostel’s SSH wrapper. Use =command ssh HOST= to bypass the wrapper.
 
 #+begin_src emacs-lisp
 (use-package ghostel
@@ -1345,18 +1347,41 @@ Prefer the Nix-profile Fish executable when available, preserve buffers after ex
   :custom
   (ghostel-shell (let ((fish (expand-file-name ".nix-profile/bin/fish"
                                                (or (getenv "HOME") "~"))))
-                   (if (file-executable-p fish)
-                       fish
-                     shell-file-name)))
+                   (or (and (file-executable-p fish) fish)
+                       (executable-find "fish")
+                       shell-file-name)))
   (ghostel-kill-buffer-on-exit nil)
   (ghostel-max-scrollback (* 20 1024 1024))
   (ghostel-enable-osc52 t)
   (ghostel-shell-integration t)
+  (ghostel-tramp-shell-integration '(fish))
   :config
-  ;; Genuine two-package gate: register only after both Ghostel and Project,
-  ;; without making either package load the other.
+  (add-to-list 'ghostel-tramp-shells '("rpc" login-shell)))
+#+end_src
+
+*** Terminal selection with Consult
+
+Use =g= to narrow =C-x b= to Ghostel buffers, and the Ghostel action in the project switch menu to preview or create a terminal in the chosen project. In a Ghostel terminal, =C-c h= searches the shell history and inserts the selected command without running it.
+
+#+begin_src emacs-lisp
+(use-package consult-ghostel
+  :ensure nil
+  :hook (after-init . consult-ghostel-mode)
+  :bind (:map ghostel-semi-char-mode-map
+              ("C-c h" . consult-ghostel-history))
+  :config
   (with-eval-after-load 'project
-    (add-to-list 'project-switch-commands '(ghostel-project "Ghostel") t)))
+    (add-to-list 'project-switch-commands '(consult-ghostel-project "Ghostel") t)))
+#+end_src
+
+*** Asynchronous shell commands
+
+Remap =M-&= to run its command in a Ghostel terminal with a PTY. Leave Lisp callers of =async-shell-command= and other asynchronous shell commands unchanged.
+
+#+begin_src emacs-lisp
+(use-package ghostel-shell-command
+  :ensure nil
+  :bind ([remap async-shell-command] . ghostel-shell-command))
 #+end_src
 
 *** Visual commands in Eshell
