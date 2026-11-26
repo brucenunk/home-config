@@ -1,6 +1,14 @@
 {
   description = "James's personal Home Manager configuration and reusable modules";
 
+  # emacs-overlay is a non-flake input, so declare its binary cache here.
+  nixConfig = {
+    extra-substituters = [ "https://nix-community.cachix.org" ];
+    extra-trusted-public-keys = [
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
+  };
+
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "git+https://github.com/vic/import-tree.git";

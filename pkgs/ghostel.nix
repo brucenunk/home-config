@@ -11,15 +11,15 @@ let
   # prefetch-file, update the version and hashes, and check the Wampa build
   # uses the matching prebuilt module, not a Zig source build. Stop if the
   # release or assets don't match; don't fall back to a different version.
-  supportedVersion = "0.66.0";
+  supportedVersion = "0.67.0";
   modules = {
     "aarch64-darwin" = {
       asset = "ghostel-module-aarch64-macos.dylib";
-      hash = "sha256-RrxsHRv+gaAlG73BOMYoKddYbcXj5bXD0PVI1SGuRgE=";
+      hash = "sha256-DU1MpheF25L+hCkqoY4I0pYGW3hjuEOKShTFuxuKrjY=";
     };
     "x86_64-linux" = {
       asset = "ghostel-module-x86_64-linux.so";
-      hash = "sha256-niPob03NXkE5ylWuS6iHLQTK2m4NFNUFCm4quUgMJ1Q=";
+      hash = "sha256-1USZEkFePQjx/5mRFhxAXiwYz6toovLtbiupfzf2CAU=";
     };
   };
 
